@@ -1,0 +1,7 @@
+{
+  "name": "@tollgate/workers",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Small hired agents (research, analysis, report) that run under child mandates."
+}

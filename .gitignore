@@ -1,0 +1,30 @@
+# dependencies
+node_modules/
+.pnpm-store/
+
+# builds
+dist/
+build/
+*.tsbuildinfo
+
+# env and secrets — never commit these
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# test and bench output
+coverage/
+bench/results/
+*.local
+
+# editors and OS
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# lockfiles from other package managers (this repo uses pnpm)
+package-lock.json
+yarn.lock

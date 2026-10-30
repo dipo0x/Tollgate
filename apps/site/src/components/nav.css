@@ -1,0 +1,29 @@
+.nav{position:fixed;inset:0 0 auto;z-index:60;transition:transform .6s var(--ease),background .35s,border-color .35s;border-bottom:1px solid transparent}
+.nav.solid{background:rgba(10,11,13,.72);backdrop-filter:blur(18px) saturate(1.3);-webkit-backdrop-filter:blur(18px) saturate(1.3);border-color:var(--ln)}
+.nav.away{transform:translateY(-101%)}
+.nav.open{background:var(--bg);transform:none}
+.nav-in{display:flex;align-items:center;gap:24px;height:68px;max-width:calc(var(--frame) + 2 * var(--gut));margin:0 auto;padding:0 var(--gut)}
+.nav-brand{display:inline-flex;align-items:center;gap:10px;font-weight:600;font-size:18px;letter-spacing:-.02em}
+.nav-links{display:flex;gap:28px;margin:0 auto;font:500 13.5px/1 var(--sans);color:var(--mu)}
+.nav-links a{position:relative;display:inline-block;line-height:1.25;overflow:hidden}
+.nav-links span{display:inline-block;transition:transform .5s var(--ease),color .3s;position:relative}
+.nav-links span::after{content:attr(data-t);position:absolute;left:0;top:100%;color:var(--tx)}
+.nav-links a:hover span{transform:translateY(-100%)}
+.nav-cta{display:flex;align-items:center;gap:18px}
+.nav-cta .rb{height:38px}
+.nav-cta .rb-ic{width:38px}
+@keyframes pulse{50%{opacity:.35}}
+.nav-menu{display:none;align-items:center;gap:10px;margin-left:auto;height:38px;padding:0 14px 0 12px;background:var(--paper);color:var(--ink);font-size:12px;letter-spacing:.1em;text-transform:uppercase;font-weight:600}
+.nav-burger{display:grid;gap:4px}.nav-burger i{display:block;width:14px;height:1.5px;background:currentColor;transition:transform .4s var(--ease)}
+.nav.open .nav-burger i:first-child{transform:translateY(2.75px) rotate(45deg)}
+.nav.open .nav-burger i:last-child{transform:translateY(-2.75px) rotate(-45deg)}
+.menu{position:fixed;inset:68px 0 0;background:var(--bg);visibility:hidden;opacity:0;transition:opacity .35s,visibility 0s .35s;display:flex;flex-direction:column;justify-content:space-between;padding:24px var(--gut) 32px;border-top:1px solid var(--ln)}
+.nav.open .menu{visibility:visible;opacity:1;transition:opacity .35s}
+@media (min-width:721px){.menu{display:none}}
+.menu nav{display:flex;flex-direction:column}
+.menu nav a{display:flex;align-items:baseline;gap:16px;padding:14px 0;border-bottom:1px solid var(--ln);font-size:clamp(28px,8vw,44px);letter-spacing:-.03em;font-weight:500;opacity:0;transform:translateY(16px);transition:opacity .6s var(--ease),transform .6s var(--ease)}
+.nav.open .menu nav a{opacity:1;transform:none}
+.menu nav a .mono{font-size:12px;letter-spacing:.04em;color:var(--dm);font-weight:400}
+.menu-foot{display:flex;flex-direction:column;gap:14px;align-items:flex-start}
+@media (max-width:1080px){.nav-links{display:none}}
+@media (max-width:720px){.nav-cta{display:none}.nav-menu{display:inline-flex}}

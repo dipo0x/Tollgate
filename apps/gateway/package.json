@@ -1,0 +1,7 @@
+{
+  "name": "@tollgate/gateway",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "The HTTP API and verifier. The only Tollgate component the agent talks to."
+}

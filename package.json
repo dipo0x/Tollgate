@@ -1,0 +1,21 @@
+{
+  "name": "tollgate",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Tollgate: a payment firewall that sits between an AI agent and its wallet. Monorepo for the gateway, signer, SDK, dashboard, demo agent, benchmark and site.",
+  "author": "Oladipo Adesiyan",
+  "license": "MIT",
+  "type": "module",
+  "packageManager": "pnpm@10.18.2",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "dev": "pnpm -r --parallel --stream dev",
+    "site": "pnpm --filter @tollgate/site dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "lint": "pnpm -r lint",
+    "bench": "pnpm --filter @tollgate/bench start",
+    "demo": "pnpm --filter @tollgate/demo-agent start"
+  }
+}

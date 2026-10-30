@@ -1,0 +1,7 @@
+{
+  "name": "@tollgate/mock-merchants",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Fake sellers, a fake directory and a fake 1Click, for the benchmark and offline runs."
+}

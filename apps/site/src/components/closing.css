@@ -1,0 +1,27 @@
+.cl{position:relative;padding:clamp(120px,15vw,200px) 0 clamp(60px,7vw,90px);border-top:1px solid var(--ln);overflow:hidden}
+.cl .gridbg{-webkit-mask-image:radial-gradient(ellipse 70% 70% at 50% 35%,#000 20%,transparent 75%);mask-image:radial-gradient(ellipse 70% 70% at 50% 35%,#000 20%,transparent 75%)}
+.cl-in{display:flex;flex-direction:column;align-items:center;text-align:center;gap:28px}
+.cl-h{font-size:clamp(52px,9vw,140px)}
+.cl .lede{text-align:center}
+.cl-cta{display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:22px}
+
+.tk{position:relative;display:grid;grid-template-columns:1.1fr 1.1fr 1.1fr 1.6fr 64px;height:116px;margin-top:clamp(90px,11vw,150px);border:1px solid var(--ln2);background:var(--bg)}
+.tk-cell{position:relative;display:flex;align-items:center;padding:0 22px;overflow:hidden}
+.tk-a{flex-direction:column;align-items:flex-start;justify-content:center;gap:10px;background:var(--ac);color:#fff}
+.tk-a p{font-size:20px;letter-spacing:-.02em}
+.tk-a .rb{height:32px}
+.tk-a .rb-ic{width:32px}
+.tk-a .rb-lb{padding:0 10px;font-size:11px;border-color:rgba(255,255,255,.8)}
+.tk-b{gap:12px;justify-content:center;font-size:clamp(20px,2vw,28px);font-weight:600;letter-spacing:-.01em;background-image:linear-gradient(var(--ln) 1px,transparent 1px),linear-gradient(90deg,var(--ln) 1px,transparent 1px);background-size:18px 18px}
+.tk-c{background:linear-gradient(118deg,#5b82ff,#8fa9ff);color:var(--ink);font-size:clamp(16px,1.4vw,20px);line-height:1.2}
+.tk-d{justify-content:space-around;gap:16px;background:linear-gradient(118deg,#2a55ff,#8fa9ff 60%,#c9d5ff);color:var(--ink);font-size:clamp(15px,1.3vw,19px);line-height:1.2}
+.tk-e{padding:12px 10px;background:var(--paper);color:var(--ink);border-left:1px dashed var(--ink)}
+.tk-code{width:100%;height:100%}
+.cl-orb{right:22%;top:-58px;z-index:3}
+@media (max-width:980px){
+  .tk{grid-template-columns:1fr 1fr;height:auto}
+  .tk-cell{min-height:96px;padding:18px}
+  .tk-d{grid-column:1 / -1;justify-content:space-between}
+  .tk-e{grid-column:1 / -1;height:52px;border-left:0;border-top:1px dashed var(--ink)}
+  .cl-orb{right:8%;top:-50px;width:72px!important;height:72px!important}
+}

@@ -1,0 +1,7 @@
+{
+  "name": "@tollgate/demo-agent",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Builder agent that decides, buys, negotiates, hires and earns — the thing Tollgate protects."
+}

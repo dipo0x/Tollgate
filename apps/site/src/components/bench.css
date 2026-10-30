@@ -1,0 +1,35 @@
+.bn{padding:clamp(110px,13vw,180px) 0;border-top:1px solid var(--ln)}
+.bn-head{display:grid;grid-template-columns:1fr 1fr;gap:40px;align-items:end}
+.bn-head .eyebrow{margin-bottom:26px}
+.bn-h{font-size:clamp(48px,7vw,104px)}
+.bn-term{margin-top:56px}
+.bn-term .app-h{font-weight:400;color:var(--mu);font-size:12px}
+.bn-body{padding:18px 20px 20px;font-size:14px;display:grid;gap:8px}
+.bn-body .pr{color:var(--ac2)}
+.bn-caret{display:inline-block;width:8px;height:1.05em;background:var(--ac2);vertical-align:-3px;margin-left:4px;animation:pulse 1s steps(2,jump-none) infinite}
+.bn-out{display:grid;gap:4px;font-size:13px}
+.bn-out .dim{color:var(--mu)}
+.bn-bar{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;margin-top:56px;padding-bottom:14px;border-bottom:1px solid var(--ln2)}
+.bn-filters{display:flex;gap:6px;flex-wrap:wrap}
+.bn-filters button{font:500 11.5px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;padding:9px 12px;border:1px solid var(--ln2);color:var(--mu);transition:background .3s,color .3s,border-color .3s}
+.bn-filters button:hover{color:var(--tx);border-color:var(--ln3)}
+.bn-filters button.on{background:var(--paper);color:var(--ink);border-color:var(--paper)}
+.bn-col{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--dm)}
+.bn-rows{display:grid;grid-template-columns:1fr 1fr;column-gap:48px}
+.bn-row{display:grid;grid-template-columns:52px 1fr auto 128px;gap:0 14px;align-items:center;width:100%;text-align:left;padding:16px 0;border-bottom:1px solid var(--ln);transition:background .3s,padding .4s var(--ease)}
+.bn-row:hover{background:var(--s1);padding-inline:12px}
+.bn-row.open{background:var(--s1);padding-inline:12px}
+.bn-id{font-size:12px;color:var(--ac2)}
+.bn-t{font-size:16px;letter-spacing:-.01em}
+.bn-by{font-size:11px;color:var(--dm);text-transform:uppercase;letter-spacing:.06em}
+.bn-row .chip{justify-self:end}
+.bn-desc{grid-column:2 / -1;display:grid;grid-template-rows:0fr;transition:grid-template-rows .45s var(--ease);color:var(--mu);font-size:14px}
+.bn-desc>span{overflow:hidden;min-height:0}
+.bn-desc>span>span{display:block;padding-top:8px}
+.bn-row.open .bn-desc{grid-template-rows:1fr}
+.bn-fine{margin-top:28px}
+@media (max-width:900px){
+  .bn-head{grid-template-columns:1fr}
+  .bn-rows{grid-template-columns:1fr}
+}
+@media (max-width:520px){.bn-row{grid-template-columns:44px 1fr auto}.bn-by{display:none}}

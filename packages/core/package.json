@@ -1,0 +1,7 @@
+{
+  "name": "@tollgate/core",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Check pipeline C01-C12, the budget ledger and the hash-chained audit log."
+}

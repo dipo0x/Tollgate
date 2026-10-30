@@ -1,0 +1,6 @@
+.ld{position:fixed;inset:0;z-index:100;background:var(--bg);display:grid;place-content:center;justify-items:center;gap:26px}
+.ld-glyph{width:84px;height:84px}
+.ld-meta{display:flex;justify-content:space-between;width:220px;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--dm)}
+.ld-meta b{color:var(--tx);font-weight:500}
+.ld-track{width:220px;height:1px;background:var(--ln2);position:relative;overflow:hidden}
+.ld-fill{position:absolute;inset:0;background:var(--ac2);transform:scaleX(0);transform-origin:left}

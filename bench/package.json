@@ -1,0 +1,7 @@
+{
+  "name": "@tollgate/bench",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Red-team benchmark: 16 attack scenarios, 5 benign controls, 3 targets."
+}

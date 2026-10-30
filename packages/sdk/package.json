@@ -1,0 +1,7 @@
+{
+  "name": "@tollgate/sdk",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Client library: wraps fetch so an HTTP 402 payment challenge is routed through the Tollgate gateway."
+}

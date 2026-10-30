@@ -1,0 +1,7 @@
+{
+  "name": "@tollgate/signer",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Isolated process holding the only key. Signs only what a recorded ALLOW decision covers."
+}

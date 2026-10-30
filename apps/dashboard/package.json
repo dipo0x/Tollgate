@@ -1,0 +1,7 @@
+{
+  "name": "@tollgate/dashboard",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Read-mostly owner console: mandates, live decisions, approvals, jobs, spend, registry, audit verification and the benchmark view."
+}
