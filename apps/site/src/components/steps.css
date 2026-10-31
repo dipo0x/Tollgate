@@ -1,5 +1,6 @@
 .st{position:relative;background:var(--s1);border-top:1px solid var(--ln);overflow:hidden}
-.st-pin{min-height:100vh;min-height:100svh;display:flex;flex-direction:column;justify-content:center;padding:96px 0 64px}
+.st-pin{height:100vh;height:100svh;overflow:hidden}
+.st-stage{position:relative;width:100%;padding:96px 0 64px;will-change:transform}
 .st-head{display:grid;grid-template-columns:1fr auto;align-items:start;gap:24px;width:100%}
 .st-h{font-size:clamp(46px,7vw,104px)}
 .st-track{display:flex;width:max-content;padding:56px 0 0 max(var(--gut),calc((100vw - var(--frame)) / 2 + var(--gut)));will-change:transform}
@@ -11,6 +12,8 @@
 .st-col dt{font-size:15px}
 .st-col dd{margin:4px 0 0;font-size:14.5px;color:var(--mu)}
 @media (max-width:900px){
+  .st-pin{height:auto;overflow:visible}
+  .st-stage{will-change:auto}
   .st-head{grid-template-columns:1fr}
   .st-track{flex-direction:column;width:auto;padding:48px var(--gut) 0;gap:48px}
   .st-col{width:100%;margin-top:0!important}

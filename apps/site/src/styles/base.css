@@ -55,6 +55,9 @@ section[id]{scroll-margin-top:0}
 .dc.end{align-items:flex-end}
 .dc-line{display:inline-block;background:var(--paper);color:var(--ink);padding:.04em .16em .1em;white-space:pre;opacity:0}
 .dc-line.on{opacity:1}
+/* Reserve the line box before any glyph shows, so typing in never changes page height and pinned sections stay where they were measured. */
+.dc-line::before{content:"\200b"}
+.dc.pixel .dc-line::before{font-family:var(--px)}
 .dc-c{display:inline}
 .dc-c[data-s="0"]{display:none}
 .dc-c[data-s="1"]{font-family:var(--px);color:#c4c8cf;letter-spacing:-.02em}

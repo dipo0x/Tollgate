@@ -7,7 +7,9 @@
   "license": "MIT",
   "type": "module",
   "packageManager": "pnpm@10.18.2",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "pnpm -r --parallel --stream dev",
     "site": "pnpm --filter @tollgate/site dev",
@@ -17,5 +19,10 @@
     "lint": "pnpm -r lint",
     "bench": "pnpm --filter @tollgate/bench start",
     "demo": "pnpm --filter @tollgate/demo-agent start"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.5"
   }
 }
