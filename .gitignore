@@ -28,3 +28,9 @@ bench/results/
 # lockfiles from other package managers (this repo uses pnpm)
 package-lock.json
 yarn.lock
+
+# vite dep-optimizer cache
+.vite/
+
+# submission payload holds personal data — never commit
+payload.json

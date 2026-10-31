@@ -37,23 +37,25 @@ docs/               PRD and system architecture
 
 Trust boundaries: `demo-agent`, `workers` and `sdk` run in the **untrusted** zone. `gateway`, `core`, `registry` and `dashboard` are **trusted**. `signer` is the most sensitive component and is reachable only by the gateway. `mock-merchants` is test-only.
 
-## Getting started
+## For reviewers — do X, see Y
 
-Requires Node 22+ and pnpm 10.
+Requires Node 22+ and pnpm 10. Nothing below needs an API key, a wallet or a network
+connection: every external call is replayed from recorded fixtures.
 
 ```bash
+git clone https://github.com/dipo0x/tollgate.git
+cd tollgate
 pnpm install
-pnpm site         # marketing homepage on http://localhost:5173
 ```
 
-Once the product lands, the two entry points a reviewer needs are:
+| # | Do this | See this |
+| --- | --- | --- |
+| 1 | `pnpm bench` | A table of 16 attack scenarios and 5 benign controls run against three targets — a naive agent, the stock `mppx` policy and Tollgate — plus JSON and HTML reports in `bench/results/`. *(not implemented yet)* |
+| 2 | `pnpm demo` | The demo agent runs one small job end to end: it decides what to buy, negotiates a price, hires workers on child mandates, sells its report, and has one over-budget purchase blocked and logged. *(not implemented yet)* |
+| 3 | `pnpm --filter @tollgate/core verify-log` | The audit chain verifies, or names the first broken entry. *(not implemented yet)* |
+| 4 | `pnpm site` | The homepage on <http://localhost:5173>. |
 
-```bash
-pnpm bench        # run 16 attacks and 5 benign controls against three targets, offline, no funds
-pnpm demo         # run the demo agent through one small job: decide, buy, negotiate, hire, earn
-```
-
-Both are offline by default and need no keys and no network.
+Target: fresh clone to benchmark result in under five minutes.
 
 ## How NEAR fits
 
@@ -69,8 +71,34 @@ Both are offline by default and need no keys and no network.
 
 ## Documents
 
-- `docs/Tollgate_PRD_v1.2.pdf` — product requirements and system architecture
+- `docs/ARCHITECTURE.md` — components, trust zones, key design decisions, registry, delegation
+- `docs/THREAT-MODEL.md` — assets, trust boundaries, the 16 attacks, the 5 benign controls, residual risks
+- `docs/SUBMISSION.md` — hackathon submission checklist
+- `docs/Tollgate_PRD_v1.2.pdf` — full product requirements and system architecture
 - `HACKATHON.md` — NEAR HACKATHON rules, tracks and submission contract
+- `CLAUDE.md` — standing rules for AI agents working in this repository
+
+## Hackathon disclosures
+
+Answering the rules in `HACKATHON.md` directly, so a reviewer does not have to infer any
+of it.
+
+- **Build window (Q-001).** Work counted from the announcement on 19 Oct 2026. The
+  marketing site under `apps/site` and the monorepo skeleton were built 26–31 Oct 2026;
+  product code — gateway, signer, core, SDK, registry, demo agent, benchmark — starts
+  1 Nov 2026. Tags mark the boundary: `pre-hackathon` and `hackathon-submission`.
+- **One repository (Q-003).** No separate repo. The diff a judge should review is
+  `git diff pre-hackathon..hackathon-submission`.
+- **Existing product on another chain (Q-002).** None. Tollgate is new.
+- **Libraries and generated code (Q-005).** Third-party: Hono, Drizzle, Zod, viem, Vitest,
+  fast-check, React, Vite, Tailwind, GSAP, Lenis, Three.js. No pre-hackathon libraries of
+  my own are reused. Parts of this codebase were written with AI assistance (Claude Code);
+  every line is reviewed and owned by the author.
+- **Other submissions (Q-015).** This is the author's only submission to this hackathon.
+- **Testnet and funds (Q-007, Q-010).** NEAR Intents is mainnet-only, so live tests use a
+  separate dev account with small amounts and `dry: true` quotes. Everything a judge runs
+  is offline and needs no funds.
+- **Licence (Q-014).** MIT.
 
 ## Licence
 
