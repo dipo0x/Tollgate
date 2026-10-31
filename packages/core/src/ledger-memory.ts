@@ -4,8 +4,8 @@ import type { Micro } from './money.ts'
 type Decision = { mandateId: string; amount: Micro; state: DecisionState }
 
 /**
- * In-memory ledger for the offline benchmark and for tests. Every method is
- * synchronous, so reserves cannot interleave. The Postgres ledger gets the
+ * In-memory ledger for the offline benchmark and for tests. The method bodies
+ * are synchronous, so even with `async` a reserve cannot interleave with another. The Postgres ledger gets the
  * same guarantee from row locks and must pass the same tests.
  */
 export class InMemoryLedger implements Ledger {
@@ -16,13 +16,13 @@ export class InMemoryLedger implements Ledger {
 
   constructor(private readonly clock: () => Date = () => new Date()) {}
 
-  openBudget(mandateId: string, total: Micro): void {
+  async openBudget(mandateId: string, total: Micro): Promise<void> {
     if (total < 0n) throw new RangeError('budget cannot be negative')
     if (this.budgets.has(mandateId)) throw new Error(`budget already open for ${mandateId}`)
     this.budgets.set(mandateId, total)
   }
 
-  propose(mandateId: string, decisionId: string, amount: Micro): TransitionResult {
+  async propose(mandateId: string, decisionId: string, amount: Micro): Promise<TransitionResult> {
     if (amount <= 0n) return { ok: false, reason: 'invalid_amount' }
     if (!this.budgets.has(mandateId)) return { ok: false, reason: 'unknown_decision' }
     if (this.decisions.has(decisionId)) return { ok: false, reason: 'invalid_state' }
@@ -31,7 +31,7 @@ export class InMemoryLedger implements Ledger {
     return { ok: true }
   }
 
-  reserve(mandateId: string, decisionId: string, amount: Micro): ReserveResult {
+  async reserve(mandateId: string, decisionId: string, amount: Micro): Promise<ReserveResult> {
     const total = this.budgets.get(mandateId)
     if (total === undefined) return { ok: false, reason: 'unknown_mandate' }
     if (amount <= 0n) return { ok: false, reason: 'invalid_amount' }
@@ -51,7 +51,7 @@ export class InMemoryLedger implements Ledger {
     return { ok: true, state: 'committed', replayed: false }
   }
 
-  settle(decisionId: string): TransitionResult {
+  async settle(decisionId: string): Promise<TransitionResult> {
     const d = this.decisions.get(decisionId)
     if (!d) return { ok: false, reason: 'unknown_decision' }
     if (d.state !== 'committed') return { ok: false, reason: 'invalid_state' }
@@ -60,7 +60,7 @@ export class InMemoryLedger implements Ledger {
     return { ok: true }
   }
 
-  release(decisionId: string): TransitionResult {
+  async release(decisionId: string): Promise<TransitionResult> {
     const d = this.decisions.get(decisionId)
     if (!d) return { ok: false, reason: 'unknown_decision' }
     if (d.state !== 'committed' && d.state !== 'proposed') return { ok: false, reason: 'invalid_state' }
@@ -69,11 +69,15 @@ export class InMemoryLedger implements Ledger {
     return { ok: true }
   }
 
-  stateOf(decisionId: string): DecisionState | undefined {
+  async stateOf(decisionId: string): Promise<DecisionState | undefined> {
     return this.decisions.get(decisionId)?.state
   }
 
-  balance(mandateId: string): Balance | undefined {
+  async balance(mandateId: string): Promise<Balance | undefined> {
+    return this.compute(mandateId)
+  }
+
+  private compute(mandateId: string): Balance | undefined {
     const total = this.budgets.get(mandateId)
     if (total === undefined) return undefined
     let committed = 0n, settled = 0n, released = 0n, proposed = 0n
@@ -87,12 +91,12 @@ export class InMemoryLedger implements Ledger {
     return { total, committed, settled, released, proposed, remaining: total - committed - settled }
   }
 
-  entries(mandateId: string): readonly LedgerEntry[] {
+  async entries(mandateId: string): Promise<readonly LedgerEntry[]> {
     return this.log.filter(e => e.mandateId === mandateId)
   }
 
   private remaining(mandateId: string, total: Micro): Micro {
-    const b = this.balance(mandateId)
+    const b = this.compute(mandateId)
     return b ? b.remaining : total
   }
 

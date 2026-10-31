@@ -88,7 +88,7 @@ export default function Mandate() {
                     <svg viewBox="0 0 16 16" width="40" height="40" aria-hidden="true"><path d={c.icon} fill="currentColor" /></svg>
                   </div>
                   <p>{c.d}</p>
-                  <p className="idx">-- 00{i + 1}.</p>
+                  <p className="idx">0{i + 1}</p>
                 </article>
               </div>
             ))}

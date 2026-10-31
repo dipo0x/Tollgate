@@ -1,6 +1,6 @@
-import type { Check } from './types.ts'
+import type { SyncCheck } from './types.ts'
 
-export const c04NetworkAsset: Check = ctx => {
+export const c04NetworkAsset: SyncCheck = ctx => {
   const base = { id: 'C04', name: 'Network and asset' } as const
   const spec = ctx.mandate?.spec
   const c = ctx.challenge

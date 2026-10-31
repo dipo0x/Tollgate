@@ -9,7 +9,6 @@ const QA: [string, ReactNode][] = [
   ['Can the model talk its way past a decision?', 'No. The model can propose what to buy and what to offer. Decisions are made by code over structured data, and third-party listing text never reaches the model prompt.'],
   ['How is this different from a spending cap?', 'A cap limits how much a bad payment can cost. Tollgate checks the request itself: the payee, the price against an independent quote, the deposit address, the refund target and replays. Use both.'],
   ['Are the numbers on this page real?', 'Counts such as 12 checks and 16 attack scenarios are design facts. Every decision, price and job figure shown here is illustrative. Measured benchmark results are published with the report.'],
-  ['Who builds Tollgate?', <>Tollgate is founded and engineered by <a href="https://dipo0x.xyz" target="_blank" rel="noopener noreferrer">Oladipo Adesiyan</a>, who designs and builds the verifier, the signer, the SDK and the dashboard.</>],
 ]
 
 export default function Faq() {
@@ -20,7 +19,7 @@ export default function Faq() {
         <div className="fq-l">
           <p className="eyebrow">Frequently asked questions</p>
           <p className="fq-note">Tollgate reduces and records payment risk for AI agents; it does not remove it. Limits are disclosed, not hidden.</p>
-          <RollButton href="https://linkedin.com/in/oladipo-adesiyan" label="Talk to the founder" external />
+          <RollButton href="https://dipo0x.xyz/" label="Talk to the founder" external />
         </div>
         <div className="fq-list">
           {QA.map(([q, a], i) => (

@@ -1,0 +1,32 @@
+# Local infrastructure. The store (Postgres) is the only service so far; the gateway,
+# signer and dashboard join it as they are built.
+#
+#   pnpm db:up      start Postgres (waits until it accepts connections)
+#   pnpm db:down    stop it, keeping the data
+#   pnpm db:reset   stop it and delete the data
+#
+# Host port 5433, not 5432, so it never collides with another Postgres on this machine.
+name: tollgate
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: tollgate-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: tollgate
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env (copy .env.example)}
+      POSTGRES_DB: tollgate
+    ports:
+      # Loopback only: nothing off this machine can reach the database.
+      - '127.0.0.1:${POSTGRES_PORT:-5433}:5432'
+    volumes:
+      - tollgate-pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U tollgate -d tollgate']
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  tollgate-pg:

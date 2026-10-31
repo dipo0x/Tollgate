@@ -103,25 +103,25 @@ function Summary() {
 type Panel = { title: string; theme: string; pixel?: boolean; idx: string; text: string; tags: string[]; cta: [string, string]; ui: ReactNode }
 const PANELS: Panel[] = [
   {
-    title: 'Spend', theme: 'soft', idx: '001',
+    title: 'Spend', theme: 'soft', idx: '01',
     text: 'Buys data, APIs and compute from a curated registry. The model picks a capability. Tollgate decides what is actually payable, and an unverified service is never paid.',
     tags: ['Registry gate', '12 checks', 'Reserve, then settle', 'Fail closed'],
     cta: ['The checks', '#how'], ui: <Registry />,
   },
   {
-    title: 'Negotiate', theme: 'blue', idx: '002',
+    title: 'Negotiate', theme: 'blue', idx: '02',
     text: 'Haggles with a seller agent for a few rounds. The mandate sets the price ceiling and the round limit. The model proposes, code enforces, and the final challenge must match the accepted offer.',
     tags: ['Price ceiling', 'Round limit', 'Payee locked', 'Offer equals challenge'],
     cta: ['The attacks', '#bench'], ui: <Negotiation />,
   },
   {
-    title: 'Hire', theme: 'dark', pixel: true, idx: '003',
+    title: 'Hire', theme: 'dark', pixel: true, idx: '03',
     text: 'Hires worker agents on child mandates carved from its own remaining budget. Payments are staged, an acceptance check gates the rest, and revoking the parent revokes every child.',
     tags: ['Child mandates', 'Staged payments', 'Acceptance check', 'Cascading revoke'],
     cta: ['Set it up', '#setup'], ui: <Delegation />,
   },
   {
-    title: 'Earn', theme: 'mint', idx: '004',
+    title: 'Earn', theme: 'mint', idx: '04',
     text: 'Sells its finished work from its own paid endpoint. Revenue is credited only after a fresh, settled receipt is verified, and it never raises a budget on its own.',
     tags: ['Paid endpoint', 'Verified receipts', 'Revenue next to spend', 'Replay-proof'],
     cta: ['Questions', '#faq'], ui: <Summary />,
@@ -156,7 +156,7 @@ export default function Economy() {
   return (
     <section ref={ref} className="ec" id="economy">
       <div className="frame ec-intro">
-        <p className="eyebrow">[ <b>The agent economy</b> ]</p>
+        <p className="eyebrow"><b>The agent economy</b></p>
         <DecodeText lines={['Spend. Negotiate.', 'Hire. Earn.']} align="center" className="ec-h" />
         <p className="lede">An agent that only spends is half an economy. Every way money moves runs through the same gate, with the same mandate behind it.</p>
       </div>
@@ -167,7 +167,7 @@ export default function Economy() {
               <h3 className={`ec-title${p.pixel ? ' px' : ''}`}>{p.title}</h3>
               <div className="ec-box">
                 <div className="ec-copy">
-                  <div className="ec-meta mono"><span>-- {p.idx}.</span><span>[ Agent economy ]</span></div>
+                  <div className="ec-meta mono"><span className="idx">{p.idx}</span><span>Agent economy</span></div>
                   <div className="ec-body">
                     <p>{p.text}</p>
                     <div className="tags">{p.tags.map(t => <span key={t} className="tag">{t}</span>)}</div>

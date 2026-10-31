@@ -1,5 +1,5 @@
 import { isPayable } from '../registry.ts'
-import type { Check } from './types.ts'
+import type { SyncCheck } from './types.ts'
 
 /** Exact match, or "*.example.com" which matches subdomains but not the apex. */
 export function hostMatches(pattern: string, host: string): boolean {
@@ -10,7 +10,7 @@ export function hostMatches(pattern: string, host: string): boolean {
   return h.length > suffix.length && h.endsWith(suffix)
 }
 
-export const c02HostInScope: Check = ctx => {
+export const c02HostInScope: SyncCheck = ctx => {
   const base = { id: 'C02', name: 'Host in scope' } as const
   if (!ctx.mandate) return { ...base, result: 'fail', evidence: { reason: 'no mandate' } }
   const host = ctx.host

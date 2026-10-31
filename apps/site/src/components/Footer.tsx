@@ -51,10 +51,7 @@ export default function Footer() {
 
         <div className="ft-bot mono">
           <span>© 2026 Tollgate. All rights reserved.</span>
-          <a className="ft-built" href="https://dipo0x.xyz" target="_blank" rel="noopener noreferrer">
-            <span className="ft-mono sm px" aria-hidden="true">OA</span>
-            <span>Built by <b>Oladipo Adesiyan</b></span>
-          </a>
+          <a href="https://trytollgate.xyz" target="_blank" rel="noopener noreferrer">trytollgate.xyz</a>
           <span>Not a wallet · never holds your funds</span>
         </div>
       </div>

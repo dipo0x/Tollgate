@@ -12,9 +12,15 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "drizzle-orm": "^0.45.4",
+    "postgres": "^4.0.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
     "fast-check": "^4.8.0"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./postgres": "./src/postgres/index.ts"
   }
 }

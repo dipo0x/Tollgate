@@ -50,7 +50,7 @@ export default function Overview() {
     if (reduceMotion) return
     gsap.from('.ov-stat', { y: 30, opacity: 0, duration: 0.9, ease: 'power3.out', stagger: 0.08, scrollTrigger: { trigger: '.ov-stats', start: 'top 85%' } })
     gsap.from('.ov-col', { y: 50, opacity: 0, duration: 1, ease: 'power3.out', stagger: 0.12, scrollTrigger: { trigger: '.ov-triad', start: 'top 80%' } })
-    gsap.from('.ov-stair', { scaleY: 0, transformOrigin: '50% 0%', duration: 1.2, ease: 'expo.out', scrollTrigger: { trigger: '.ov-triad', start: 'top 75%' } })
+    gsap.from('.ov-mark rect:nth-of-type(n+3)', { scaleX: 0, transformOrigin: '0% 50%', duration: 1, ease: 'expo.out', stagger: 0.06, scrollTrigger: { trigger: '.ov-triad', start: 'top 75%' } })
     gsap.from('.ov-hl', {
       backgroundSize: '0% 100%', duration: 0.7, ease: 'power2.inOut', stagger: 0.18,
       scrollTrigger: { trigger: '.ov-list', start: 'top 85%' },
@@ -64,7 +64,7 @@ export default function Overview() {
   return (
     <section ref={ref} className="ov" aria-label="Overview">
       <div className="rail">
-        <p className="ov-crumb eyebrow">[ <b>Tollgate</b> ] Verify the request. Keep the wallet shut.</p>
+        <p className="ov-crumb eyebrow"><b>Tollgate</b> Verify the request. Keep the wallet shut.</p>
         <div className="ov-stats">
           {STATS.map(s => (
             <div key={s.label} className="ov-stat">
@@ -84,15 +84,15 @@ export default function Overview() {
 
         <div className="ov-triad">
           <div className="ov-col">
-            <p className="idx">-- 001.</p>
-            <div className="stair ov-stair" aria-hidden="true" />
+            <p className="idx">01</p>
+            <div className="ov-mark" aria-hidden="true"><Glyph size={150} post="#f3f4f1" bar="#3d6bff" notch="#0a0b0d" /></div>
             <div className="ov-col-b">
               <h3 className="ov-big">Checked against your rules, and against facts it fetches itself.</h3>
               <RollButton href="#how" label="How it works" />
             </div>
           </div>
           <div className="ov-col">
-            <p className="idx">-- 002.</p>
+            <p className="idx">02</p>
             <p className="ov-num px"><Counter to={12} duration={2.2} /></p>
             <p className="ov-num-l">Checks on every payment</p>
             <div className="app ov-app" aria-label="Illustrative decision record">
@@ -105,7 +105,7 @@ export default function Overview() {
             </div>
           </div>
           <div className="ov-col">
-            <p className="idx">-- 003.</p>
+            <p className="idx">03</p>
             <p className="ov-p">Tollgate runs in front of any wallet. The agent never holds the key, and the model never decides whether money moves. Code does.</p>
             <ul className="ov-list">
               {['Fails closed', 'Decision-bound signer', 'Hash-chained audit log', 'Wallet-agnostic'].map(t => (

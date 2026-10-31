@@ -69,7 +69,7 @@ export default function Nav() {
         <nav aria-label="Mobile">
           {LINKS.map(([label, href], i) => (
             <a key={href} href={href} onClick={() => setOpen(false)} style={{ transitionDelay: `${80 + i * 50}ms` }}>
-              <span className="mono">-- 00{i + 1}.</span>{label}
+              <span className="mono">0{i + 1}</span>{label}
             </a>
           ))}
         </nav>

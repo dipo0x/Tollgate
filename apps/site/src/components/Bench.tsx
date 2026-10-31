@@ -50,7 +50,7 @@ export default function Bench() {
       <div className="frame">
         <div className="bn-head">
           <div>
-            <p className="eyebrow">[ <b>Benchmark</b> ]</p>
+            <p className="eyebrow"><b>Benchmark</b></p>
             <DecodeText lines={['Evidence', 'over claims.']} className="bn-h" />
           </div>
           <p className="lede">Sixteen attacks and five legitimate payments, run against a naive agent, the stock mppx policy and Tollgate. Results are measured and published, never assumed. If a baseline blocks an attack, the table says so.</p>

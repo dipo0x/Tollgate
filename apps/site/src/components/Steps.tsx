@@ -11,33 +11,53 @@ const STEPS: [string, [string, string][]][] = [
   ['Live', [['Decisions', 'Explained per check'], ['Signer', 'Bound to ALLOW'], ['Audit log', 'Hash chained'], ['Change anything', 'New mandate version']]],
 ]
 
+const pad = (n: number) => String(n).padStart(2, '0')
+
 export default function Steps() {
   const ref = useRef<HTMLElement>(null)
 
   useGSAP(() => {
     if (reduceMotion) return
+    const root = ref.current!
     const mm = gsap.matchMedia()
+    // Wide screens: the section pins and the cards travel along the rail, one stop per step.
+    // Anything else (phones, reduced motion) keeps the plain stacked layout from the stylesheet.
     mm.add('(min-width: 901px)', () => {
-      const pin = ref.current!.querySelector<HTMLElement>('.st-pin')!
-      const stage = pin.querySelector<HTMLElement>('.st-stage')!
-      const track = stage.querySelector<HTMLElement>('.st-track')!
-      const px = (el: Element, prop: 'paddingTop') => parseFloat(getComputedStyle(el)[prop]) || 0
-      const dist = () => Math.max(0, track.scrollWidth - window.innerWidth + 64)
-      // Climb until the first column sits near the top of the screen and the heading has left it.
-      // Rect differences are the same whatever the stage's own translate is, so this is safe to read at any progress.
-      const rise = () => {
-        const headH = track.getBoundingClientRect().top - stage.getBoundingClientRect().top
-        return Math.max(0, px(stage, 'paddingTop') + headH + px(track, 'paddingTop') - window.innerHeight * 0.1)
+      const pin = root.querySelector<HTMLElement>('.st-pin')!
+      const track = root.querySelector<HTMLElement>('.st-track')!
+      const count = root.querySelector<HTMLElement>('.st-count')!
+      const cols = gsap.utils.toArray<HTMLElement>('.st-col', root)
+      const last = cols.length - 1
+      root.classList.add('is-pinned')
+
+      // Distance between two neighbouring cards: one card plus its gap.
+      const step = () => (cols[1]?.offsetLeft ?? 0) - (cols[0]?.offsetLeft ?? 0)
+
+      // The step sitting on the gate is "current"; it and every step before it has passed.
+      let shown = -1
+      const show = (progress: number) => {
+        const at = Math.round(progress * last)
+        if (at === shown) return
+        shown = at
+        cols.forEach((c, i) => {
+          c.classList.toggle('done', i <= at)
+          c.classList.toggle('on', i === at)
+        })
+        count.textContent = `${pad(at + 1)} / ${pad(cols.length)}`
       }
-      // The whole staircase travels up and to the left, tied to a long pinned scroll.
-      gsap.timeline({
-        defaults: { ease: 'none' },
-        scrollTrigger: { trigger: pin, start: 'top top', end: () => '+=' + Math.round(window.innerHeight * 2.4), pin: true, scrub: 0.8, anticipatePin: 1, invalidateOnRefresh: true },
+      show(0)
+
+      gsap.to(track, {
+        x: () => -last * step(),
+        ease: 'none',
+        scrollTrigger: {
+          trigger: pin, start: 'top top', end: () => '+=' + Math.round(window.innerHeight * 2.4),
+          pin: true, scrub: 0.8, anticipatePin: 1, invalidateOnRefresh: true,
+          onUpdate: self => show(self.progress),
+        },
       })
-        .to(track, { x: () => -dist() }, 0)
-        .to(stage, { y: () => -rise() }, 0)
+      return () => root.classList.remove('is-pinned')
     })
-    gsap.from('.st-col', { y: 80, opacity: 0, duration: 1, stagger: 0.1, ease: 'power3.out', scrollTrigger: { trigger: '.st-track', start: 'top 85%' } })
   }, { scope: ref })
 
   return (
@@ -45,21 +65,32 @@ export default function Steps() {
       <div className="st-pin">
         <div className="st-stage">
           <div className="frame st-head">
-            <p className="eyebrow">Set up in five steps.</p>
-            <DecodeText lines={['Your gate,', 'your rules.']} pixel className="st-h" />
+            <div>
+              <p className="eyebrow">Set up in five steps.</p>
+              <DecodeText lines={['Your gate, your rules.']} variant="ghost" className="st-h" />
+            </div>
+            <p className="st-count mono" aria-hidden="true">01 / {pad(STEPS.length)}</p>
           </div>
-          <div className="st-track">
-            {STEPS.map(([name, items], i) => (
-              <article key={name} className="st-col" style={{ marginTop: `${i * 48}px` }}>
-                <p className="st-step mono">Step {i + 1}</p>
-                <h3 className="px">{name}<br />{String(i + 1).padStart(2, '0')}</h3>
-                <dl>
-                  {items.map(([a, b]) => (
-                    <div key={a}><dt>{a}</dt><dd>{b}</dd></div>
-                  ))}
-                </dl>
-              </article>
-            ))}
+          <div className="st-lane">
+            <div className="st-gate" aria-hidden="true"><span className="mono">Gate</span></div>
+            <ol className="st-track">
+              {STEPS.map(([name, items], i) => (
+                <li key={name} className="st-col">
+                  <span className="st-node mono" aria-hidden="true">{pad(i + 1)}</span>
+                  <div className="st-card">
+                    <h3>{name}</h3>
+                    <ul>
+                      {items.map(([a, b]) => (
+                        <li key={a}>
+                          <svg viewBox="0 0 14 14" width="14" height="14" aria-hidden="true"><path d="M1.5 7.5l3.5 3.5 7.5-8" stroke="currentColor" strokeWidth="1.6" fill="none" /></svg>
+                          <b>{a}</b><span>{b}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </li>
+              ))}
+            </ol>
           </div>
         </div>
       </div>

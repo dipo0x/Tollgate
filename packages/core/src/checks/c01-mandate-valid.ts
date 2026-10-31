@@ -1,6 +1,6 @@
-import type { Check } from './types.ts'
+import type { SyncCheck } from './types.ts'
 
-export const c01MandateValid: Check = ctx => {
+export const c01MandateValid: SyncCheck = ctx => {
   const base = { id: 'C01', name: 'Mandate valid' } as const
   const m = ctx.mandate
   if (!m) return { ...base, result: 'fail', evidence: { reason: 'mandate not found' } }

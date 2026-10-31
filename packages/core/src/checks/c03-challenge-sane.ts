@@ -1,7 +1,7 @@
 import { parseChallenge, SUPPORTED_METHODS } from '../challenge.ts'
-import type { Check } from './types.ts'
+import type { SyncCheck } from './types.ts'
 
-export const c03ChallengeSane: Check = ctx => {
+export const c03ChallengeSane: SyncCheck = ctx => {
   const base = { id: 'C03', name: 'Challenge sane' } as const
   const parsed = parseChallenge(ctx.rawChallenge)
   if (!parsed.ok) return { ...base, result: 'fail', evidence: { reason: parsed.reason } }

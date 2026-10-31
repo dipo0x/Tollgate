@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { finePointer, gsap, introSeconds, reduceMotion, useGSAP } from '../lib/motion'
-import { DecodeText, Orb, RollButton } from './primitives'
+import { gsap, introSeconds, reduceMotion, useGSAP } from '../lib/motion'
+import { DecodeText, RollButton } from './primitives'
 import './hero.css'
 
 const FEED = [
@@ -24,44 +24,19 @@ export default function Hero() {
   useGSAP(() => {
     if (reduceMotion) return
     const d = introSeconds
-    gsap.from('.hero-stair-a', { xPercent: 40, opacity: 0, duration: 1.6, ease: 'expo.out', delay: d + 0.1 })
-    gsap.from('.hero-stair-b', { xPercent: -40, opacity: 0, duration: 1.6, ease: 'expo.out', delay: d + 0.22 })
-    gsap.from('.hero .orb', { scale: 0.4, opacity: 0, duration: 1.2, ease: 'back.out(1.6)', stagger: 0.15, delay: d + 0.5 })
     gsap.from('.hero-rise', { y: 24, opacity: 0, duration: 1, ease: 'power3.out', stagger: 0.08, delay: d + 0.9 })
 
     const st = { trigger: ref.current, start: 'top top', end: 'bottom top', scrub: true }
-    gsap.to('.hero-stair-a', { yPercent: -28, ease: 'none', scrollTrigger: st })
-    gsap.to('.hero-stair-b', { yPercent: 22, ease: 'none', scrollTrigger: st })
-    gsap.to('.hero-orb-a', { yPercent: -130, rotate: 40, ease: 'none', scrollTrigger: st })
-    gsap.to('.hero-orb-b', { yPercent: 120, rotate: -30, ease: 'none', scrollTrigger: st })
     gsap.to('.hero-copy', { y: -80, opacity: 0.15, ease: 'none', scrollTrigger: { ...st, start: 'top top', end: 'bottom 20%' } })
-
-    gsap.to('.hero .orb', { y: '+=12', duration: 3.2, ease: 'sine.inOut', yoyo: true, repeat: -1, stagger: 0.8 })
-
-    if (!finePointer) return
-    const qx = gsap.quickTo('.hero-par', 'x', { duration: 1.2, ease: 'power3.out' })
-    const qy = gsap.quickTo('.hero-par', 'y', { duration: 1.2, ease: 'power3.out' })
-    const move = (e: PointerEvent) => {
-      qx((e.clientX / window.innerWidth - 0.5) * 24)
-      qy((e.clientY / window.innerHeight - 0.5) * 18)
-    }
-    window.addEventListener('pointermove', move)
-    return () => window.removeEventListener('pointermove', move)
   }, { scope: ref })
 
   const row = FEED[i]
   return (
     <section ref={ref} className="hero" id="top">
       <div className="gridbg" aria-hidden="true" />
-      <div className="hero-par" aria-hidden="true">
-        <div className="stair hero-stair hero-stair-a" />
-        <div className="stair hero-stair hero-stair-b" />
-      </div>
-      <Orb className="hero-orb-a" size={128} />
-      <Orb className="hero-orb-b" size={96} />
 
       <div className="hero-copy">
-        <p className="eyebrow hero-rise">[ <b>Payment firewall</b> for AI agents ]</p>
+        <p className="eyebrow hero-rise"><b>Payment firewall</b> for AI agents</p>
         <DecodeText as="h1" className="hero-h" lines={['Verify', 'before you pay.']} delay={introSeconds + 0.35} start="top bottom" speed={0.05} />
         <p className="lede hero-rise">
           Tollgate sits between an AI agent and its wallet. It checks every payment request against a mandate you wrote and against facts it fetches itself, before a single cent moves.
@@ -75,7 +50,12 @@ export default function Hero() {
 
       <div className="hero-foot">
         <div className="hero-scroll mono hero-rise" aria-hidden="true"><i />Scroll</div>
-        <div className="hero-feed hero-rise" aria-live="off">
+        {/* A toll barrier around the live decision: the arm lifts on ALLOW, half-lifts while a human decides, stays down on DENY. */}
+        <div className={`toll hero-rise s-${row.cls}`}>
+          <span className="toll-post l" aria-hidden="true" />
+          <span className="toll-post r" aria-hidden="true" />
+          <span className="toll-arm" aria-hidden="true" />
+        <div className="hero-feed" aria-live="off">
           <div className="hero-feed-h mono"><span className="dots"><i /><i /><i /></span>POST /v1/authorize<span>{row.id}</span></div>
           <div className="hero-feed-b" key={i}>
             <span className="mono hf-host">{row.host}</span>
@@ -83,6 +63,7 @@ export default function Hero() {
             <span className={`chip ${row.cls}`}>{row.out}</span>
             <span className="mono hf-why">{row.why}</span>
           </div>
+        </div>
         </div>
       </div>
     </section>

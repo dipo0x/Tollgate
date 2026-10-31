@@ -19,6 +19,26 @@ jobs:
     name: Lint, typecheck, test, bench
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # A throwaway database for the ledger tests. Nothing here is a secret: it exists
+    # only for this job and is unreachable from outside the runner.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: tollgate
+          POSTGRES_PASSWORD: ci-only
+          POSTGRES_DB: tollgate
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U tollgate -d tollgate"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgres://tollgate:ci-only@localhost:5432/tollgate
+      # Makes the Postgres ledger tests fail, not skip, if the database is ever missing.
+      REQUIRE_DB: '1'
     steps:
       - uses: actions/checkout@v4
 

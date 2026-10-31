@@ -6,6 +6,8 @@ export type RegistryEntry = {
   host: string
   verification: VerificationLevel
   enabled: boolean
+  /** The address the registry says this service is paid at, read from its own 402 probe. */
+  payee?: string
 }
 
 export type RegistryLookup = (host: string) => RegistryEntry | undefined

@@ -21,11 +21,19 @@ export function Arrow({ size = 14 }: { size?: number }) {
   )
 }
 
-export function Orb({ className = '', style, size }: { className?: string; style?: CSSProperties; size: number }) {
+/* A turnstile seen from above: a housing ring and three arms 120 degrees apart. Rotate it a third of a turn per pass. */
+export function Turnstile({ className = '', size }: { className?: string; size: number }) {
   return (
-    <div className={`orb ${className}`} style={{ width: size, height: size, ...style }} aria-hidden="true">
-      <Glyph size={64} post="#fff" bar="#fff" notch="#0b0c0f" />
-    </div>
+    <svg className={`turn ${className}`} width={size} height={size} viewBox="0 0 100 100" aria-hidden="true">
+      <circle className="turn-ring" cx="50" cy="50" r="47" />
+      {[0, 120, 240].map(a => (
+        <g key={a} transform={`rotate(${a} 50 50)`}>
+          <rect className="turn-arm" x="47" y="10" width="6" height="32" />
+          <rect className="turn-tip" x="44.5" y="7" width="11" height="7" />
+        </g>
+      ))}
+      <circle className="turn-hub" cx="50" cy="50" r="11" />
+    </svg>
   )
 }
 
@@ -61,6 +69,7 @@ export function DecodeText({ lines, as: Tag = 'h2', className = '', style, delay
         duration: (chars.length + 3) * speed,
         ease: 'none',
         onStart: () => line.classList.add('on'),
+        onComplete: () => line.classList.add('done'),
         onUpdate: () => {
           const t = Math.floor(st.t)
           if (t === last) return
@@ -76,7 +85,7 @@ export function DecodeText({ lines, as: Tag = 'h2', className = '', style, delay
   return (
     <Tag ref={ref} className={cls} style={style} aria-label={lines.join(' ')}>
       {lines.map((line, li) => (
-        <span key={li} className={`dc-line${reduceMotion ? ' on' : ''}`} aria-hidden="true">
+        <span key={li} className={`dc-line${reduceMotion ? ' on done' : ''}`} aria-hidden="true">
           {Array.from(line).map((c, i) => (
             <span key={i} className="dc-c" data-s={initial}>{c}</span>
           ))}

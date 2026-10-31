@@ -42,10 +42,11 @@ img,svg,canvas{display:block}
 .rail{max-width:calc(var(--frame) + 2 * var(--gut));margin:0 auto;border-inline:1px solid var(--ln);position:relative}
 section[id]{scroll-margin-top:0}
 
-/* eyebrow: [ LABEL ] and -- 001. */
-.eyebrow{font:500 12px/1.2 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--mu)}
+/* eyebrow: a small gate mark (two posts, one bar) before the label. idx: a step number in an outlined box. */
+.eyebrow{display:flex;align-items:center;gap:10px;font:500 12px/1.2 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--mu)}
+.eyebrow::before{content:"";flex:none;width:12px;height:10px;box-sizing:border-box;border-inline:2px solid var(--tx);background:linear-gradient(var(--ac2),var(--ac2)) center/100% 2px no-repeat}
 .eyebrow b{font-weight:500;color:var(--tx)}
-.idx{font:500 13px/1 var(--mono);letter-spacing:.04em;color:var(--mu)}
+.idx{display:inline-grid;place-items:center;width:fit-content;min-width:34px;height:26px;padding:0 7px;border:1px solid var(--ln3);font:500 12px/1 var(--mono);letter-spacing:.06em;color:var(--mu)}
 .fine{font:400 11.5px/1.5 var(--mono);letter-spacing:.04em;color:var(--dm)}
 .lede{font-size:clamp(16px,1.25vw,18px);color:var(--mu);max-width:34em;line-height:1.6}
 
@@ -53,19 +54,19 @@ section[id]{scroll-margin-top:0}
 .dc{display:flex;flex-direction:column;align-items:flex-start;gap:.06em;margin:0;font-weight:500;letter-spacing:-.045em;line-height:.98}
 .dc.center{align-items:center;text-align:center}
 .dc.end{align-items:flex-end}
-.dc-line{display:inline-block;background:var(--paper);color:var(--ink);padding:.04em .16em .1em;white-space:pre;opacity:0}
+.dc-line{display:inline-block;color:var(--tx);white-space:pre;opacity:0}
+.dc-line:not(:only-child):last-child{color:var(--ac2)}
+/* A caret follows the typing and disappears once the line is complete. Hidden glyphs are display:none, so ::after sits right after the last visible one. */
+.dc-line.on:not(.done)::after{content:"";display:inline-block;width:.07em;height:.78em;margin-left:.05em;vertical-align:-.02em;background:var(--ac2)}
 .dc-line.on{opacity:1}
 /* Reserve the line box before any glyph shows, so typing in never changes page height and pinned sections stay where they were measured. */
 .dc-line::before{content:"\200b"}
 .dc.pixel .dc-line::before{font-family:var(--px)}
 .dc-c{display:inline}
 .dc-c[data-s="0"]{display:none}
-.dc-c[data-s="1"]{font-family:var(--px);color:#c4c8cf;letter-spacing:-.02em}
-.dc-c[data-s="2"]{font-family:var(--px);color:#757b85;letter-spacing:-.02em}
+.dc-c[data-s="1"]{font-family:var(--px);color:#3f444c;letter-spacing:-.02em}
+.dc-c[data-s="2"]{font-family:var(--px);color:#868c96;letter-spacing:-.02em}
 .dc.pixel .dc-c[data-s="3"]{font-family:var(--px);letter-spacing:-.02em}
-.dc.ghost .dc-line{background:transparent;color:var(--tx);padding-inline:0}
-.dc.ghost .dc-c[data-s="1"]{color:#3f444c}
-.dc.ghost .dc-c[data-s="2"]{color:#868c96}
 
 /* roll button: [→][LABEL] */
 .rb{display:inline-flex;align-items:stretch;gap:4px;height:44px;font:600 12.5px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--tx);isolation:isolate}
@@ -86,18 +87,12 @@ section[id]{scroll-margin-top:0}
 .rb.text .rb-ic{display:none}
 .rb.text .rb-lb{padding:0;border:0;background:none!important;color:inherit!important}
 
-/* glass orb */
-.orb{position:absolute;border-radius:50%;display:grid;place-items:center;color:#fff;pointer-events:none;
-  background:
-    radial-gradient(circle at 32% 26%,rgba(255,255,255,.55) 0,rgba(255,255,255,.08) 22%,transparent 40%),
-    radial-gradient(circle at 70% 82%,rgba(143,169,255,.55) 0,transparent 42%),
-    radial-gradient(circle at 50% 50%,#1a1d24 0,#07080a 72%);
-  box-shadow:inset 0 0 0 1px rgba(255,255,255,.22),inset 0 -14px 30px rgba(61,107,255,.25),0 30px 60px -20px rgba(0,0,0,.8)}
-.orb::after{content:"";position:absolute;inset:6%;border-radius:50%;background:radial-gradient(circle at 30% 20%,rgba(255,255,255,.35),transparent 30%);mix-blend-mode:screen}
-.orb svg{width:42%;height:auto;filter:drop-shadow(0 2px 8px rgba(0,0,0,.6))}
-
-/* stepped block */
-.stair{position:absolute;pointer-events:none;background:var(--grad)}
+/* turnstile (see Turnstile in primitives) */
+.turn{position:absolute;pointer-events:none;overflow:visible}
+.turn-ring{fill:rgba(13,15,18,.72);stroke:var(--ln3);stroke-width:1;stroke-dasharray:3 4}
+.turn-arm{fill:var(--paper)}
+.turn-tip{fill:var(--ac)}
+.turn-hub{fill:var(--s3);stroke:var(--paper);stroke-width:2}
 
 /* chips and tags */
 .chip{display:inline-flex;align-items:center;gap:6px;font:500 10.5px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;padding:5px 8px;border:1px solid currentColor;white-space:nowrap}

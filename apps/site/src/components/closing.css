@@ -5,23 +5,18 @@
 .cl .lede{text-align:center}
 .cl-cta{display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:22px}
 
-.tk{position:relative;display:grid;grid-template-columns:1.1fr 1.1fr 1.1fr 1.6fr 64px;height:116px;margin-top:clamp(90px,11vw,150px);border:1px solid var(--ln2);background:var(--bg)}
-.tk-cell{position:relative;display:flex;align-items:center;padding:0 22px;overflow:hidden}
-.tk-a{flex-direction:column;align-items:flex-start;justify-content:center;gap:10px;background:var(--ac);color:#fff}
-.tk-a p{font-size:20px;letter-spacing:-.02em}
-.tk-a .rb{height:32px}
-.tk-a .rb-ic{width:32px}
-.tk-a .rb-lb{padding:0 10px;font-size:11px;border-color:rgba(255,255,255,.8)}
-.tk-b{gap:12px;justify-content:center;font-size:clamp(20px,2vw,28px);font-weight:600;letter-spacing:-.01em;background-image:linear-gradient(var(--ln) 1px,transparent 1px),linear-gradient(90deg,var(--ln) 1px,transparent 1px);background-size:18px 18px}
-.tk-c{background:linear-gradient(118deg,#5b82ff,#8fa9ff);color:var(--ink);font-size:clamp(16px,1.4vw,20px);line-height:1.2}
-.tk-d{justify-content:space-around;gap:16px;background:linear-gradient(118deg,#2a55ff,#8fa9ff 60%,#c9d5ff);color:var(--ink);font-size:clamp(15px,1.3vw,19px);line-height:1.2}
-.tk-e{padding:12px 10px;background:var(--paper);color:var(--ink);border-left:1px dashed var(--ink)}
-.tk-code{width:100%;height:100%}
-.cl-orb{right:22%;top:-58px;z-index:3}
+.lane{position:relative;margin-top:clamp(90px,11vw,150px);border:1px solid var(--ln2);background:var(--s1)}
+.lane-h{display:flex;justify-content:space-between;padding:12px 18px;border-bottom:1px solid var(--ln);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--dm)}
+.lane-road{position:relative;overflow:hidden;padding:22px 0;-webkit-mask-image:linear-gradient(90deg,transparent,#000 12%,#000 88%,transparent);mask-image:linear-gradient(90deg,transparent,#000 12%,#000 88%,transparent)}
+/* The list is rendered twice and moved by exactly half its width, so the loop has no seam. padding-right equals the gap for the same reason. */
+.lane-flow{display:flex;gap:14px;width:max-content;padding-right:14px;animation:lane 36s linear infinite}
+@keyframes lane{to{transform:translateX(-50%)}}
+.lane-car{display:flex;align-items:center;gap:12px;padding:10px 14px;border:1px solid var(--ln2);background:var(--s2);white-space:nowrap}
+.lane-host{font-size:12.5px;color:var(--tx)}
+.lane-amt{font-size:12.5px;color:var(--mu)}
+.lane-gate{position:absolute;z-index:1;left:50%;top:0;bottom:0;display:grid;place-items:center;width:56px;margin-left:-28px;background:linear-gradient(90deg,transparent,var(--s1) 30%,var(--s1) 70%,transparent);border-inline:1px dashed var(--ln3)}
+.cl-turn{right:18%;top:-58px;z-index:3}
 @media (max-width:980px){
-  .tk{grid-template-columns:1fr 1fr;height:auto}
-  .tk-cell{min-height:96px;padding:18px}
-  .tk-d{grid-column:1 / -1;justify-content:space-between}
-  .tk-e{grid-column:1 / -1;height:52px;border-left:0;border-top:1px dashed var(--ink)}
-  .cl-orb{right:8%;top:-50px;width:72px!important;height:72px!important}
+  .cl-turn{right:8%;top:-50px;width:72px;height:72px}
+  .lane-h span:last-child{display:none}
 }

@@ -33,17 +33,22 @@ export type ReserveResult =
 
 export type TransitionResult = { ok: true } | { ok: false; reason: 'unknown_decision' | 'invalid_state' | 'invalid_amount' }
 
+/**
+ * Async because the real implementation talks to Postgres. The in-memory one
+ * implements the same contract, and both run the same test suite
+ * (test/ledger.contract.ts), so "passes against memory" means "passes against Postgres".
+ */
 export interface Ledger {
-  openBudget(mandateId: string, total: Micro): void
+  openBudget(mandateId: string, total: Micro): Promise<void>
   /** NEEDS_APPROVAL: waiting for a human. No budget effect. */
-  propose(mandateId: string, decisionId: string, amount: Micro): TransitionResult
-  /** ALLOW: hold the amount. Idempotent per decision id. */
-  reserve(mandateId: string, decisionId: string, amount: Micro): ReserveResult
+  propose(mandateId: string, decisionId: string, amount: Micro): Promise<TransitionResult>
+  /** ALLOW: hold the amount. Idempotent per decision id. Never lets committed + settled exceed the budget, even under concurrency. */
+  reserve(mandateId: string, decisionId: string, amount: Micro): Promise<ReserveResult>
   /** Payment confirmed: the held amount becomes spent. */
-  settle(decisionId: string): TransitionResult
+  settle(decisionId: string): Promise<TransitionResult>
   /** Failed, refunded, expired, revoked or rejected: return the hold. */
-  release(decisionId: string): TransitionResult
-  stateOf(decisionId: string): DecisionState | undefined
-  balance(mandateId: string): Balance | undefined
-  entries(mandateId: string): readonly LedgerEntry[]
+  release(decisionId: string): Promise<TransitionResult>
+  stateOf(decisionId: string): Promise<DecisionState | undefined>
+  balance(mandateId: string): Promise<Balance | undefined>
+  entries(mandateId: string): Promise<readonly LedgerEntry[]>
 }
