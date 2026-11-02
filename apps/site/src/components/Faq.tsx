@@ -1,5 +1,4 @@
 import { useState, type ReactNode } from 'react'
-import { RollButton } from './primitives'
 import './faq.css'
 
 const QA: [string, ReactNode][] = [
@@ -20,7 +19,6 @@ export default function Faq() {
         <div className="fq-l">
           <p className="eyebrow">Frequently asked questions</p>
           <p className="fq-note">Tollgate reduces and records payment risk for AI agents; it does not remove it. Limits are disclosed, not hidden.</p>
-          <RollButton href="https://dipo0x.xyz/" label="Talk to the founder" external />
         </div>
         <div className="fq-list">
           {QA.map(([q, a], i) => (

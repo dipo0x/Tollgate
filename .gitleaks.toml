@@ -1,0 +1,19 @@
+# Extends the default gitleaks rules. Only the exact false positives below are allowed, so a real key still fails the scan.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Variable names and clearly fake test values that the generic-api-key rule mistakes for secrets"
+# This file quotes the patterns it allows, so it must not be scanned itself.
+paths = [
+  '''(^|/)\.gitleaks\.toml$''',
+]
+regexTarget = "line"
+regexes = [
+  # Code that reads a key from configuration: the line holds the NAME of a setting, never a value.
+  '''apiKey:\s*cfg\.NEAR_1CLICK_API_KEY''',
+  # The end-to-end test's stand-in key: a fixed fake string accepted only by the simulated 1Click.
+  '''NEAR_1CLICK_API_KEY:\s*.e2e-simulated-1click-key''',
+  # A throwaway signing secret used only by the reference-services unit tests.
+  '''const SECRET = .test-secret-0123456789-abcdef''',
+]

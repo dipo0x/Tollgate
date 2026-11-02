@@ -78,7 +78,6 @@ export default function Nav({ home = true }: { home?: boolean }) {
         </nav>
         <div className="menu-foot">
           <RollButton href={to('#setup')} label="Get started" />
-          <p className="fine">Built by Oladipo Adesiyan</p>
         </div>
       </div>
     </header>
