@@ -1,21 +1,24 @@
 import { describe, expect, it } from 'vitest'
 import { CHECKS, evaluate, FULL_PIPELINE_LENGTH, type Check, type CheckContext, type CheckId } from '../src/index.ts'
-import { challenge, ctx, entry, mandate, record, world } from './fixtures.ts'
+import { challenge, ctx, entry, mandate, pinnedWorld, record, world } from './fixtures.ts'
 
 const partial = { allowPartial: true }
 const run = (c: CheckContext) => evaluate(c, CHECKS, partial)
 
 describe('pipeline', () => {
-  it('runs C01..C08 in order and records every result', async () => {
-    const e = await run(ctx())
+  it('runs all twelve checks in order and records every result', async () => {
+    const w = world(); w.pins.pinPayee('api.example.com', '0xMERCHANT') // a payee a human already approved
+    const e = await evaluate(ctx({ adapters: w.adapters }))
     expect(e.decision).toBe('ALLOW')
-    expect(e.checks.map(c => c.id)).toEqual(['C01', 'C02', 'C03', 'C04', 'C05', 'C06', 'C07', 'C08'])
+    expect(e.checks.map(c => c.id)).toEqual(['C01', 'C02', 'C03', 'C04', 'C05', 'C06', 'C07', 'C08', 'C09', 'C10', 'C11', 'C12'])
     expect(e.checks.every(c => c.result === 'pass')).toBe(true)
+    expect(typeof e.risk).toBe('number')
   })
 
-  it('never ALLOWs while fewer than 12 checks exist', async () => {
-    expect(CHECKS.length).toBeLessThan(FULL_PIPELINE_LENGTH)
-    expect((await evaluate(ctx())).decision).toBe('NEEDS_APPROVAL')
+  it('there are exactly twelve checks, and a shorter list can never ALLOW on its own', async () => {
+    expect(CHECKS).toHaveLength(FULL_PIPELINE_LENGTH)
+    const w = world(); w.pins.pinPayee('api.example.com', '0xMERCHANT')
+    expect((await evaluate(ctx({ adapters: w.adapters }), CHECKS.slice(0, 8))).decision).toBe('NEEDS_APPROVAL')
   })
 
   it('stops at the first failure and names it', async () => {
@@ -129,7 +132,7 @@ describe('attack catalogue (offline, through the whole pipeline)', () => {
 
   // The benign controls must not be blocked. B02 (budget edge) and B04 (retry after 503) need C09/C10.
   it('B01 a normal in-scope payment is allowed', async () => {
-    expect((await run(ctx())).decision).toBe('ALLOW')
+    expect((await run(ctx({ adapters: pinnedWorld().adapters }))).decision).toBe('ALLOW')
   })
 
   it('B03 the first payment to a new merchant inside scope goes to a human', async () => {
@@ -139,7 +142,7 @@ describe('attack catalogue (offline, through the whole pipeline)', () => {
   })
 
   it('B05 price drift inside tolerance is allowed', async () => {
-    const w = world(record({ amountIn: '0.257000' })); w.oneClick.quote = { amountIn: '0.250000' }
+    const w = pinnedWorld(record({ amountIn: '0.257000' })); w.oneClick.quote = { amountIn: '0.250000' }
     expect((await run(ctx({ adapters: w.adapters, rawChallenge: challenge({ amount: '0.257000' }) }))).decision).toBe('ALLOW')
   })
 })

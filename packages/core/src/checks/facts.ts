@@ -1,5 +1,5 @@
 import { OneClickRecordSchema, type OneClickRecord } from '../adapters.ts'
-import type { OneClickStatusResult } from '../adapters.ts'
+import type { OneClickStatusResult, Prior } from '../adapters.ts'
 import type { CheckContext } from './types.ts'
 
 export type Loaded = { ok: true; record: OneClickRecord } | { ok: false; kind: 'not_found' | 'error' | 'malformed' | 'unconfigured'; reason: string }
@@ -31,4 +31,27 @@ export async function loadRecord(ctx: CheckContext): Promise<Loaded> {
   const parsed = OneClickRecordSchema.safeParse(res.record)
   if (!parsed.success) return { ok: false, kind: 'malformed', reason: `1Click record malformed: ${parsed.error.issues[0]?.path.join('.') ?? 'unknown field'}` }
   return { ok: true, record: parsed.data }
+}
+
+/**
+ * Has this challenge been decided before? Memoised per evaluation. A throw here is a failed check
+ * upstream (fail closed). With no decision index configured, nothing is known and C10 will refuse.
+ */
+export async function loadPrior(ctx: CheckContext): Promise<{ byChallenge?: Prior; byDeposit?: Prior } | undefined> {
+  const c = ctx.challenge
+  const idx = ctx.adapters?.decisions
+  const mandateId = ctx.mandate?.spec.id
+  if (!c || !idx || !mandateId) return undefined
+  return onceOf(ctx)('prior', async () => {
+    const byChallenge = await idx.byChallenge(mandateId, c.id)
+    const byDeposit = await idx.byDeposit(c.recipient)
+    return { ...(byChallenge ? { byChallenge } : {}), ...(byDeposit ? { byDeposit } : {}) }
+  })
+}
+
+/** An earlier ALLOW for this very challenge and deposit address that has not finished: a retry, not a new payment. */
+export async function resumeOf(ctx: CheckContext): Promise<Prior | undefined> {
+  const p = (await loadPrior(ctx))?.byChallenge
+  const c = ctx.challenge
+  return p && c && p.state === 'allowed' && sameAddress(p.depositAddress, c.recipient) ? p : undefined
 }

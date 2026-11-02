@@ -3,5 +3,22 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "The HTTP API and verifier. The only Tollgate component the agent talks to."
+  "description": "The HTTP API and verifier. The only Tollgate component the agent talks to.",
+  "devDependencies": {
+    "tsx": "^4.23.15"
+  },
+  "dependencies": {
+    "@hono/node-server": "^2.1.5",
+    "@tollgate/core": "workspace:*",
+    "@tollgate/registry": "workspace:*",
+    "hono": "^4.13.16",
+    "zod": "^4.6.7"
+  },
+  "main": "src/app.ts",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "start": "tsx src/server.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  }
 }

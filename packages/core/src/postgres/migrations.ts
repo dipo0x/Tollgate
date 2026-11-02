@@ -37,4 +37,12 @@ export const MIGRATIONS: readonly { id: string; sql: string }[] = [
         FOR EACH ROW EXECUTE FUNCTION ledger_entries_append_only();
     `,
   },
+  {
+    id: '0002_partial_settle',
+    sql: `
+      -- A hold can be settled in part; the remainder is released in the same step and remembered here.
+      ALTER TABLE ledger_decisions
+        ADD COLUMN released_part numeric(38,0) NOT NULL DEFAULT 0 CHECK (released_part >= 0);
+    `,
+  },
 ]

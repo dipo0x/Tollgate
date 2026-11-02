@@ -242,3 +242,36 @@ describe('C08 refund target', () => {
     expect(r).toMatchObject({ result: 'pass', evidence: { skipped: expect.any(String) } })
   })
 })
+
+describe('negotiated deals (C05, C07)', () => {
+  const deal = { price: '0.250000', asset: 'USDC', payee: '0xMERCHANT', round: 2 }
+  const noRegistryPayee = () => { const { payee: _p, ...rest } = entry(); return rest }
+
+  it('C05 fails when 1Click pays someone other than the negotiated payee, even when nothing else knows the payee', async () => {
+    // No pin, no registry payee: without the deal, this would only be a first-use warning.
+    const w = world(record({ destination: '0xATTACKER' }))
+    const r = await c05PayeeBinding(withC({ adapters: w.adapters, registry: noRegistryPayee, deal }))
+    expect(r).toMatchObject({ result: 'fail', evidence: { reason: 'payee differs from the negotiated payee', expected: '0xMERCHANT', got: '0xATTACKER' } })
+  })
+  it('C05 accepts the negotiated payee, ignoring address case', async () => {
+    const r = await c05PayeeBinding(withC({ registry: noRegistryPayee, deal: { ...deal, payee: '0xmerchant' } }))
+    expect(r.result).toBe('warn') // payee is right, but still a first payment to this host
+  })
+  it('C07 fails when the final challenge is not the agreed price (agreed $6, billed $9)', async () => {
+    const w = world(record({ amountIn: '9.000000' })); w.oneClick.quote = { amountIn: '9.000000' }
+    const r = await c07PriceSanity(withC({ adapters: w.adapters, deal: { ...deal, price: '6.000000' } }, { amount: '9.000000' }))
+    expect(r).toMatchObject({ result: 'fail', evidence: { reason: 'challenge differs from the accepted offer' } })
+  })
+  it('C07 fails even a one-micro-unit difference from the agreed price, in either direction', async () => {
+    for (const amount of ['0.250001', '0.249999']) {
+      const w = world(record({ amountIn: amount })); w.oneClick.quote = { amountIn: amount }
+      expect((await c07PriceSanity(withC({ adapters: w.adapters, deal }, { amount }))).result).toBe('fail')
+    }
+  })
+  it('C07 passes when the challenge is exactly the agreed price', async () => {
+    expect((await c07PriceSanity(withC({ deal }))).result).toBe('pass')
+  })
+  it('C07 fails when the asset differs from the agreed asset', async () => {
+    expect((await c07PriceSanity(withC({ deal: { ...deal, asset: 'USDT' } }))).result).toBe('fail')
+  })
+})

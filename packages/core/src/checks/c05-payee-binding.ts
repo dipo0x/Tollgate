@@ -20,6 +20,10 @@ export const c05PayeeBinding: Check = async ctx => {
   if (!loaded.ok) return { ...base, result: 'warn', evidence: { reason: 'payee not checkable, deferred to C06', cause: loaded.kind } }
 
   const got = loaded.record.destination
+  // A negotiated deal names its payee. The seller cannot switch it between agreeing and billing.
+  if (ctx.deal && !sameAddress(ctx.deal.payee, got)) {
+    return { ...base, result: 'fail', evidence: { reason: 'payee differs from the negotiated payee', expected: ctx.deal.payee, got } }
+  }
   const pinned = await ctx.adapters.pins.payee(ctx.host)
   const registered = ctx.registry(ctx.host)?.payee
   const source = spec.payee.mode === 'registry' ? 'registry' : pinned !== undefined ? 'pinned' : 'registry'

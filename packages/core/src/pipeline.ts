@@ -8,12 +8,17 @@ import { c05PayeeBinding } from './checks/c05-payee-binding.ts'
 import { c06OneClickCrossCheck } from './checks/c06-oneclick-cross-check.ts'
 import { c07PriceSanity } from './checks/c07-price-sanity.ts'
 import { c08RefundTarget } from './checks/c08-refund-target.ts'
+import { c09BudgetVelocity } from './checks/c09-budget-velocity.ts'
+import { c10ReplayDupes } from './checks/c10-replay-dupes.ts'
+import { c11RiskScore } from './checks/c11-risk-score.ts'
+import { c12ApprovalGate } from './checks/c12-approval-gate.ts'
 import type { Check, CheckContext } from './checks/types.ts'
 
-/** Fixed order, cheap local checks first. C05-C12 are appended as they land. */
+/** Fixed order, cheap local checks first. All twelve are in. */
 export const CHECKS: readonly Check[] = [
   c01MandateValid, c02HostInScope, c03ChallengeSane, c04NetworkAsset,
   c05PayeeBinding, c06OneClickCrossCheck, c07PriceSanity, c08RefundTarget,
+  c09BudgetVelocity, c10ReplayDupes, c11RiskScore, c12ApprovalGate,
 ]
 
 /** Live p95 target is 2.5 s (PRD section 7); a check that takes longer than this is a failed check. */
@@ -60,7 +65,8 @@ export async function evaluate(
       r = { id: checkIdAt(i), name: 'Check error', result: 'fail', evidence: { reason: 'check threw', error: err instanceof Error ? err.message : 'unknown error' } }
     }
     results.push(r)
-    if (r.result === 'fail') return { decision: 'DENY', checks: results, failedCheck: r.id }
+    if (r.id === 'C11' && typeof r.evidence['risk'] === 'number') ctx.risk = r.evidence['risk']
+    if (r.result === 'fail') return { decision: 'DENY', checks: results, failedCheck: r.id, ...(ctx.risk !== undefined ? { risk: ctx.risk } : {}) }
     // C03 proves the challenge parses; later checks then read a typed value.
     if (r.id === 'C03') {
       const parsed = parseChallenge(ctx.rawChallenge)
@@ -71,5 +77,5 @@ export async function evaluate(
   // or velocity check yet), so it is held for a human rather than allowed.
   const complete = checks.length >= FULL_PIPELINE_LENGTH || opts.allowPartial === true
   const warned = results.some(r => r.result === 'warn')
-  return { decision: warned || !complete ? 'NEEDS_APPROVAL' : 'ALLOW', checks: results }
+  return { decision: warned || !complete ? 'NEEDS_APPROVAL' : 'ALLOW', checks: results, ...(ctx.risk !== undefined ? { risk: ctx.risk } : {}) }
 }

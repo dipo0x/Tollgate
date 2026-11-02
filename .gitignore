@@ -34,3 +34,6 @@ yarn.lock
 
 # submission payload holds personal data — never commit
 payload.json
+
+# local runtime data (audit logs etc.)
+.data/

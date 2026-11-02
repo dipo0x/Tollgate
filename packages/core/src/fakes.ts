@@ -1,4 +1,4 @@
-import type { OneClickAdapter, OneClickRecord, OneClickStatusResult, PinStore, QuoteRequest } from './adapters.ts'
+import type { DecisionIndex, OneClickAdapter, OneClickRecord, OneClickStatusResult, PinStore, Prior, QuoteRequest } from './adapters.ts'
 
 /**
  * A scriptable stand-in for 1Click, for tests and the offline benchmark. Because it is
@@ -44,4 +44,11 @@ export class InMemoryPins implements PinStore {
   pinRefund(host: string, address: string): this { this.refunds.set(host, [...(this.refunds.get(host) ?? []), address]); return this }
   async payee(host: string): Promise<string | undefined> { return this.payees.get(host) }
   async refundTargets(host: string): Promise<readonly string[]> { return this.refunds.get(host) ?? [] }
+}
+
+export class InMemoryDecisionIndex implements DecisionIndex {
+  private rows: Prior[] = []
+  record(p: Prior): this { this.rows = [...this.rows.filter(r => !(r.mandateId === p.mandateId && r.challengeId === p.challengeId)), p]; return this }
+  async byChallenge(mandateId: string, challengeId: string) { return this.rows.find(r => r.mandateId === mandateId && r.challengeId === challengeId) }
+  async byDeposit(depositAddress: string) { return this.rows.find(r => r.depositAddress.toLowerCase() === depositAddress.toLowerCase()) }
 }

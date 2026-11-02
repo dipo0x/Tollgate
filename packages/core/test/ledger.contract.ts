@@ -54,6 +54,35 @@ export function ledgerContract(label: string, make: () => Promise<Made>, opts: {
       })
     })
 
+    it('settles part of a hold and releases the rest in one step', () => withLedger('5.00', async l => {
+      await l.reserve('m1', 'd1', m('2'))
+      expect(await l.settle('d1', m('0.50'))).toEqual({ ok: true })
+      expect(await l.balance('m1')).toMatchObject({ settled: m('0.50'), committed: 0n, released: m('1.50'), remaining: m('4.50') })
+      expect(await l.stateOf('d1')).toBe('settled')
+      expect((await l.entries('m1')).map(e => [e.kind, e.amount])).toEqual([['reserve', m('2')], ['settle', m('0.50')], ['release', m('1.50')]])
+    }))
+
+    it('a partial settle of the whole hold writes no release entry', () => withLedger('5.00', async l => {
+      await l.reserve('m1', 'd1', m('2'))
+      await l.settle('d1', m('2'))
+      expect((await l.entries('m1')).map(e => e.kind)).toEqual(['reserve', 'settle'])
+    }))
+
+    it('refuses to settle more than was held, or nothing, and leaves the hold untouched', () => withLedger('5.00', async l => {
+      await l.reserve('m1', 'd1', m('2'))
+      expect(await l.settle('d1', m('2') + 1n)).toEqual({ ok: false, reason: 'invalid_amount' })
+      expect(await l.settle('d1', 0n)).toEqual({ ok: false, reason: 'invalid_amount' })
+      expect(await l.settle('d1', -1n)).toEqual({ ok: false, reason: 'invalid_amount' })
+      expect(await l.stateOf('d1')).toBe('committed')
+      expect((await l.balance('m1'))?.committed).toBe(m('2'))
+    }))
+
+    it('a partly settled hold cannot be settled or released again', () => withLedger('5.00', async l => {
+      await l.reserve('m1', 'd1', m('2')); await l.settle('d1', m('1'))
+      expect(await l.settle('d1', m('1'))).toEqual({ ok: false, reason: 'invalid_state' })
+      expect(await l.release('d1')).toEqual({ ok: false, reason: 'invalid_state' })
+    }))
+
     it('reserving the same decision twice holds the money once (idempotent)', () => withLedger('5.00', async l => {
       await l.reserve('m1', 'd1', m('2'))
       expect(await l.reserve('m1', 'd1', m('2'))).toMatchObject({ ok: true, replayed: true })

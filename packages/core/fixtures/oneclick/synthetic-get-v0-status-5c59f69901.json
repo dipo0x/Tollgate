@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "key": "5c59f69901e5f28484b4bd66b4ff95b80416dc498edb9b46e8bb5db948e6f3fb",
+  "synthetic": true,
+  "note": "SYNTHETIC: written from the OpenAPI spec, not recorded from the live service.",
+  "recordedAt": "2026-10-31T00:00:00.000Z",
+  "request": {
+    "method": "GET",
+    "path": "/v0/status",
+    "query": {
+      "depositAddress": "0xdep0000000000000000000000000000000000003"
+    }
+  },
+  "response": {
+    "status": 200,
+    "bodyText": "{\"correlationId\":\"synthetic-alreadyPaid\",\"quoteResponse\":{\"correlationId\":\"synthetic-alreadyPaid\",\"timestamp\":\"2026-10-31T00:00:00.000Z\",\"signature\":\"synthetic\",\"quoteRequest\":{\"dry\":false,\"swapType\":\"EXACT_OUTPUT\",\"slippageTolerance\":100,\"originAsset\":\"nep141:arb-0xaf88d065e77c8cc2239327c5edb3a432268e5831.omft.near\",\"depositType\":\"ORIGIN_CHAIN\",\"destinationAsset\":\"nep141:17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1\",\"amount\":\"250000\",\"refundTo\":\"0xaf88d065e77c8cc2239327c5edb3a432268e5831\",\"refundType\":\"ORIGIN_CHAIN\",\"recipient\":\"merchant.near\",\"recipientType\":\"DESTINATION_CHAIN\",\"deadline\":\"2026-11-06T10:05:00.000Z\"},\"quote\":{\"depositAddress\":\"0xdep0000000000000000000000000000000000003\",\"deadline\":\"2026-11-06T10:05:00.000Z\",\"amountIn\":\"251000\",\"amountInFormatted\":\"0.251000\",\"amountInUsd\":\"0.2510\",\"minAmountIn\":\"251000\",\"amountOut\":\"250000\",\"amountOutFormatted\":\"0.250000\",\"amountOutUsd\":\"0.2500\",\"minAmountOut\":\"247500\",\"timeEstimate\":60}},\"status\":\"SUCCESS\",\"updatedAt\":\"2026-10-31T00:00:00.000Z\",\"swapDetails\":{\"intentHashes\":[],\"nearTxHashes\":[],\"originChainTxHashes\":[],\"destinationChainTxHashes\":[]}}"
+  },
+  "scrubbed": false
+}

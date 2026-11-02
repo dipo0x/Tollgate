@@ -3,5 +3,14 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Curated table of payable services with verification level, quoted price, payment rails and pinned payee."
+  "description": "Curated table of payable services with verification level, quoted price, payment rails and pinned payee.",
+  "dependencies": {
+    "@tollgate/core": "workspace:*"
+  },
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  }
 }

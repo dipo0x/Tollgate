@@ -16,4 +16,6 @@ export type Evaluation = {
   checks: CheckResult[]
   /** First failing check, if any. */
   failedCheck?: CheckId
+  /** The soft-signal score from C11, 0-100, when the pipeline got that far. */
+  risk?: number
 }

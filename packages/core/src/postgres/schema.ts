@@ -13,6 +13,7 @@ export const decisions = pgTable('ledger_decisions', {
   mandateId: text('mandate_id').notNull(),
   amount: micro('amount').notNull(),
   state: text('state', { enum: ['proposed', 'committed', 'settled', 'released'] }).notNull(),
+  releasedPart: micro('released_part').notNull().default('0'),
 }, t => [index('ledger_decisions_mandate_state').on(t.mandateId, t.state)])
 
 export const entries = pgTable('ledger_entries', {

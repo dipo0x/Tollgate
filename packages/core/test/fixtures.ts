@@ -1,4 +1,4 @@
-import { FakeOneClick, InMemoryPins, type Challenge, type CheckContext, type MandateRecord, type OneClickRecord, type RegistryEntry } from '../src/index.ts'
+import { FakeOneClick, InMemoryDecisionIndex, InMemoryLedger, InMemoryPins, toMicro, type Challenge, type CheckContext, type MandateRecord, type OneClickRecord, type RegistryEntry } from '../src/index.ts'
 
 export const NOW = new Date('2026-11-06T10:00:00Z')
 
@@ -40,12 +40,23 @@ export const world = (rec: OneClickRecord | null = record()) => {
   const oneClick = new FakeOneClick()
   if (rec) oneClick.add(rec)
   const pins = new InMemoryPins()
-  return { oneClick, pins, adapters: { oneClick, pins } }
+  const decisions = new InMemoryDecisionIndex()
+  return { oneClick, pins, decisions, adapters: { oneClick, pins, decisions } }
+}
+
+/** A ledger with the fixture mandate's $5.00 budget already open. (openBudget does its work before its first await.) */
+export const ledgerFor = (id = 'mnd_1', total = '5.00', clock?: () => Date) => {
+  const l = new InMemoryLedger(clock ?? (() => NOW)); void l.openBudget(id, toMicro(total)); return l
 }
 
 export const ctx = (over: Partial<CheckContext> = {}): CheckContext => ({
   mandate: mandate(), agentId: 'research-agent-1', host: 'api.example.com',
-  rawChallenge: challenge(), now: NOW, payer: '0xPAYER', adapters: world().adapters,
+  rawChallenge: challenge(), now: NOW, payer: '0xPAYER', adapters: world().adapters, ledger: ledgerFor(),
   registry: h => (h === 'api.example.com' || h === 'a.data.example.org' ? entry({ host: h }) : undefined),
   ...over,
 })
+
+/** A world where a human has already approved this host's payee, so a normal payment needs no approval. */
+export const pinnedWorld = (rec: OneClickRecord | null = record()) => {
+  const w = world(rec); w.pins.pinPayee('api.example.com', '0xMERCHANT'); return w
+}

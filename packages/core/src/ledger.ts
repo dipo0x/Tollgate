@@ -44,8 +44,12 @@ export interface Ledger {
   propose(mandateId: string, decisionId: string, amount: Micro): Promise<TransitionResult>
   /** ALLOW: hold the amount. Idempotent per decision id. Never lets committed + settled exceed the budget, even under concurrency. */
   reserve(mandateId: string, decisionId: string, amount: Micro): Promise<ReserveResult>
-  /** Payment confirmed: the held amount becomes spent. */
-  settle(decisionId: string): Promise<TransitionResult>
+  /**
+   * Payment confirmed: the held amount becomes spent. Pass `amount` to settle only part of the
+   * hold (metered compute, a revoked worker that spent less than it was given): that part is
+   * spent and the remainder is released in the same step. 0 < amount <= held.
+   */
+  settle(decisionId: string, amount?: Micro): Promise<TransitionResult>
   /** Failed, refunded, expired, revoked or rejected: return the hold. */
   release(decisionId: string): Promise<TransitionResult>
   stateOf(decisionId: string): Promise<DecisionState | undefined>

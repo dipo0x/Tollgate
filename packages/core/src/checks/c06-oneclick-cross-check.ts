@@ -1,5 +1,5 @@
 import { toMicro } from '../money.ts'
-import { loadRecord, sameAddress } from './facts.ts'
+import { loadRecord, resumeOf, sameAddress } from './facts.ts'
 import type { Check } from './types.ts'
 
 /**
@@ -17,7 +17,11 @@ export const c06OneClickCrossCheck: Check = async ctx => {
   const r = loaded.record
 
   // A deposit address that has already seen money is not a fresh one: paying it again is a replay.
-  if (r.status !== 'PENDING_DEPOSIT') {
+  // The one exception is resuming OUR OWN earlier ALLOW (the server answered 503 after we paid):
+  // then the deposit is allowed to be in flight, but never finished, refunded or failed.
+  const resuming = await resumeOf(ctx)
+  const okStatuses = resuming ? ['PENDING_DEPOSIT', 'KNOWN_DEPOSIT_TX', 'PROCESSING'] : ['PENDING_DEPOSIT']
+  if (!okStatuses.includes(r.status)) {
     return { ...base, result: 'fail', evidence: { reason: 'deposit address is not awaiting payment', status: r.status } }
   }
 

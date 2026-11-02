@@ -66,13 +66,18 @@ export class PostgresLedger implements Ledger {
     })
   }
 
-  async settle(decisionId: string): Promise<TransitionResult> {
+  async settle(decisionId: string, amount?: Micro): Promise<TransitionResult> {
     return this.db.transaction(async tx => {
       const [d] = await tx.select().from(decisions).where(eq(decisions.decisionId, decisionId)).for('update')
       if (!d) return { ok: false, reason: 'unknown_decision' } as const
       if (d.state !== 'committed') return { ok: false, reason: 'invalid_state' } as const
-      await tx.update(decisions).set({ state: 'settled' }).where(eq(decisions.decisionId, decisionId))
-      await this.append(tx, 'settle', d.mandateId, decisionId, big(d.amount))
+      const held = big(d.amount)
+      const spent = amount ?? held
+      if (spent <= 0n || spent > held) return { ok: false, reason: 'invalid_amount' } as const
+      const rest = held - spent
+      await tx.update(decisions).set({ state: 'settled', amount: spent.toString(), releasedPart: rest.toString() }).where(eq(decisions.decisionId, decisionId))
+      await this.append(tx, 'settle', d.mandateId, decisionId, spent)
+      if (rest > 0n) await this.append(tx, 'release', d.mandateId, decisionId, rest)
       return { ok: true } as const
     })
   }
@@ -96,11 +101,12 @@ export class PostgresLedger implements Ledger {
   async balance(mandateId: string): Promise<Balance | undefined> {
     const [b] = await this.db.select().from(budgets).where(eq(budgets.mandateId, mandateId))
     if (!b) return undefined
-    const rows = await this.db.select({ state: decisions.state, sum: sql<string>`sum(${decisions.amount})` }).from(decisions)
+    const rows = await this.db.select({ state: decisions.state, sum: sql<string>`sum(${decisions.amount})`, part: sql<string>`sum(${decisions.releasedPart})` }).from(decisions)
       .where(eq(decisions.mandateId, mandateId)).groupBy(decisions.state)
     const by = (s: DecisionState): Micro => big(rows.find(r => r.state === s)?.sum)
     const total = big(b.total), committed = by('committed'), settled = by('settled')
-    return { total, committed, settled, released: by('released'), proposed: by('proposed'), remaining: total - committed - settled }
+    const givenBack = big(rows.find(r => r.state === 'settled')?.part)
+    return { total, committed, settled, released: by('released') + givenBack, proposed: by('proposed'), remaining: total - committed - settled }
   }
 
   async entries(mandateId: string): Promise<readonly LedgerEntry[]> {

@@ -26,6 +26,9 @@ export const OneClickRecordSchema = z.object({
   destinationAsset: z.string().min(1),
   amountOut: amount,
   refundTo: z.string().min(1),
+  /** The raw 1Click asset ids behind the symbols above. A real client sets them; a fake may leave them out. */
+  originAssetId: z.string().optional(),
+  destinationAssetId: z.string().optional(),
 })
 export type OneClickRecord = z.infer<typeof OneClickRecordSchema>
 
@@ -40,6 +43,10 @@ export type QuoteRequest = {
   destinationAsset: string
   destination: string
   amountOut: string
+  refundTo?: string
+  /** Raw asset ids from the 1Click record, when it has them. A real client prefers these to guessing from symbols. */
+  originAssetId?: string
+  destinationAssetId?: string
 }
 
 export interface OneClickAdapter {
@@ -54,4 +61,20 @@ export interface PinStore {
   refundTargets(host: string): Promise<readonly string[]>
 }
 
-export type Adapters = { oneClick: OneClickAdapter; pins: PinStore }
+/** A decision made earlier about a challenge. Written by the gateway, read by C06, C09 and C10. */
+export type Prior = {
+  decisionId: string
+  mandateId: string
+  challengeId: string
+  depositAddress: string
+  /** allowed: signed or about to be, not finished. settled: paid. denied: refused. */
+  state: 'allowed' | 'settled' | 'denied'
+}
+
+/** What has been decided before, so a replayed or duplicated request is recognised. */
+export interface DecisionIndex {
+  byChallenge(mandateId: string, challengeId: string): Promise<Prior | undefined>
+  byDeposit(depositAddress: string): Promise<Prior | undefined>
+}
+
+export type Adapters = { oneClick: OneClickAdapter; pins: PinStore; decisions?: DecisionIndex }

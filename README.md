@@ -52,8 +52,10 @@ pnpm install
 | --- | --- | --- |
 | 1 | `pnpm bench` | A table of 16 attack scenarios and 5 benign controls run against three targets — a naive agent, the stock `mppx` policy and Tollgate — plus JSON and HTML reports in `bench/results/`. *(not implemented yet)* |
 | 2 | `pnpm demo` | The demo agent runs one small job end to end: it decides what to buy, negotiates a price, hires workers on child mandates, sells its report, and has one over-budget purchase blocked and logged. *(not implemented yet)* |
-| 3 | `pnpm --filter @tollgate/core verify-log` | The audit chain verifies, or names the first broken entry. *(not implemented yet)* |
+| 3 | `pnpm --filter @tollgate/core verify-log <file>` | The audit chain in `<file>` (for example `apps/gateway/.data/audit.jsonl`) verifies, or the first broken entry is named. |
 | 4 | `pnpm site` | The homepage on <http://localhost:5173>. |
+| 5 | `pnpm --filter @tollgate/gateway start`, then in a second terminal `apps/gateway/scripts/try-it.sh` | The gateway answers on <http://127.0.0.1:8787>. Run the script once per gateway start (a deposit address can be used only once). It runs one agent through the gateway offline: a payment held for approval, then approved, three attacks refused (each naming the check that stopped it), the kill switch, and the audit check. Needs `GATEWAY_OPERATOR_TOKEN` in `.env`; no 1Click key, network or funds. |
+| 6 | `pnpm test` | The unit, property and integration tests. The Postgres ledger tests run only when `DATABASE_URL` is set. |
 
 Target: fresh clone to benchmark result in under five minutes.
 
