@@ -1,3 +1,5 @@
+import { isAbsolute } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { serve } from '@hono/node-server'
 import postgres from 'postgres'
 import { createSignerApp } from './app.ts'
@@ -12,14 +14,16 @@ let cfg
 try { cfg = loadConfig(process.env) } catch (e) { fail(e instanceof Error ? e.message : String(e)) }
 const c = cfg as NonNullable<typeof cfg>
 
+// A relative key path is relative to the repo root, not to wherever this process happened to be started.
+const keyPath = isAbsolute(c.SIGNER_KEY_FILE) ? c.SIGNER_KEY_FILE : fileURLToPath(new URL(`../../../${c.SIGNER_KEY_FILE}`, import.meta.url))
 let backend
-try { backend = viemBackend(loadKeyFile(c.SIGNER_KEY_FILE)) } catch (e) {
+try { backend = viemBackend(loadKeyFile(keyPath)) } catch (e) {
   // The message names the file and the problem. It never contains the key.
-  fail(`Cannot load the signing key: ${e instanceof Error ? e.message : e}\nMake one with: pnpm --filter @tollgate/signer keygen`)
+  fail(`Cannot load the signing key: ${e instanceof Error ? e.message : e}\nFix: run \`pnpm onboard\` from the repo root: it makes the key (mode 600) and prints only its public address.`)
 }
 
 const sql = postgres(c.DATABASE_URL, { max: 4, onnotice: () => {}, ...(c.DATABASE_SCHEMA ? { connection: { search_path: c.DATABASE_SCHEMA } } : {}) })
-try { await ensureSignerSchema(sql) } catch (e) { fail(`Could not reach the database: ${e instanceof Error ? e.message : e}`) }
+try { await ensureSignerSchema(sql) } catch (e) { fail(`Could not reach the database: ${e instanceof Error ? e.message : e}\n\nIs it running? For the local database: start Docker Desktop, then run \`pnpm db:up\`. Then check DATABASE_URL in .env, or run \`pnpm preflight\`.`) }
 
 const log = (event: string, fields: Record<string, unknown>) => { if (c.LOG_LEVEL !== 'silent') console.log(JSON.stringify({ ts: new Date().toISOString(), event, ...fields })) }
 const app = createSignerApp({ store: new PostgresSignerStore(sql), backend: backend as NonNullable<typeof backend>, limits: limitsFrom(c), clock: () => new Date() }, c.SIGNER_SERVICE_TOKEN, log)

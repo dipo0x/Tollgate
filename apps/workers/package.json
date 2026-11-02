@@ -3,5 +3,21 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Small hired agents (research, analysis, report) that run under child mandates."
+  "description": "Reference services that run for real against live 1Click: a merchant that answers 402 with a real deposit address, a seller that negotiates its price, and a worker that does a real, checkable job. We operate them; they are not a third-party marketplace.",
+  "dependencies": {
+    "@tollgate/core": "workspace:*",
+    "@hono/node-server": "^2.1.5",
+    "hono": "^4.13.16",
+    "zod": "^4.4.3"
+  },
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "start": "tsx src/server.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "tsx": "^4.23.15"
+  }
 }

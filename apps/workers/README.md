@@ -1,12 +1,12 @@
 # @tollgate/workers
 
-Small hired agents (research, analysis, report) that run under child mandates.
+Reference services that run for real against live 1Click: a **merchant** (`GET /data`, answers 402 with a real deposit address, delivers only when 1Click says SUCCESS), a **seller** (`/negotiate`, signed deal tokens) and a **worker** (`POST /jobs/rate-check`, a live 1Click quote as its deliverable). We operate them. They are not a third-party marketplace.
 
-**Trust zone:** Untrusted
+Read [docs/SERVICES.md](../../docs/SERVICES.md) for how they work, what is real, what has and has not been run, and the stated limits.
 
-**Status:** not implemented yet. Scaffolded on 30 Oct 2026; product code starts 1 Nov 2026 (see `HACKATHON.md`, Q-001).
+```bash
+# set MERCHANT_NEAR_ACCOUNT and NEAR_1CLICK_API_KEY in .env, then, from the repo root:
+pnpm services
+```
 
-## Responsibility
-
-- Each worker is just another payee, paid in stages: an upfront share on acceptance, the rest only after an acceptance check over the deliverable.
-- A worker can spend only its child budget, only at approved hosts, and can never hire further unless the parent mandate allows depth.
+**Trust zone:** untrusted. Nothing here is trusted by Tollgate: its checks treat these services like any other counterparty.

@@ -20,18 +20,19 @@ What exists, what is simulated, and what is not built. Written for a reviewer wh
 | --- | --- |
 | Gateway: 12 checks, budget ledger, approvals, kill switch, audit chain, negotiation, hiring, earning | **Built and tested.** All state in Postgres (the server refuses to start without `DATABASE_URL`). |
 | Signer: signs a USDC transfer only for a stored ALLOW, once, within its own limits | **Built and tested.** Never broadcasts. Not run with a funded key. |
-| SDK: wraps `fetch`, handles a 402 end to end | **Built and tested** against the real gateway and signer. Packaged for npm as `trytollgate` (`packages/sdk`); publishing it is the maintainer's step, so check npm before relying on `npm install trytollgate`. |
+| SDK: wraps `fetch`, handles a 402 end to end | **Built and tested** against the real gateway and signer. Published on npm as [`trytollgate`](https://www.npmjs.com/package/trytollgate) (source in `packages/sdk`). TypeScript only: other languages call the gateway's HTTP API (examples in Python and Go under `e2e/examples`). |
 | Benchmark: 16 attacks, 5 controls, 3 targets | **Built.** Offline. See `bench/README.md` for what is real and what is scripted. |
 | Demo (`pnpm demo`): buy, haggle, hire, earn, attacks, kill switch | **Built.** Real gateway, signer and SDK; everything outside them is simulated and labelled. |
 | Mock merchants, fake 1Click server, simulated chain, poisoned directory | **Built.** Test doubles, labelled as simulated. |
 | Marketing site and `/docs/` page | **Built** (`apps/site`). |
 | Dashboard (owner UI) | **Built, minimal, local.** Served by the gateway at `/dashboard`: decisions with every check's evidence, approvals (approve or reject with a required reason), mandates and their money, the service list, the audit chain with a verify button, and the kill switch. Read-only apart from those two actions. **Not built:** a jobs screen, a live push feed, a hosted version. Try it on the demo's data with `pnpm demo --serve`. |
-| Hired workers as separate processes (`apps/workers`) | **Not built.** Hiring is exercised through the gateway; the demo plays the worker inline. |
+| Reference services (`apps/workers`): a merchant, a seller, a worker | **Built and tested (13 tests), and run once against live 1Click** (see `docs/SERVICES.md`). We operate them; they are not a third-party marketplace. Hiring through the gateway is still exercised with the worker played inline in the demo. |
 | An LLM planner on NEAR AI Cloud | **Not built.** The demo agent's decisions are scripted; no model is called. |
-| A live payment on mainnet, a real 1Click quote | **Not done.** The live 1Click dry-quote endpoint returned errors when tried; fixtures marked `synthetic` stand in. No funds were used. |
+| Live 1Click | **Run once (`pnpm live`, 3 Nov 2026):** the reference merchant got a real deposit address from live 1Click, and Tollgate's 12 checks returned ALLOW on the real challenge and DENY (C06) on three tampered copies. The gateway had no signer. Needs your own 1Click key and NEAR account. |
+| A payment with real money | **Not done.** Nothing in this repository has moved real funds, and the signer has never been run with a funded key. |
 | Real MPP / x402 wire format | **Not built.** The SDK and mock merchants speak a simple 402 format of our own (see `packages/sdk/README.md`). |
 
-Nothing on this page has been run against real money.
+Nothing on this page has been run against real money. Benchmark results are produced by one command (`pnpm bench`) and rerunning it gives identical output.
 
 ## Repository layout
 
@@ -54,35 +55,46 @@ docs/               PRD and system architecture
 
 Trust boundaries: `demo-agent`, `workers` and `sdk` run in the **untrusted** zone. `gateway`, `core`, `registry` and `dashboard` are **trusted**. `signer` is the most sensitive component and is reachable only by the gateway. `mock-merchants` is test-only.
 
-## For reviewers — do X, see Y
+## Quick start
 
-Requires Node 22+ and pnpm 10. Nothing below needs an API key, a wallet or a network
-connection: every external call is replayed from recorded fixtures.
+**You need:** Node 22+, pnpm 10+, and Git. Docker Desktop is needed only for the local database (steps 5 onward). Check with
+`node --version`, `pnpm --version`, `docker --version`.
+
+**Run every command from the repo root**, the folder that contains `package.json` and `pnpm-workspace.yaml`. Run from a subfolder, commands such
+as `pnpm db:up` fail with `Command "db:up" not found`.
+
+The full guide, with what you should see after each step and a fix for every error we know of, is **[`docs/GETTING-STARTED.md`](docs/GETTING-STARTED.md)**.
+If anything goes wrong, run `pnpm preflight`: it checks your setup and prints the exact command that fixes each problem.
 
 ```bash
 git clone https://github.com/dipo0x/tollgate.git
 cd tollgate
-pnpm install
 ```
 
 | # | Do this | See this |
 | --- | --- | --- |
-| 1 | `pnpm bench` | A table of 16 attacks and 5 benign controls against three targets: a naive agent, a **model** of the stock `mppx` policy, and Tollgate (the real gateway, signer and SDK). It prints how many attacks each target stopped, flags any result that differs from what was written down before the run, and writes `bench/results/results.json` and `results.html`. Offline, no key, no funds. See `bench/README.md` for exactly what is real and what is scripted. |
-| 2b | `pnpm demo --serve` | The same story, then the gateway stays up. Open <http://127.0.0.1:8787/dashboard>, paste the operator token the demo prints, and see every decision, its checks, the mandates and the audit chain. |
-| 2 | `pnpm demo` | One command, offline, no key: an agent sets rules, haggles, buys, waits for the owner's approval, hires a worker and has its work checked, earns from a **simulated** customer, meets seven dishonest merchants and a seller that changes the price after agreeing (each stopped by a named check), one merchant whose page tries to inject instructions (the text reaches no model and the ordinary purchase is paid), and then hits the kill switch. It ends with the money, the job summary and an audit chain that verifies. A banner at the top says what is real and what is simulated. |
-| 3 | `pnpm --filter @tollgate/core verify-log --db` | The audit chain stored in Postgres verifies (`OK: N entries, head …`), or the first broken entry is named. It reads the database directly, so it does not trust the gateway. `verify-log <file>` checks an exported file. |
-| 4 | `pnpm site` | The homepage on <http://localhost:5173>. |
-| 5 | `pnpm db:up`, copy `.env.example` to `.env` and fill it in, `pnpm --filter @tollgate/gateway start`, then in a second terminal `apps/gateway/scripts/try-it.sh` | The gateway answers on <http://127.0.0.1:8787> and says `storage: postgres`. The script runs one agent through it offline: a payment held for approval, then approved, three attacks refused (each naming the check that stopped it), the kill switch, and the audit check. Run it once per database: a deposit address can be used only once. For a fresh run without wiping anything, start the gateway with `DATABASE_SCHEMA=demo2`. No 1Click key, network or funds needed. |
-| 6 | `pnpm test` | The unit, property and integration tests. The Postgres tests (ledger, stores, audit, and the gateway restart and two-gateway tests) run only when `DATABASE_URL` is set. |
-| 6b | `pnpm --filter @tollgate/signer test` | The signer's tests: every refusal (tampered amount, recipient, chain or nonce, expired, frozen, revoked, over its own cap, used twice) and a check on the signed bytes themselves. See `apps/signer/README.md`. |
-| 7 | Stop the gateway and start it again | Mandates, agent tokens, pending approvals, decisions, jobs, earnings, negotiations, the service list, the freeze flag and the audit chain are all still there. The gateway keeps nothing in the process between requests, and refuses to start without `DATABASE_URL`. |
+| 1 | `pnpm install` | Packages install and it ends with `Done in ...s`. |
+| 2 | `pnpm bench` | A table of 16 attacks and 5 benign controls against three targets: a naive agent, a **model** of the stock `mppx` policy, and Tollgate (the real gateway, signer and SDK). It prints how many attacks each stopped, flags any result that differs from what was written down before the run, and writes `bench/results/results.json` and `results.html`. See `bench/README.md` for what is real and what is scripted. |
+| 3 | `pnpm demo` | One command, offline, no key, no database: an agent sets rules, haggles, buys, waits for the owner's approval, hires a worker and has its work checked, earns from a **simulated** customer, meets seven dishonest merchants and a seller that changes the price after agreeing (each stopped by a named check), one merchant whose page tries to inject instructions (the text reaches no model and the ordinary purchase is paid), and then hits the kill switch. It ends with the money, the job summary and an audit chain that verifies. A banner at the top says what is real and what is simulated. |
+| 4 | `pnpm demo --serve` | The same story, then the gateway stays up. Open <http://127.0.0.1:8787/dashboard>, paste the operator token the demo prints, and see every decision, its checks, the mandates and the audit chain. |
+| 5 | `pnpm onboard` | Creates `.env` with generated passwords and the signer's throwaway key. It never overwrites a value you set and never prints a secret. |
+| 6 | Start Docker Desktop, then `pnpm db:up` | `Container tollgate-postgres Healthy`. |
+| 7 | `pnpm preflight` | A list of `ok` lines ending `Everything is ready.` Anything wrong prints `FAIL` and the command that fixes it. |
+| 8 | `pnpm dev` | Starts the gateway (<http://127.0.0.1:8787>), the signer (<http://127.0.0.1:8788>) and the website (<http://localhost:5173>). The owner's dashboard is at <http://127.0.0.1:8787/dashboard>; its token is `GATEWAY_OPERATOR_TOKEN` in `.env`. |
+| 9 | `pnpm sandbox`, then in a second terminal `pnpm sandbox:agent` and `pnpm sandbox:agent swaps-payee` | The real gateway and signer against a **simulated** outside world. The first agent run says `PAID`; the second says `BLOCKED by C05`. Ten merchant behaviours to try are listed in the guide. Ctrl+C stops it and deletes its throwaway data. |
+| 10 | `pnpm test` | Every automated test. The Postgres tests run only when `DATABASE_URL` is set (step 5 sets it). |
+| 11 | `pnpm e2e` | A complete end-to-end test: the real gateway and signer as separate processes, an agent using the built SDK, a real database, a simulated outside world. It ends `Result  57 of 57 checks passed`. |
+| 12 | `pnpm --filter @tollgate/core verify-log --db` | The audit chain stored in Postgres verifies (`OK: N entries, head ...`), or the first broken entry is named. It reads the database directly, so it does not trust the gateway. |
+| 13 | Stop the gateway (Ctrl+C) and start it again | Mandates, agent tokens, pending approvals, decisions, jobs, earnings, negotiations, the service list, the freeze flag and the audit chain are all still there. The gateway keeps nothing in the process between requests, and refuses to start without `DATABASE_URL`. |
 
-Target: fresh clone to benchmark result in under five minutes.
+| 14 | Optional, needs your own 1Click key and NEAR account in `.env` (see `docs/SERVICES.md`), then `pnpm live` | Real 1Click: a merchant gets a real deposit address, and the 12 checks decide on live data. Nothing is signed or sent. |
+
+Steps 1 to 4 need no keys, no database and no network beyond the install. The SDK's own tests: `pnpm --filter @tollgate/signer test`, `pnpm --filter trytollgate test`.
 
 ## How NEAR fits
 
 - **NEAR Intents / 1Click** is the settlement path for agent payments. Check C06 cross-checks the merchant's challenge against the 1Click API — the advertised deposit address, amount, asset and refund target must match the quote, or the payment is denied.
-- **NEAR AI Cloud** runs the demo agent's reasoning, with TEE inference and an attestation the dashboard displays.
+- **NEAR AI Cloud** is the intended home of the demo agent's reasoning. It is **not wired in**: the demo agent's decisions are scripted and no model is called, and there is no attestation display.
 - **NEAR function-call keys** are discussed honestly: they cannot attach deposits or move tokens, and NEP-413 intent signing needs a full-access key. That is exactly why the limits live in a policy gate in front of an isolated signer, not in the key type.
 
 ## Honesty rules
@@ -94,6 +106,10 @@ Target: fresh clone to benchmark result in under five minutes.
 
 ## Documents
 
+- `docs/GETTING-STARTED.md` — from nothing to a working system, step by step, with a fix for every error we know of
+- `docs/AGENT-ECONOMY.md` — how an agent spends, negotiates, hires and earns, with the exact calls
+- `docs/SERVICES.md` — what the agent can buy from, negotiate with and hire: what is real, what is simulated
+- `docs/MANDATES.md` — how to write a mandate: every field, how to choose it, starting points, common mistakes
 - `docs/ARCHITECTURE.md` — components, trust zones, key design decisions, registry, delegation
 - `docs/THREAT-MODEL.md` — assets, trust boundaries, the 16 attacks, the 5 benign controls, residual risks
 - `docs/SUBMISSION.md` — hackathon submission checklist
@@ -107,14 +123,15 @@ Answering the rules in `HACKATHON.md` directly, so a reviewer does not have to i
 of it.
 
 - **Build window (Q-001).** Work counted from the announcement on 19 Oct 2026. The
-  marketing site under `apps/site` and the monorepo skeleton were built 26–31 Oct 2026;
-  product code — gateway, signer, core, SDK, registry, demo agent, benchmark — starts
-  1 Nov 2026. Tags mark the boundary: `pre-hackathon` and `hackathon-submission`.
+  marketing site under `apps/site` and the monorepo skeleton were committed on 30 and 31
+  Oct 2026 (the baseline); product code — gateway, signer, core, SDK, registry, demo
+  agent, benchmark, reference services — was committed from 2 Nov 2026. Tags mark the
+  boundary: `pre-hackathon` (the last baseline commit) and `hackathon-submission`.
 - **One repository (Q-003).** No separate repo. The diff a judge should review is
   `git diff pre-hackathon..hackathon-submission`.
 - **Existing product on another chain (Q-002).** None. Tollgate is new.
 - **Libraries and generated code (Q-005).** Third-party: Hono, Drizzle, Zod, viem, Vitest,
-  fast-check, React, Vite, Tailwind, GSAP, Lenis, Three.js. No pre-hackathon libraries of
+  fast-check, postgres.js, happy-dom, React, Vite, GSAP, Lenis, Three.js. No pre-hackathon libraries of
   my own are reused. Parts of this codebase were written with AI assistance (Claude Code);
   every line is reviewed and owned by the author.
 - **Other submissions (Q-015).** This is the author's only submission to this hackathon.

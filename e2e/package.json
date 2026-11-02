@@ -1,0 +1,23 @@
+{
+  "name": "@tollgate/e2e",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "A complete end-to-end test: the real gateway, signer and dashboard as separate processes, an agent using the built SDK, and a simulated outside world.",
+  "scripts": {
+    "start": "tsx src/run.ts",
+    "typecheck": "tsc --noEmit",
+    "sandbox": "tsx src/sandbox.ts",
+    "live": "tsx src/live.ts",
+    "agent": "node examples/agent.mjs"
+  },
+  "dependencies": {
+    "@tollgate/signer": "workspace:*",
+    "postgres": "^4.0.0",
+    "trytollgate": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.23.15"
+  }
+}

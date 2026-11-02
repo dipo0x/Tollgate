@@ -23,7 +23,13 @@ export type Config = z.infer<typeof ConfigSchema>
 
 export function loadConfig(env: Record<string, string | undefined>): Config {
   const r = ConfigSchema.safeParse({ ...env, DATABASE_SCHEMA: env['DATABASE_SCHEMA'] || undefined })
-  if (!r.success) throw new Error(`Invalid signer configuration:\n${r.error.issues.map(i => `  ${i.path.join('.') || 'config'}: ${i.message}`).join('\n')}`)
+  if (!r.success) {
+    const lines = r.error.issues.map(i => {
+      const name = i.path.join('.') || 'config'
+      return `  ${name}: ${/received undefined/.test(i.message) ? 'is not set' : i.message}`
+    })
+    throw new Error(`The signer cannot start: its settings are incomplete.\n${lines.join('\n')}\n\nFix: run \`pnpm onboard\` from the repo root (it creates .env with generated values and the signing key),\nor add the missing lines to .env yourself (see .env.example). Then run \`pnpm preflight\` to check everything.`)
+  }
   return r.data
 }
 

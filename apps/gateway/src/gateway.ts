@@ -25,6 +25,8 @@ export type GatewayDeps = {
   tokens: TokenRegistry
   /** Absent when no signer is configured: payments are authorized but nothing can be signed. */
   signer?: SignerClient
+  /** For display only. */
+  info?: { mode: 'offline' | 'live' }
   clock: () => Date
   approvalTtlMs: number
   log: (event: string, fields: Record<string, unknown>) => void
@@ -70,10 +72,19 @@ export class Gateway {
       await this.audit('decision.recovered', { decisionId: r.decisionId, mandateId: r.mandateId, ledgerState: held ?? 'none' })
       recovered++
     }
+    await this.releaseStaleAllowed()
     return { recovered }
   }
 
   isFrozen(): Promise<boolean> { return this.d.store.settings.frozen() }
+
+  /** What the dashboard's "Connection information" shows. Nothing secret: no tokens, no database address, only the signer's PUBLIC address. */
+  async status() {
+    return {
+      frozen: await this.isFrozen(), storage: this.d.store.kind, signer: !!this.d.signer, signerAddress: await this.d.signer?.address?.(),
+      mode: this.d.info?.mode ?? 'offline', now: this.d.clock().toISOString(),
+    }
+  }
 
   // ---- mandates --------------------------------------------------------------------------
 
@@ -144,6 +155,9 @@ export class Gateway {
       await this.auditDecision(rec)
       return ok(this.view(rec))
     }
+
+    // Money held for payments that never happened comes back first, so the budget this request is judged against is the true one.
+    await this.releaseStaleAllowed(req.mandateId)
 
     // A retry of a payment that is waiting for a human gets the same answer back, not a second approval.
     if (challenge) {
@@ -263,15 +277,46 @@ export class Gateway {
     }
   }
 
+  // ---- money that was allowed but never paid ---------------------------------------------------------------------------
+
+  /**
+   * An ALLOW holds money. If the payment is never made (the agent crashed, the signer was down, the agent walked away), the challenge
+   * runs out and the hold must come back, or a flaky agent slowly drains its own budget with payments that never happened.
+   *
+   * A hold is returned only when BOTH are true: the challenge has expired, and no transaction was ever signed for it. Once something
+   * was signed it may be on its way; then 1Click's record (reconcile) decides, never a timer. Locked per decision, the same lock the
+   * signing route takes, so a hold cannot be released in the middle of being signed.
+   */
+  async releaseStaleAllowed(mandateId?: string): Promise<number> {
+    const now = this.d.clock().getTime()
+    let released = 0
+    for (const d of await this.d.store.decisions.list({ state: 'allowed', ...(mandateId ? { mandateId } : {}), limit: 500 })) {
+      if (!d.bind || !(Date.parse(d.bind.expiresAt) <= now)) continue
+      released += await this.d.store.locks.run(`decision:${d.decisionId}`, async () => {
+        const cur = await this.d.store.decisions.get(d.decisionId)
+        if (!cur || cur.state !== 'allowed') return 0
+        if (await this.d.store.signatures.get(d.decisionId)) return 0
+        await this.d.ledger.release(d.decisionId)
+        await this.d.store.decisions.update(d.decisionId, { state: 'expired' })
+        await this.audit('payment.expired', { decisionId: d.decisionId, mandateId: d.mandateId, ...(d.amount ? { amount: d.amount } : {}), reason: 'the challenge expired and nothing was signed' })
+        return 1
+      })
+    }
+    return released
+  }
+
   // ---- approvals -------------------------------------------------------------------------
 
   private async sweepApprovals(): Promise<void> {
     const now = this.d.clock()
     for (const a of await this.d.store.decisions.dueApprovals(now)) {
-      // Release first: if we stop between the two steps, the next sweep finishes the job (releasing twice is harmless).
-      await this.d.ledger.release(a.decisionId)
-      const done = await this.d.store.decisions.decide(a.decisionId, 'expired', { decidedAt: now.toISOString() }, { state: 'expired' })
-      if (done) await this.audit('approval.expired', { decisionId: a.decisionId })
+      // Under the decision's lock, so an approve or reject cannot interleave. Release first: if we stop between the two steps, the
+      // next sweep finishes the job (releasing twice is harmless).
+      await this.d.store.locks.run(`decision:${a.decisionId}`, async () => {
+        await this.d.ledger.release(a.decisionId)
+        const done = await this.d.store.decisions.decide(a.decisionId, 'expired', { decidedAt: now.toISOString() }, { state: 'expired' })
+        if (done) await this.audit('approval.expired', { decisionId: a.decisionId })
+      })
     }
   }
 
@@ -280,8 +325,17 @@ export class Gateway {
     return ok({ approvals: (await this.d.store.decisions.listApprovals()).map(({ approval, decision }) => ({ ...approval, decision })) })
   }
 
+  /**
+   * Approve and reject take the decision's lock, the same one signing takes. Without it a reject could release the money an approve had
+   * just held, and the approve would still win the decision: an ALLOW with nothing held behind it. (Found by a two-gateway test that
+   * failed about one run in ten.)
+   */
   async approve(decisionId: string, reason: string): Promise<Out> {
     await this.sweepApprovals()
+    return this.d.store.locks.run(`decision:${decisionId}`, () => this.approveLocked(decisionId, reason))
+  }
+
+  private async approveLocked(decisionId: string, reason: string): Promise<Out> {
     const a = await this.d.store.decisions.getApproval(decisionId), rec = await this.d.store.decisions.get(decisionId)
     if (!a || !rec) return fail(404, 'not_found', `no approval for ${decisionId}`)
     if (a.status !== 'pending') return fail(409, 'not_pending', `this approval is already ${a.status}`)
@@ -301,6 +355,10 @@ export class Gateway {
 
   async reject(decisionId: string, reason: string): Promise<Out> {
     await this.sweepApprovals()
+    return this.d.store.locks.run(`decision:${decisionId}`, () => this.rejectLocked(decisionId, reason))
+  }
+
+  private async rejectLocked(decisionId: string, reason: string): Promise<Out> {
     const a = await this.d.store.decisions.getApproval(decisionId)
     if (!a) return fail(404, 'not_found', `no approval for ${decisionId}`)
     if (a.status !== 'pending') return fail(409, 'not_pending', `this approval is already ${a.status}`)
@@ -323,6 +381,10 @@ export class Gateway {
    * checks it all again against the same record before it touches the key.
    */
   async sign(agent: Agent, decisionId: string, tx: { nonce: number; gas: string; maxFeePerGas: string; maxPriorityFeePerGas: string }): Promise<Out> {
+    return this.d.store.locks.run(`decision:${decisionId}`, () => this.signLocked(agent, decisionId, tx))
+  }
+
+  private async signLocked(agent: Agent, decisionId: string, tx: { nonce: number; gas: string; maxFeePerGas: string; maxPriorityFeePerGas: string }): Promise<Out> {
     const rec = await this.d.store.decisions.get(decisionId)
     if (!rec || rec.mandateId !== agent.mandateId) return fail(404, 'not_found', `no decision ${decisionId}`)
     if (rec.state !== 'allowed' || !rec.bind) return fail(409, 'not_signable', `a decision in state "${rec.state}" cannot be signed`)

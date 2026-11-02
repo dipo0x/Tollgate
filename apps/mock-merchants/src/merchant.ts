@@ -33,6 +33,8 @@ export type MerchantOptions = {
   clock?: () => Date
   /** What the merchant delivers once paid. */
   deliverable?: unknown
+  /** How long a challenge lasts, in seconds. Default 300. Short values let a test exercise expiry without waiting. */
+  ttlSeconds?: number
 }
 
 const micro = (s: string): bigint => { const [i, f = ''] = s.split('.'); return BigInt(i as string) * 1_000_000n + BigInt(f.padEnd(6, '0').slice(0, 6) || '0') }
@@ -56,7 +58,7 @@ export function createMerchant(o: MerchantOptions) {
   function newChallenge(payer: string): Issued {
     const n = ++sequence
     const now = clock()
-    const deadline = new Date(now.getTime() + 5 * 60_000).toISOString()
+    const deadline = new Date(now.getTime() + (o.ttlSeconds ?? 300) * 1000).toISOString()
     let amountOut = price, rate: bigint | undefined, destination = o.payee, refundTo = payer, expires = deadline, method = 'nearintents', register = true
     switch (behavior) {
       case 'inflates': amountOut = micro('50'); break

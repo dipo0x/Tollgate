@@ -1,6 +1,6 @@
 {
-  "generatedFor": "2026-11-06T10:00:00.000Z",
-  "note": "Measured, offline. Tollgate = real gateway, signer and SDK with scripted 1Click and merchant. Stock = a model of the mppx client policy, not the library.",
+  "simulatedClock": "2026-11-06T10:00:00.000Z",
+  "note": "Measured, offline. Every date in this file is a pinned simulated clock (so reruns are identical), not the time it ran. Tollgate = real gateway, signer and SDK with scripted 1Click and merchant. Stock = a model of the mppx client policy, not the library.",
   "summary": {
     "attacks": 16,
     "controls": 5,

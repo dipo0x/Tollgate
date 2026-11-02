@@ -2,3 +2,8 @@ packages:
   - 'apps/*'
   - 'packages/*'
   - 'bench'
+  - 'e2e'
+
+# esbuild (used by tsx and vite) downloads its binary in an install step. Allow that one, so pnpm does not print a warning on every install.
+onlyBuiltDependencies:
+  - esbuild

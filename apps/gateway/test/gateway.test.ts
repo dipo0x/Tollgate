@@ -438,6 +438,17 @@ describe('configuration', () => {
   })
 })
 
+describe('configuration that decides where the 1Click key goes', () => {
+  const base = { GATEWAY_OPERATOR_TOKEN: OPERATOR, TOLLGATE_OFFLINE: 'false', NEAR_1CLICK_API_KEY: 'k' }
+  it('accepts a simulated 1Click on this machine', () => {
+    for (const u of ['http://127.0.0.1:9000', 'http://localhost:9000', 'http://[::1]:9000']) expect(loadConfig({ ...base, ONECLICK_BASE_URL: u }).ONECLICK_BASE_URL).toBe(u)
+  })
+  it('refuses any other address, so a real key cannot be sent to the wrong place', () => {
+    for (const u of ['https://1click.evil.example', 'http://10.0.0.5:9000', 'http://127.0.0.1.evil.example', 'http://localhost.evil.example']) expect(() => loadConfig({ ...base, ONECLICK_BASE_URL: u })).toThrow(/this machine/)
+  })
+  it('an empty value means "use the real 1Click"', () => expect(loadConfig({ ...base, ONECLICK_BASE_URL: '' }).ONECLICK_BASE_URL).toBeUndefined())
+})
+
 describe('requests that overlap, and a process that stops half way', () => {
   const AUTO = { approval: { above: '1.00', riskAbove: 90, firstPayeeRequiresApproval: false } }
 
@@ -504,6 +515,31 @@ describe('requests that overlap, and a process that stops half way', () => {
     g.setNow(new Date('2026-11-06T10:06:00Z')) // the challenge expired at 10:05
     const again = await g.authorize(token, challenge('c1', D1))
     expect(again.json.decision).toBe('DENY'); expect(again.json.resumed).toBeUndefined()
+  })
+
+  it('an allowed payment that is never made gives its money back once its challenge has expired, and it is written to the audit log', async () => {
+    const g = boot(); const { token } = await g.setup({ mandate: AUTO }); g.oneClick.add(record(D1)).add(record(D2))
+    expect((await g.authorize(token, challenge('c1', D1))).json.decision).toBe('ALLOW')
+    expect((await g.op('GET', '/v1/mandates/mnd_1')).json.balance).toMatchObject({ committed: '0.250000' })
+    g.setNow(new Date('2026-11-06T10:04:59Z')) // one second before the challenge expires: still held
+    await g.authorize(token, challenge('c2', D2))
+    expect((await g.op('GET', '/v1/mandates/mnd_1')).json.balance.committed).toBe('0.500000')
+    g.setNow(new Date('2026-11-06T10:05:01Z')) // expired, and nothing was signed
+    expect(await g.gateway.releaseStaleAllowed()).toBe(2)
+    expect((await g.op('GET', '/v1/mandates/mnd_1')).json.balance).toMatchObject({ committed: '0.000000', remaining: '5.000000' })
+    expect((await g.op('GET', '/v1/decisions?state=expired')).json.decisions).toHaveLength(2)
+    expect((await g.deps.audit.all()).filter(e => e.type === 'payment.expired')).toHaveLength(2)
+    expect(await g.gateway.releaseStaleAllowed()).toBe(0) // running it again finds nothing
+  })
+
+  it('a stuck hold is also returned when the agent next asks (the budget it is judged against is the true one)', async () => {
+    const g = boot(); const { token } = await g.setup({ mandate: { ...AUTO, budget: { currency: 'USDC', total: '0.30', perPayment: '0.30' } } }); g.oneClick.add(record(D1)).add(record(D2))
+    expect((await g.authorize(token, challenge('c1', D1))).json.decision).toBe('ALLOW') // holds 0.25 of 0.30
+    g.setNow(new Date('2026-11-06T10:05:01Z'))
+    // c2 needs 0.25 too, and only fits because the expired, never-signed hold was released first. (Its own challenge has expired, so it
+    // is refused for THAT reason, not for lack of budget.)
+    const again = await g.authorize(token, challenge('c2', D2, { expires: '2026-11-06T10:10:00Z' }))
+    expect(again.json.decision).toBe('ALLOW')
   })
 
   it('a rejected approval is NOT resumed: asking again about the same challenge stays refused', async () => {

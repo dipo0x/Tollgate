@@ -1,5 +1,6 @@
 import { z } from 'zod'
 
+const LOOPBACK = new Set(['127.0.0.1', 'localhost', '[::1]', '::1'])
 const bool = z.enum(['true', 'false']).transform(v => v === 'true')
 
 /** Validated once at boot, with a clear message, so a bad setting fails at startup and not mid-payment. */
@@ -12,6 +13,11 @@ export const ConfigSchema = z.object({
   GATEWAY_OPERATOR_TOKEN: z.string().min(16, 'GATEWAY_OPERATOR_TOKEN must be at least 16 characters'),
   /** The 1Click key, only needed when not offline. */
   NEAR_1CLICK_API_KEY: z.string().optional(),
+  /**
+   * Point the 1Click client at another server. For local testing against a SIMULATED 1Click only, so it must be this machine: the real
+   * API key is sent to this address, and a typo or a copied setting must never be able to send it anywhere else.
+   */
+  ONECLICK_BASE_URL: z.string().optional().transform(v => v || undefined).pipe(z.url().optional()).refine(v => v === undefined || LOOPBACK.has(new URL(v).hostname), { message: 'ONECLICK_BASE_URL must point at this machine (127.0.0.1, localhost or [::1]): the 1Click key is sent there' }),
   /** Where the signer listens, and the token the gateway presents to it. Both or neither: with neither, nothing can be signed. */
   SIGNER_URL: z.string().optional().transform(v => v || undefined).pipe(z.url().optional()),
   SIGNER_SERVICE_TOKEN: z.string().optional().transform(v => v || undefined).pipe(z.string().min(32, 'SIGNER_SERVICE_TOKEN must be at least 32 characters').optional()),
@@ -33,8 +39,8 @@ export type Config = z.infer<typeof ConfigSchema>
 export function loadConfig(env: Record<string, string | undefined>): Config {
   const r = ConfigSchema.safeParse(env)
   if (!r.success) {
-    const lines = r.error.issues.map(i => `  ${i.path.join('.') || 'config'}: ${i.message}`)
-    throw new Error(`Invalid gateway configuration:\n${lines.join('\n')}`)
+    const lines = r.error.issues.map(i => `  ${i.path.join('.') || 'config'}: ${/received undefined/.test(i.message) ? 'is not set' : i.message}`)
+    throw new Error(`The gateway cannot start: its settings are incomplete or invalid.\n${lines.join('\n')}\n\nFix: run \`pnpm onboard\` from the repo root (it creates .env with generated values),\nor edit .env yourself (see .env.example). Then run \`pnpm preflight\` to check everything.`)
   }
   return r.data
 }

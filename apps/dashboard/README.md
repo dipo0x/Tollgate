@@ -1,13 +1,24 @@
 # @tollgate/dashboard
 
-Read-mostly owner console: mandates, live decisions, approvals, jobs, spend, registry, audit verification and the benchmark view.
+**This folder holds no code.** The owner's dashboard is built, and it is served by the gateway: its files are in [`apps/gateway/src/dashboard`](../gateway/src/dashboard) (plain HTML, CSS and JavaScript, no framework and no build step).
 
-**Trust zone:** Trusted, authenticated
+**Trust zone:** Trusted, authenticated (the owner's token is required)
 
-**Status:** not implemented yet. Scaffolded on 30 Oct 2026; product code starts 1 Nov 2026 (see `HACKATHON.md`, Q-001).
+**Status:** built, minimal, local. Open `http://127.0.0.1:8787/dashboard` while the gateway runs (`pnpm dev`, or `pnpm demo --serve`) and paste the operator token.
 
-## Responsibility
+## What it shows
 
-- React, Vite and Tailwind.
-- Everything visible with seeded data in under three clicks from the home page.
-- Keyboard navigable, readable contrast, no colour-only status. Target: accessibility score of 90 or more.
+- A live decision feed. Click a row to see every one of the twelve checks and the evidence behind each.
+- The approval queue: approve or reject, with a required reason.
+- Each mandate and its money (total, held, settled, released, remaining).
+- The service list, and one-click audit-chain verification.
+- The kill switch.
+
+## How it is built, and why
+
+- All text is inserted as text nodes and styles are set through the CSS object model, under a Content-Security-Policy of `default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'`. Data from a merchant can therefore not run as script or markup in the owner's browser.
+- Tests: `apps/gateway/test/dashboard.test.ts`.
+
+## Not built
+
+A benchmark view, a job view, and any accessibility audit or score: none has been run.

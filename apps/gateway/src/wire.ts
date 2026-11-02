@@ -28,8 +28,9 @@ function assemble(cfg: Config, durable: Durable, over: Partial<GatewayDeps>): Ga
     services: new Services(durable.store.services),
     oneClick: cfg.TOLLGATE_OFFLINE
       ? new HttpOneClick({ fetch: replayFetch(new FileFixtureStore(FIXTURES_DIR)), now: clock })
-      : new HttpOneClick({ apiKey: cfg.NEAR_1CLICK_API_KEY as string, now: clock }),
+      : new HttpOneClick({ apiKey: cfg.NEAR_1CLICK_API_KEY as string, now: clock, ...(cfg.ONECLICK_BASE_URL ? { baseUrl: cfg.ONECLICK_BASE_URL } : {}) }),
     tokens: new TokenRegistry(cfg.GATEWAY_OPERATOR_TOKEN, durable.store.tokens),
+    info: { mode: cfg.TOLLGATE_OFFLINE ? 'offline' : 'live' } as const,
     ...(cfg.SIGNER_URL && cfg.SIGNER_SERVICE_TOKEN ? { signer: new HttpSignerClient({ url: cfg.SIGNER_URL, token: cfg.SIGNER_SERVICE_TOKEN }) } : {}),
     clock,
     approvalTtlMs: cfg.APPROVAL_TTL_MINUTES * 60_000,

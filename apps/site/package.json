@@ -8,7 +8,7 @@
   "scripts": {
     "dev": "vite",
     "start": "vite",
-    "build": "tsc --noEmit && vite build",
+    "build": "tsc --noEmit && vite build && mkdir -p dist/guides && cp ../../docs/MANDATES.md ../../docs/GETTING-STARTED.md ../../docs/AGENT-ECONOMY.md ../../docs/SERVICES.md dist/guides/ && mkdir -p dist/guides/examples && cp ../../e2e/examples/quickstart.* ../../e2e/examples/agent.py ../../e2e/examples/agent.go dist/guides/examples/",
     "typecheck": "tsc --noEmit",
     "preview": "vite preview"
   },

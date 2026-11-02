@@ -40,3 +40,6 @@ payload.json
 # The signer's key file. Never commit a key.
 .signer-key*
 *.key
+
+# The running sandbox's addresses and throwaway tokens.
+.sandbox.json

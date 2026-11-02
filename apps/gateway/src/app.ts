@@ -106,7 +106,7 @@ export function createApp(deps: GatewayDeps) {
   // ---- mandates --------------------------------------------------------------------------
   app.get('/v1/mandates', asOperator(async c => send(c, await gw.listMandates())))
   // What the dashboard's status pills show. Nothing secret: whether it is frozen, where state is kept, and whether a signer is attached.
-  app.get('/v1/status', asOperator(async c => c.json({ frozen: await gw.isFrozen(), storage: deps.store.kind, signer: !!deps.signer, now: deps.clock().toISOString() })))
+  app.get('/v1/status', asOperator(async c => c.json(await gw.status())))
   app.post('/v1/mandates', asOperator(async c => { const raw = await c.req.json().catch(() => undefined); return send(c, await gw.createMandate(raw)) }))
   app.get('/v1/mandates/:id', asEither((c, p) => {
     const id = P(c, 'id')

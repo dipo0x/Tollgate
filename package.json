@@ -11,17 +11,25 @@
     "node": ">=22"
   },
   "scripts": {
-    "dev": "pnpm -r --parallel --stream dev",
+    "dev": "node scripts/preflight.mjs --quick && pnpm -r --parallel --stream dev",
     "site": "pnpm --filter @tollgate/site dev",
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
-    "test": "pnpm -r test",
+    "test": "pnpm -r test && node --test scripts/*.test.mjs",
     "lint": "pnpm -r lint",
     "bench": "pnpm --filter @tollgate/bench start",
     "demo": "pnpm --filter @tollgate/demo-agent start",
     "db:up": "docker compose up -d --wait postgres",
     "db:down": "docker compose down",
-    "db:reset": "docker compose down -v"
+    "db:reset": "docker compose down -v",
+    "e2e": "pnpm --filter trytollgate build && pnpm --filter @tollgate/e2e start",
+    "onboard": "node scripts/onboard.mjs",
+    "preflight": "node scripts/preflight.mjs",
+    "live": "pnpm --filter @tollgate/e2e live",
+    "services": "pnpm --filter @tollgate/workers start",
+    "sandbox": "pnpm --filter trytollgate build && pnpm --filter @tollgate/e2e sandbox",
+    "sandbox:agent": "pnpm --silent --filter @tollgate/e2e agent",
+    "prepare": "pnpm --filter trytollgate build"
   },
   "devDependencies": {
     "@types/node": "^22.20.5",

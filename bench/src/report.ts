@@ -47,7 +47,7 @@ export function renderTable(rows: Row[]): string {
 
 export function renderJson(rows: Row[]): string {
   return JSON.stringify({
-    generatedFor: NOW.toISOString(), note: 'Measured, offline. Tollgate = real gateway, signer and SDK with scripted 1Click and merchant. Stock = a model of the mppx client policy, not the library.',
+    simulatedClock: NOW.toISOString(), note: 'Measured, offline. Every date in this file is a pinned simulated clock (so reruns are identical), not the time it ran. Tollgate = real gateway, signer and SDK with scripted 1Click and merchant. Stock = a model of the mppx client policy, not the library.',
     summary: summarise(rows),
     rows: rows.map(r => ({ id: r.scenario.id, kind: r.scenario.kind, title: r.scenario.title, defendedBy: r.scenario.defendedBy, expected: r.scenario.expected, results: r.results, deviations: r.deviations })),
   }, (_k, v) => typeof v === 'bigint' ? v.toString() : v, 2) + '\n'

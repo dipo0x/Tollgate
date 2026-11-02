@@ -84,6 +84,9 @@ importers:
 
   apps/mock-merchants:
     dependencies:
+      '@hono/node-server':
+        specifier: ^2.1.5
+        version: 2.1.5(hono@4.13.16)
       '@tollgate/core':
         specifier: workspace:*
         version: link:../../packages/core
@@ -169,7 +172,24 @@ importers:
         specifier: ^8.3.5
         version: 8.3.5(@types/node@22.20.5)(esbuild@0.28.2)(tsx@4.23.15)
 
-  apps/workers: {}
+  apps/workers:
+    dependencies:
+      '@hono/node-server':
+        specifier: ^2.1.5
+        version: 2.1.5(hono@4.13.16)
+      '@tollgate/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      hono:
+        specifier: ^4.13.16
+        version: 4.13.16
+      zod:
+        specifier: ^4.4.3
+        version: 4.6.7
+    devDependencies:
+      tsx:
+        specifier: ^4.23.15
+        version: 4.23.15
 
   bench:
     dependencies:
@@ -189,6 +209,25 @@ importers:
         specifier: ^2.0.0
         version: 2.57.14(typescript@7.0.2)(zod@4.6.7)
     devDependencies:
+      tsx:
+        specifier: ^4.23.15
+        version: 4.23.15
+
+  e2e:
+    dependencies:
+      '@tollgate/signer':
+        specifier: workspace:*
+        version: link:../apps/signer
+      postgres:
+        specifier: ^4.0.0
+        version: 4.0.0
+      trytollgate:
+        specifier: workspace:*
+        version: link:../packages/sdk
+    devDependencies:
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.20.5
       tsx:
         specifier: ^4.23.15
         version: 4.23.15

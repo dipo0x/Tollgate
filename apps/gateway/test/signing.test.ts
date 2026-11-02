@@ -135,6 +135,35 @@ describe('signing through the gateway: what stops it', () => {
   })
 })
 
+describe('money held for a payment that never happened', () => {
+  it('a decision that WAS signed is never released by a timer, even after expiry: it may be on its way, and 1Click decides', async () => {
+    const g = bootWithSigner(); const { token, id } = await allowed(g)
+    expect((await sign(g, token, id)).status).toBe(200)
+    g.setNow(new Date('2026-11-06T10:06:00Z'))
+    expect(await g.gateway.releaseStaleAllowed()).toBe(0)
+    expect((await g.op('GET', '/v1/mandates/mnd_1')).json.balance).toMatchObject({ committed: '0.250000' })
+    expect((await g.op('GET', `/v1/decisions/${id}`)).json.state).toBe('allowed')
+  })
+
+  it('a decision that was released can no longer be signed', async () => {
+    const g = bootWithSigner(); const { token, id } = await allowed(g)
+    g.setNow(new Date('2026-11-06T10:06:00Z'))
+    expect(await g.gateway.releaseStaleAllowed()).toBe(1)
+    const r = await sign(g, token, id)
+    expect(r.status).toBe(409); expect(r.json.error.code).toBe('not_signable')
+    expect(g.calls).toHaveLength(0) // never even forwarded to the signer
+  })
+
+  it('the signer being down leaves a hold that comes back: the allow is made, the signing fails, the challenge expires', async () => {
+    const g = bootWithSigner(); const { token, id } = await allowed(g)
+    g.deps.signer = { sign: async () => { throw new Error('connect ECONNREFUSED') } }
+    expect((await sign(g, token, id)).status).toBe(502)
+    expect((await g.op('GET', '/v1/mandates/mnd_1')).json.balance.committed).toBe('0.250000')
+    g.setNow(new Date('2026-11-06T10:06:00Z')); await g.gateway.releaseStaleAllowed()
+    expect((await g.op('GET', '/v1/mandates/mnd_1')).json.balance).toMatchObject({ committed: '0.000000', remaining: '5.000000' })
+  })
+})
+
 describe('signing through the gateway: when the signer is not there', () => {
   it('no signer configured: 503, nothing happens', async () => {
     const g = boot(); const { token } = await g.setup({ mandate: AUTO }); g.oneClick.add(record(RECIPIENT))
