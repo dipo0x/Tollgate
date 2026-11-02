@@ -230,14 +230,11 @@ export function storeContract(label: string, make: () => Promise<Made>) {
       expect(order).toHaveLength(5)
     }))
 
-    it('different keys do not wait for each other', () => using(async ({ locks }) => {
-      const started: string[] = []
-      await Promise.all(['a', 'b', 'c'].map(k => locks.run(k, async () => { started.push(k); await nap(150) })))
-      expect(started).toHaveLength(3)
-      // If they had queued, three 150 ms jobs would take 450 ms. This checks they overlapped by timing one more run.
-      const t = Date.now()
-      await Promise.all(['x', 'y', 'z'].map(k => locks.run(k, () => nap(200))))
-      expect(Date.now() - t).toBeLessThan(550)
+    it('different keys do not wait for each other: their work overlaps in time', () => using(async ({ locks }) => {
+      // Counted, not timed: how many are inside their work at once. Same key would give 1; different keys must give more.
+      let inside = 0, worst = 0
+      await Promise.all(['a', 'b', 'c'].map(k => locks.run(k, async () => { inside++; worst = Math.max(worst, inside); await nap(400); inside-- })))
+      expect(worst).toBeGreaterThan(1)
     }))
 
     it('returns the work\'s value, and a failure in the work releases the lock for the next caller', () => using(async ({ locks }) => {

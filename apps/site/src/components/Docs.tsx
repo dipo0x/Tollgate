@@ -9,7 +9,7 @@ const MANDATE = `{
   "approval": { "above": "1.00", "firstPayeeRequiresApproval": true }
 }`
 
-const SDK = `import { createTollgate, httpRpcRail } from '@tollgate/sdk'
+const SDK = `import { createTollgate, httpRpcRail } from 'trytollgate'
 
 const tollgate = createTollgate({
   gatewayUrl: 'http://127.0.0.1:8787', agentToken: process.env.TOLLGATE_AGENT_TOKEN!, mandateId: 'mnd_1',
@@ -22,8 +22,8 @@ const STEPS: { n: string; title: string; text: string; code: string; lang: strin
     code: 'pnpm db:up\npnpm --filter @tollgate/gateway start' },
   { n: '02', title: 'Write the rules', text: 'A mandate is the budget, the hosts, the payee rule and the approval threshold. Creating it returns the agent token once; only its hash is kept.', lang: 'json', code: MANDATE },
   { n: '03', title: 'Wrap your agent’s fetch', text: 'Nine lines. A 402 goes through the gateway, and a payment is signed only if every check passes. The key is never in the agent.', lang: 'ts', code: SDK },
-  { n: '04', title: 'Watch every decision', text: 'Each request shows which of the twelve checks passed and which one stopped it. The audit log is a hash chain, and one command verifies it.', lang: 'shell',
-    code: 'GET /v1/decisions      GET /v1/approvals\npnpm --filter @tollgate/core verify-log --db' },
+  { n: '04', title: 'Watch every decision', text: 'The dashboard shows which of the twelve checks passed and which one stopped each request. The audit log is a hash chain, and one command verifies it.', lang: 'shell',
+    code: 'open http://127.0.0.1:8787/dashboard\npnpm --filter @tollgate/core verify-log --db' },
 ]
 
 const INDEX: [string, string, string][] = [
@@ -32,7 +32,7 @@ const INDEX: [string, string, string][] = [
   ['How a payment is checked', 'The twelve checks, in order, and where each one fails closed.', '/#how'],
   ['The agent economy', 'Negotiate, hire and earn, inside the same limits.', '/#economy'],
   ['Threat model and benchmark', 'The sixteen attacks, the five benign controls, and the measured result.', '/#bench'],
-  ['Dashboard', 'The owner’s view. In build; see below for what works today.', '#dashboard'],
+  ['Dashboard', 'The owner’s screen, served by your own gateway.', '#dashboard'],
 ]
 
 export default function Docs() {
@@ -70,9 +70,10 @@ export default function Docs() {
             </div>
 
             <div className="dx-card" id="dashboard">
-              <p className="dx-k mono">Dashboard <i className="dx-pill mono">In build</i></p>
-              <p className="dx-t">The owner’s screen for mandates, a live decision feed with the per-check breakdown, the approval queue, each job’s spend against revenue, the service list and a one-click audit verification.</p>
-              <p className="dx-t dx-dim">It is not live yet, so there is no link to it here. Everything it will show is available now from the gateway’s operator API: decisions, approvals, jobs and the audit check.</p>
+              <p className="dx-k mono">Dashboard <i className="dx-pill mono">Runs locally</i></p>
+              <p className="dx-t">Your gateway serves the owner’s screen at <code>/dashboard</code>: a live decision feed with every check’s evidence, the approval queue, each mandate’s money, the service list, one-click audit verification, and the kill switch.</p>
+              <p className="dx-t dx-dim">There is no hosted version, so there is no link to one here. Paste your gateway’s operator token to sign in; it stays in that browser tab. Not built yet: a jobs screen and a live push feed.</p>
+              <pre className="dx-code mono" data-lang="shell"><code>pnpm demo --serve</code></pre>
             </div>
 
             <div className="dx-card">

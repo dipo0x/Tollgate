@@ -63,7 +63,11 @@ if (!url) {
         expect(claims).toHaveLength(1)
         expect(claims[0]).toMatchObject({ decision_id: id, tx_hash: ok.json.txHash, signer_address: backend.address })
 
-        expect((await sign()).status).toBe(409) // never twice
+        // Asking again returns the SAME signed bytes from the gateway's stored signature; the signer is not asked, and keeps one claim.
+        const again = await sign()
+        expect(again.status).toBe(200); expect(again.json).toMatchObject({ replayed: true, txHash: ok.json.txHash, signedTx: ok.json.signedTx })
+        expect(await sql`SELECT 1 FROM signer_claims`).toHaveLength(1)
+        expect(await sql`SELECT tx_hash FROM gateway_signatures WHERE decision_id = ${id}`).toHaveLength(1)
         expect((await g.op('GET', '/v1/audit/verify')).json).toMatchObject({ ok: true })
       } finally { await sql.end({ timeout: 2 }); await g.close(); await dropper(schema) }
     })
@@ -80,9 +84,11 @@ if (!url) {
         g.oneClick.add(record(RECIPIENT))
         const id = (await g.authorize(token, challenge('c1', RECIPIENT))).json.decisionId as string
         const rs = await Promise.all(Array.from({ length: 10 }, () => g.call('POST', `/v1/payments/${id}/sign`, token, { tx: TX })))
-        expect(rs.filter(r => r.status === 200)).toHaveLength(1)
-        expect(rs.filter(r => r.status === 409)).toHaveLength(9)
-        expect(await sql`SELECT 1 FROM signer_claims`).toHaveLength(1)
+        expect(await sql`SELECT 1 FROM signer_claims`).toHaveLength(1) // the key signed once
+        const ok = rs.filter(r => r.status === 200)
+        expect(ok.length).toBeGreaterThanOrEqual(1)
+        expect(new Set(ok.map(r => r.json.signedTx)).size).toBe(1) // everyone who succeeded got the same transaction
+        expect(rs.filter(r => r.status !== 200).every(r => r.status === 409)).toBe(true)
       } finally { await sql.end({ timeout: 2 }); await g.close(); await dropper(schema) }
     })
   })

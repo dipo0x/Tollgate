@@ -23,7 +23,7 @@ and the benchmark runner.
 │ hires, earns     │ ───────▶ │ execute, SSE                 │ sign │ process,     │
 │       │          │          ├──────────────────────────────┤ req  │ decision-    │
 │       ▼          │          │ policy engine (pure)         │      │ bound only   │
-│ @tollgate/sdk    │ ◀─────── │ C01-C12 pipeline -> decision │      └──────┬───────┘
+│ trytollgate      │ ◀─────── │ C01-C12 pipeline -> decision │      └──────┬───────┘
 │ tollgate.fetch() │  result  ├──────────┬─────────┬─────────┤             │ broadcast
 └────────┬─────────┘          │ approvals│ registry│ ledger +│             ▼
          │ GET -> 402         │ queue    │ verified│ audit   │      ┌──────────────┐

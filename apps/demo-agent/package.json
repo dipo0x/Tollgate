@@ -3,5 +3,21 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Builder agent that decides, buys, negotiates, hires and earns — the thing Tollgate protects."
+  "description": "Builder agent that decides, buys, negotiates, hires and earns: the thing Tollgate protects. Offline demo with a scripted planner.",
+  "scripts": {
+    "start": "tsx src/demo.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@tollgate/core": "workspace:*",
+    "@tollgate/gateway": "workspace:*",
+    "@tollgate/mock-merchants": "workspace:*",
+    "trytollgate": "workspace:*",
+    "@tollgate/signer": "workspace:*",
+    "viem": "^2.0.0",
+    "@hono/node-server": "^2.1.5"
+  },
+  "devDependencies": {
+    "tsx": "^4.23.15"
+  }
 }

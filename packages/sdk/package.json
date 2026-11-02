@@ -1,21 +1,53 @@
 {
-  "name": "@tollgate/sdk",
-  "private": true,
+  "name": "trytollgate",
   "version": "0.1.0",
+  "description": "Wraps fetch so an HTTP 402 payment challenge is checked by a Tollgate gateway before anything is signed or paid. For AI agents.",
+  "license": "MIT",
   "type": "module",
-  "description": "Client library: wraps fetch so an HTTP 402 payment challenge is routed through the Tollgate gateway.",
-  "main": "src/index.ts",
-  "types": "src/index.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "ai-agents",
+    "agent-payments",
+    "402",
+    "x402",
+    "payment-firewall",
+    "near",
+    "near-intents",
+    "security"
+  ],
+  "homepage": "https://trytollgate.xyz",
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
+    "build": "rm -rf dist && tsc -p tsconfig.build.json && node scripts/fix-dts.mjs",
+    "prepack": "pnpm run build",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "viem": "^2.0.0"
   },
   "devDependencies": {
     "@tollgate/core": "workspace:*",
     "@tollgate/gateway": "workspace:*",
     "@tollgate/signer": "workspace:*"
-  },
-  "dependencies": {
-    "viem": "^2.0.0"
   }
 }

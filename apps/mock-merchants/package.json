@@ -3,14 +3,22 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Fake sellers, a fake directory and a fake 1Click, for the benchmark and offline runs.",
+  "description": "Fake sellers, a fake directory and a fake 1Click, for the benchmark and offline runs. Everything here is simulated and labelled as such.",
   "dependencies": {
-    "@tollgate/core": "workspace:*"
+    "@tollgate/core": "workspace:*",
+    "hono": "^4.13.16",
+    "viem": "^2.0.0"
   },
   "main": "src/index.ts",
   "types": "src/index.ts",
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@tollgate/gateway": "workspace:*",
+    "trytollgate": "workspace:*",
+    "@tollgate/signer": "workspace:*",
+    "tsx": "^4.23.15"
   }
 }

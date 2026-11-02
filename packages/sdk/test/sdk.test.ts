@@ -185,6 +185,15 @@ describe('when a person has to approve', () => {
     expect((await h.g.op('GET', '/v1/approvals')).json.approvals).toHaveLength(1) // never a second approval raised
   })
 
+  it('an approval triggered by the AMOUNT (not a new payee): the waiting agent pays once after approval, with one approval raised', async () => {
+    const h = await setup({ mandate: { approval: { above: '0.20', riskAbove: 90, firstPayeeRequiresApproval: false } } })
+    const pending = h.make({ approval: { wait: true, pollMs: 20, timeoutMs: 5000 } }).fetch(`${MERCHANT}/data`)
+    for (let i = 0; i < 100; i++) { const a = (await h.g.op('GET', '/v1/approvals')).json.approvals; if (a[0]) { await h.g.op('POST', `/v1/approvals/${a[0].decisionId}/approve`, { reason: 'ok' }); break }; await new Promise(r => setTimeout(r, 20)) }
+    expect((await pending).status).toBe(200)
+    expect(h.rail.sent).toHaveLength(1)
+    expect((await h.g.op('GET', '/v1/approvals')).json.approvals).toHaveLength(1)
+  })
+
   it('with approval.wait but nobody approving: gives up at the timeout with ApprovalRequired, pays nothing', async () => {
     const h = await setup({ mandate: FIRST })
     const err = await h.make({ approval: { wait: true, pollMs: 10, timeoutMs: 150 } }).fetch(`${MERCHANT}/data`).catch(e => e)

@@ -21,6 +21,23 @@ export function ledgerContract(label: string, make: () => Promise<Made>, opts: {
     }
   }
 
+  describe(`${label}: an approval and a rejection racing on one decision`, () => {
+    it('never errors (no deadlock), and always ends in one consistent state, reserve vs release many times over', () => withLedger('5.00', async l => {
+      for (let i = 0; i < 6; i++) {
+        const id = `race${i}`
+        expect((await l.propose('m1', id, m('0.25'))).ok).toBe(true)
+        // Both are issued at the same moment, as an owner's approve and a second person's reject would be. In either order is fine at
+        // this level (releasing a committed hold is allowed); what must never happen is an error, or a state the money disagrees with.
+        await Promise.all([l.reserve('m1', id, m('0.25')), l.release(id)])
+        expect(['committed', 'released']).toContain(await l.stateOf(id))
+      }
+      const states = await Promise.all(Array.from({ length: 6 }, (_, i) => l.stateOf(`race${i}`)))
+      const b = await l.balance('m1')
+      expect(b?.committed).toBe(m('0.25') * BigInt(states.filter(x => x === 'committed').length))
+      expect(b?.proposed).toBe(0n) // nothing is left half-decided
+    }))
+  })
+
   describe(`${label}: money states`, () => {
     it('reserve holds budget, settle spends it, release returns it', () => withLedger('5.00', async l => {
       expect(await l.reserve('m1', 'd1', m('2'))).toMatchObject({ ok: true, state: 'committed' })

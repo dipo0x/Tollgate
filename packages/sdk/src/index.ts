@@ -87,7 +87,8 @@ export function createTollgate(o: TollgateOptions) {
 
   async function tollgateFetch(input: string | URL | Request, init: RequestInit & { tollgate?: CallOptions } = {}): Promise<Response> {
     const { tollgate: call = {}, ...plain } = init
-    const first = await doFetch(input, plain)
+    // The merchant needs somewhere to send a refund, so the first request says who is paying. A public address, not a secret.
+    const first = await doFetch(input, { ...plain, headers: { ...Object.fromEntries(new Headers(plain.headers).entries()), 'x-payer': o.payer } })
     if (first.status !== 402) return first
 
     const challenge = await challengeOf(first)
@@ -100,7 +101,7 @@ export function createTollgate(o: TollgateOptions) {
 
     const txHash = await pay(d)
     // One retry, with proof of payment. If the merchant still says 402 we hand that back: we never pay twice for one call.
-    const retried = await doFetch(input, { ...plain, headers: { ...Object.fromEntries(new Headers(plain.headers).entries()), 'x-payment-proof': JSON.stringify({ challengeId: (challenge as { id?: string }).id, txHash, depositAddress: d.bind?.to }) } })
+    const retried = await doFetch(input, { ...plain, headers: { ...Object.fromEntries(new Headers(plain.headers).entries()), 'x-payer': o.payer, 'x-payment-proof': JSON.stringify({ challengeId: (challenge as { id?: string }).id, txHash, depositAddress: d.bind?.to }) } })
     // Best effort: ask the gateway to check 1Click and settle the held money. The merchant's answer is what the caller gets either way.
     void gateway('POST', `/v1/payments/${d.decisionId}/reconcile`).catch(() => {})
     return retried

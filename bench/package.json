@@ -13,7 +13,7 @@
   "dependencies": {
     "@tollgate/core": "workspace:*",
     "@tollgate/gateway": "workspace:*",
-    "@tollgate/sdk": "workspace:*",
+    "trytollgate": "workspace:*",
     "@tollgate/signer": "workspace:*",
     "viem": "^2.0.0"
   },

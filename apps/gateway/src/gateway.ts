@@ -90,6 +90,16 @@ export class Gateway {
     return ok({ mandate: spec, agentToken, note: 'the agent token is shown once; only its hash is kept' }, 201)
   }
 
+  /** For the owner's dashboard: every mandate with its money, children included. */
+  async listMandates(): Promise<Out> {
+    const rows = []
+    for (const m of await this.d.mandates.all()) {
+      const b = await this.d.ledger.balance(m.spec.id)
+      rows.push({ id: m.spec.id, agentId: m.spec.agentId, status: m.status, ...(m.spec.parentId ? { parentId: m.spec.parentId } : {}), validUntil: m.spec.validUntil, currency: m.spec.budget.currency, perPayment: m.spec.budget.perPayment, balance: b ? this.money(b) : null })
+    }
+    return ok({ mandates: rows })
+  }
+
   async getMandate(id: string): Promise<Out> {
     const m = await this.d.mandates.get(id)
     if (!m) return fail(404, 'not_found', `no mandate ${id}`)
@@ -156,7 +166,9 @@ export class Gateway {
     })
 
     // C10 said "this is a retry of my own earlier ALLOW": hand back that decision. No second hold, no second payment.
-    const resumeId = evaluation.decision === 'ALLOW' ? evaluation.checks.find(c => c.id === 'C10')?.evidence['decisionId'] : undefined
+    // That includes an ALLOW a person gave: asking again after approval must resume it, not raise a second approval for the same
+    // payment (the approval gate would still fire on an amount above the threshold). Only an outright DENY stops a resume.
+    const resumeId = evaluation.decision !== 'DENY' ? evaluation.checks.find(c => c.id === 'C10')?.evidence['decisionId'] : undefined
     if (typeof resumeId === 'string' && evaluation.checks.find(c => c.id === 'C10')?.evidence['resume'] === true) {
       const earlier = await this.d.store.decisions.get(resumeId)
       if (earlier) return ok({ ...this.view(earlier), resumed: true })

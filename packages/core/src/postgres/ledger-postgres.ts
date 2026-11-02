@@ -66,8 +66,21 @@ export class PostgresLedger implements Ledger {
     })
   }
 
+  /**
+   * Lock order, everywhere: the mandate's budget row FIRST, then the decision row. `reserve` already works this way. If `settle` or
+   * `release` took the decision row first, then needed the budget row (through the foreign key on the entry they append), an approval
+   * and a rejection racing on one decision would each hold what the other needs: a deadlock, and Postgres kills one of them.
+   */
+  private async lockBudgetOf(tx: Tx, decisionId: string): Promise<boolean> {
+    const [d] = await tx.select({ mandateId: decisions.mandateId }).from(decisions).where(eq(decisions.decisionId, decisionId))
+    if (!d) return false
+    await tx.select().from(budgets).where(eq(budgets.mandateId, d.mandateId)).for('update')
+    return true
+  }
+
   async settle(decisionId: string, amount?: Micro): Promise<TransitionResult> {
     return this.db.transaction(async tx => {
+      if (!(await this.lockBudgetOf(tx, decisionId))) return { ok: false, reason: 'unknown_decision' } as const
       const [d] = await tx.select().from(decisions).where(eq(decisions.decisionId, decisionId)).for('update')
       if (!d) return { ok: false, reason: 'unknown_decision' } as const
       if (d.state !== 'committed') return { ok: false, reason: 'invalid_state' } as const
@@ -84,6 +97,7 @@ export class PostgresLedger implements Ledger {
 
   async release(decisionId: string): Promise<TransitionResult> {
     return this.db.transaction(async tx => {
+      if (!(await this.lockBudgetOf(tx, decisionId))) return { ok: false, reason: 'unknown_decision' } as const
       const [d] = await tx.select().from(decisions).where(eq(decisions.decisionId, decisionId)).for('update')
       if (!d) return { ok: false, reason: 'unknown_decision' } as const
       if (d.state !== 'committed' && d.state !== 'proposed') return { ok: false, reason: 'invalid_state' } as const

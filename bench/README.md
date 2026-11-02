@@ -29,6 +29,11 @@ pnpm bench -- --strict  # exit code 1 if Tollgate lets an attack through or wron
 Sabotage run (a check replaced by "always pass", then `pnpm bench`): C05 broke A02; C09 broke A09 and A10; C10 broke A08 and B04 (the retry paid twice); C06 broke A03 and A04. Each was reported as a deviation, and each was restored.
 With C09 off, A13 (budget overrun) was still stopped by the ledger's atomic reserve.
 
+## Where the benchmark is more generous than reality (found while building the simulated 1Click)
+
+- **A01, price inflation.** The scripted 1Click quote stays at 0.25 whatever output is asked for, so C07 sees a 50.00 charge against a 0.25 quote. A real 1Click quotes the output the merchant asked for: a merchant that asks for 50.00 gets a consistent 50.00 quote, and C07 passes. Run against the simulated 1Click server (`apps/mock-merchants`), the same attack is stopped by the per-payment cap at **C09**. The attack is still stopped; the check that stops it differs. C07 catches the different attack where the merchant takes a worse exchange rate than ours (A14, run for real in `apps/mock-merchants/test/merchants.test.ts`).
+- **A08, replay.** The scripted record is reset to `PENDING_DEPOSIT` on the replay, which isolates the replay guard (C10). Against a 1Click that correctly reports a paid address as `SUCCESS`, the replay is stopped one check earlier, at **C06**. C10 is still what stops it when 1Click's status lags; both paths are tested.
+
 ## Limits, stated
 
 - The stock policy is modelled from the PRD's description, not run from the library. A different configuration of the real library might stop more.

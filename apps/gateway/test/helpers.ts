@@ -108,8 +108,8 @@ export class BridgedStore extends MemorySignerStore {
 }
 
 /** A gateway wired to a real signer app (in the same process), with the gateway's clock. */
-export function bootWithSigner(opts: { token?: string } = {}) {
-  const g = boot()
+export function bootWithSigner(opts: { token?: string; over?: Partial<GatewayDeps> } = {}) {
+  const g = boot(opts.over ?? {})
   const backend = viemBackend(generatePrivateKey())
   const store = new BridgedStore(g)
   const signerApp = createSignerApp({ store, backend, limits: { tokens: tokensFor(['eip155:42161']), maxPerTx: 1_000_000n, maxGas: 200_000n, maxFeePerGas: 2_000_000_000n }, clock: () => g.deps.clock() }, SIGNER_SERVICE_TOKEN)

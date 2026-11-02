@@ -14,7 +14,24 @@ Built for **NEAR HACKATHON**, tracks `security` (AI Security & Defense) and `age
 
 ## Status
 
-Week-0 preparation. This repository currently holds the planning documents and the monorepo skeleton; the marketing site under `apps/site` is the only running code. Product code starts 1 Nov 2026, per `HACKATHON.md` Q-001. Every package README says what that package will be responsible for.
+What exists, what is simulated, and what is not built. Written for a reviewer who has not seen the code.
+
+| Part | State |
+| --- | --- |
+| Gateway: 12 checks, budget ledger, approvals, kill switch, audit chain, negotiation, hiring, earning | **Built and tested.** All state in Postgres (the server refuses to start without `DATABASE_URL`). |
+| Signer: signs a USDC transfer only for a stored ALLOW, once, within its own limits | **Built and tested.** Never broadcasts. Not run with a funded key. |
+| SDK: wraps `fetch`, handles a 402 end to end | **Built and tested** against the real gateway and signer. Packaged for npm as `trytollgate` (`packages/sdk`); publishing it is the maintainer's step, so check npm before relying on `npm install trytollgate`. |
+| Benchmark: 16 attacks, 5 controls, 3 targets | **Built.** Offline. See `bench/README.md` for what is real and what is scripted. |
+| Demo (`pnpm demo`): buy, haggle, hire, earn, attacks, kill switch | **Built.** Real gateway, signer and SDK; everything outside them is simulated and labelled. |
+| Mock merchants, fake 1Click server, simulated chain, poisoned directory | **Built.** Test doubles, labelled as simulated. |
+| Marketing site and `/docs/` page | **Built** (`apps/site`). |
+| Dashboard (owner UI) | **Built, minimal, local.** Served by the gateway at `/dashboard`: decisions with every check's evidence, approvals (approve or reject with a required reason), mandates and their money, the service list, the audit chain with a verify button, and the kill switch. Read-only apart from those two actions. **Not built:** a jobs screen, a live push feed, a hosted version. Try it on the demo's data with `pnpm demo --serve`. |
+| Hired workers as separate processes (`apps/workers`) | **Not built.** Hiring is exercised through the gateway; the demo plays the worker inline. |
+| An LLM planner on NEAR AI Cloud | **Not built.** The demo agent's decisions are scripted; no model is called. |
+| A live payment on mainnet, a real 1Click quote | **Not done.** The live 1Click dry-quote endpoint returned errors when tried; fixtures marked `synthetic` stand in. No funds were used. |
+| Real MPP / x402 wire format | **Not built.** The SDK and mock merchants speak a simple 402 format of our own (see `packages/sdk/README.md`). |
+
+Nothing on this page has been run against real money.
 
 ## Repository layout
 
@@ -22,9 +39,9 @@ Week-0 preparation. This repository currently holds the planning documents and t
 apps/
   gateway/          HTTP API and verifier — the only component the agent talks to  (Hono, Node 22)
   signer/           isolated process; signs only what a recorded ALLOW decision covers
-  dashboard/        owner console: mandates, decisions, approvals, jobs, spend, audit  (React, Vite, Tailwind)
-  demo-agent/       builder agent: decides, buys, negotiates, hires, earns  (LLM on NEAR AI Cloud)
-  workers/          hired worker agents running under child mandates
+  dashboard/        (empty: the owner dashboard ships inside the gateway, apps/gateway/src/dashboard, at /dashboard)
+  demo-agent/       the offline demo: a scripted agent that buys, haggles, hires, earns and meets attackers
+  workers/          hired worker agents  (not built yet; the demo plays the worker inline)
   mock-merchants/   fake sellers, fake directory, fake 1Click — benchmark and offline runs
   site/             tollgate marketing homepage  (React 19, Vite, GSAP, Three.js)
 packages/
@@ -51,7 +68,8 @@ pnpm install
 | # | Do this | See this |
 | --- | --- | --- |
 | 1 | `pnpm bench` | A table of 16 attacks and 5 benign controls against three targets: a naive agent, a **model** of the stock `mppx` policy, and Tollgate (the real gateway, signer and SDK). It prints how many attacks each target stopped, flags any result that differs from what was written down before the run, and writes `bench/results/results.json` and `results.html`. Offline, no key, no funds. See `bench/README.md` for exactly what is real and what is scripted. |
-| 2 | `pnpm demo` | The demo agent runs one small job end to end: it decides what to buy, negotiates a price, hires workers on child mandates, sells its report, and has one over-budget purchase blocked and logged. *(not implemented yet)* |
+| 2b | `pnpm demo --serve` | The same story, then the gateway stays up. Open <http://127.0.0.1:8787/dashboard>, paste the operator token the demo prints, and see every decision, its checks, the mandates and the audit chain. |
+| 2 | `pnpm demo` | One command, offline, no key: an agent sets rules, haggles, buys, waits for the owner's approval, hires a worker and has its work checked, earns from a **simulated** customer, meets seven dishonest merchants and a seller that changes the price after agreeing (each stopped by a named check), one merchant whose page tries to inject instructions (the text reaches no model and the ordinary purchase is paid), and then hits the kill switch. It ends with the money, the job summary and an audit chain that verifies. A banner at the top says what is real and what is simulated. |
 | 3 | `pnpm --filter @tollgate/core verify-log --db` | The audit chain stored in Postgres verifies (`OK: N entries, head …`), or the first broken entry is named. It reads the database directly, so it does not trust the gateway. `verify-log <file>` checks an exported file. |
 | 4 | `pnpm site` | The homepage on <http://localhost:5173>. |
 | 5 | `pnpm db:up`, copy `.env.example` to `.env` and fill it in, `pnpm --filter @tollgate/gateway start`, then in a second terminal `apps/gateway/scripts/try-it.sh` | The gateway answers on <http://127.0.0.1:8787> and says `storage: postgres`. The script runs one agent through it offline: a payment held for approval, then approved, three attacks refused (each naming the check that stopped it), the kill switch, and the audit check. Run it once per database: a deposit address can be used only once. For a fresh run without wiping anything, start the gateway with `DATABASE_SCHEMA=demo2`. No 1Click key, network or funds needed. |

@@ -6,6 +6,7 @@ import { verifyChain } from '@tollgate/core'
 import { bearer } from './auth.ts'
 import { Gateway, type GatewayDeps, type Out } from './gateway.ts'
 import type { Principal } from './state.ts'
+import { dashboardAsset } from './dashboard.ts'
 
 type Env = { Variables: { who: Principal; requestId: string } }
 type Agent = Extract<Principal, { role: 'agent' }>
@@ -94,7 +95,18 @@ export function createApp(deps: GatewayDeps) {
   // ---- public ----------------------------------------------------------------------------
   app.get('/healthz', async c => c.json({ ok: true, frozen: await gw.isFrozen() }))
 
+  // ---- the owner's dashboard: a static page. It holds no secrets; the operator token is typed into it and kept for the tab only ----
+  for (const name of ['', 'app.js', 'app.css'] as const) {
+    app.get(`/dashboard${name ? `/${name}` : ''}`, () => {
+      const a = dashboardAsset(name)
+      return new Response(a.body, { headers: { 'content-type': a.type, ...a.headers } })
+    })
+  }
+
   // ---- mandates --------------------------------------------------------------------------
+  app.get('/v1/mandates', asOperator(async c => send(c, await gw.listMandates())))
+  // What the dashboard's status pills show. Nothing secret: whether it is frozen, where state is kept, and whether a signer is attached.
+  app.get('/v1/status', asOperator(async c => c.json({ frozen: await gw.isFrozen(), storage: deps.store.kind, signer: !!deps.signer, now: deps.clock().toISOString() })))
   app.post('/v1/mandates', asOperator(async c => { const raw = await c.req.json().catch(() => undefined); return send(c, await gw.createMandate(raw)) }))
   app.get('/v1/mandates/:id', asEither((c, p) => {
     const id = P(c, 'id')

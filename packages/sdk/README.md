@@ -1,11 +1,19 @@
-# @tollgate/sdk
+# trytollgate (the Tollgate SDK)
 
 Wraps `fetch` so an HTTP 402 payment challenge is routed through the Tollgate gateway. Runs in the agent's process, which is the **untrusted** zone: it holds an agent token, never a key.
+
+## Install
+
+```bash
+npm install trytollgate
+```
+
+It has one runtime dependency, `viem`. In this repository it is the workspace package `packages/sdk`.
 
 ## Protect an agent in 9 lines
 
 ```ts
-import { createTollgate, httpRpcRail } from '@tollgate/sdk'
+import { createTollgate, httpRpcRail } from 'trytollgate'
 
 const tollgate = createTollgate({
   gatewayUrl: 'http://127.0.0.1:8787', agentToken: process.env.TOLLGATE_AGENT_TOKEN!, mandateId: 'mnd_1',

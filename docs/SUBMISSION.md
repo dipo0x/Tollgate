@@ -43,22 +43,28 @@ Never commit the finished payload. It holds personal data.
 > Draft here, then read it once more before sending. Lead with the security story; the
 > demo agent carries the agent-economy story.
 
-AI agents that can pay can be tricked into paying. The payment request comes from an
-untrusted server, and the agent follows it — an inflated price, a swapped payee, a fake
-deposit address, a hijacked refund, a replay, or a prompt injection that talks the agent
-out of scope. Existing guards cap how much a wallet can spend; they do not verify that
-this request is the one the human allowed. Tollgate is a payment firewall between an agent
-and its wallet: it checks every request against a mandate the human wrote and against
-facts it fetches itself, returns ALLOW, DENY or NEEDS_APPROVAL, and only an ALLOW produces
-a signature bound to that exact decision. NEAR Intents and the 1Click API are the
-settlement path and the independent cross-check — the merchant's advertised deposit
-address, amount, asset and refund target must match the quote or the payment is denied.
-NEAR AI Cloud runs the demo agent that decides, buys, negotiates, hires workers on
-delegated child mandates, and earns through its own paid endpoint. A red-team benchmark of
-16 attacks and 5 benign controls runs offline against three targets, and the numbers are
-published as measured.
+AI agents that can pay can be tricked into paying. The payment request comes from an untrusted server and the agent follows it: an inflated price, a swapped payee, a fake deposit address, a hijacked refund, a replay, or a prompt injection. Spending caps limit the damage; they do not check that this request is the one the owner allowed.
 
-*(Count the characters before sending: 20–2000.)*
+Tollgate is a payment firewall between an agent and its wallet. Twelve fail-closed checks compare each request with a mandate the owner wrote and with facts Tollgate fetches itself (an independent NEAR Intents / 1Click quote and deposit record). The result is ALLOW, DENY or NEEDS_APPROVAL. Only an ALLOW reaches a separate signer, which rebuilds the transaction from the stored decision, applies its own cap and signs it once. Every action goes into a hash-chained audit log in Postgres.
+
+The same gateway runs the agent economy inside the owner's limits: negotiation bounded by a price ceiling, hired workers paid from a carved-out budget and released only when their work passes a check, and earnings credited only against a verified, fresh receipt.
+
+A benchmark of 16 attacks and 5 ordinary payments runs offline: Tollgate stopped 16 of 16 and allowed 5 of 5; a naive agent stopped 0 and a modelled stock policy 5. One command, `pnpm demo`, shows the whole story. Limits are stated in the README: merchants, 1Click, the chain and the customer are simulated, the agent's decisions are scripted, the dashboard is not built, and nothing was run with real funds.
+
+*(Count the characters before sending: 20–2000. This draft is about 1,500.)*
+
+## 2b. Draft of the X post
+
+Oladipo writes and publishes this. It must include `@NEARProtocol` and `#NEARHackathon` and have the video or screenshots attached. Fill in the two links.
+
+> AI agents that can pay can be tricked into paying: swapped payee, fake deposit address, inflated price, prompt injection.
+>
+> Tollgate checks every payment against the owner's rules and an independent NEAR Intents quote before anything is signed. Built at NEAR HACKATHON. In our offline benchmark it stopped 16/16 attacks; a naive agent stopped 0.
+>
+> Demo + code: <repo link> · <demo link>
+> What would you want an agent allowed to buy on its own? @NEARProtocol #NEARHackathon
+
+The benchmark numbers come from `bench/results/results.json`. Merchants, 1Click and the chain in it are simulated, which the demo and the README say.
 
 ## 3. Field rules
 
@@ -89,6 +95,7 @@ Read verbatim to Oladipo, and only then set `consent: true`:
 ## 5. Before sending
 
 - [ ] Repository is public (Oladipo flips it; deadline 2026-11-14T23:59Z)
+- [ ] SDK published to npm as `trytollgate` (Oladipo only: needs his npm login and two-factor code; see "Publishing the SDK" below). `@tollgate/sdk`, `tollgate-sdk` and `tollgate` are taken by other people, and the `@tollgate` scope is not ours.
 - [ ] `LICENSE` present — MIT
 - [ ] README runs clean from a fresh clone on a machine that has never seen this project
 - [ ] Benchmark result reproducible in under 5 minutes, offline, with no keys
@@ -117,3 +124,20 @@ curl -sS -X POST https://nearhackathon.com/api/applications \
 | 503 | Storage unavailable | Wait a minute, resend with the **same** `requestId` |
 
 The same fields are also on the form at <https://nearhackathon.com/#apply>.
+
+## 7. Publishing the SDK to npm (Oladipo)
+
+Publishing is public and permanent: a published version cannot be edited, only superseded. An agent does not do it.
+
+```sh
+cd packages/sdk
+npm pack --dry-run          # lists exactly what goes up: dist/, README.md, LICENSE, package.json. Nothing else.
+npm login                   # your own account, with two-factor
+npm publish                 # `prepack` builds first; publishConfig makes it public
+```
+
+The name `trytollgate` was free when checked on 2026-11-02 (unscoped, so no npm organisation is needed). To use `@trytollgate/sdk`
+instead, create a free `trytollgate` organisation on npmjs.com first, then change `name` in `packages/sdk/package.json` and the
+`trytollgate` imports in the repo. A packed copy of this package was installed into an empty project, type-checked with strict
+settings and run under plain Node before this was written.
+

@@ -487,6 +487,32 @@ describe('requests that overlap, and a process that stops half way', () => {
     expect([x.status, y.status].sort()).toEqual([200, 409])
   })
 
+  it('a payment a person approved because of its AMOUNT is resumed when the agent asks again: no second approval, money held once', async () => {
+    const g = boot(); const { token } = await g.setup({ mandate: { approval: { above: '0.20', riskAbove: 90, firstPayeeRequiresApproval: false } } }); g.oneClick.add(record(D1))
+    const first = await g.authorize(token, challenge('c1', D1)); expect(first.json.decision).toBe('NEEDS_APPROVAL')
+    await g.op('POST', `/v1/approvals/${first.json.decisionId}/approve`, { reason: 'ok' })
+    g.oneClick.add(record(D1, { status: 'PROCESSING' }))
+    const again = await g.authorize(token, challenge('c1', D1))
+    expect(again.json).toMatchObject({ decisionId: first.json.decisionId, decision: 'ALLOW', resumed: true })
+    expect((await g.op('GET', '/v1/approvals')).json.approvals).toHaveLength(1) // never a second approval for the same payment
+    expect((await g.op('GET', '/v1/mandates/mnd_1')).json.balance).toMatchObject({ committed: '0.250000' })
+  })
+
+  it('a retry that is now outright denied is not resumed: an ALLOW whose challenge has since expired is refused, not handed back', async () => {
+    const g = boot(); const { token } = await g.setup({ mandate: AUTO }); g.oneClick.add(record(D1))
+    const first = await g.authorize(token, challenge('c1', D1)); expect(first.json.decision).toBe('ALLOW')
+    g.setNow(new Date('2026-11-06T10:06:00Z')) // the challenge expired at 10:05
+    const again = await g.authorize(token, challenge('c1', D1))
+    expect(again.json.decision).toBe('DENY'); expect(again.json.resumed).toBeUndefined()
+  })
+
+  it('a rejected approval is NOT resumed: asking again about the same challenge stays refused', async () => {
+    const g = boot(); const { token } = await g.setup({ mandate: { approval: { above: '0.20', riskAbove: 90, firstPayeeRequiresApproval: false } } }); g.oneClick.add(record(D1))
+    const first = await g.authorize(token, challenge('c1', D1))
+    await g.op('POST', `/v1/approvals/${first.json.decisionId}/reject`, { reason: 'no' })
+    expect((await g.authorize(token, challenge('c1', D1))).json.decision).toBe('DENY')
+  })
+
   it('a frozen refusal first, then a real ALLOW: a third retry still sees the ALLOW and does not hold twice', async () => {
     const g = boot(); const { token } = await g.setup({ mandate: AUTO }); g.oneClick.add(record(D1))
     await g.op('POST', '/v1/freeze'); expect((await g.authorize(token, challenge('c1', D1))).json.reason).toBe('FROZEN')

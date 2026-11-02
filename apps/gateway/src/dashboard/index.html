@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tollgate dashboard</title>
+<link rel="stylesheet" href="/dashboard/app.css">
+</head>
+<body>
+<form id="login" class="card login">
+  <div class="logo"><i id="loginLogo"></i>Tollgate</div>
+  <h1>Owner dashboard</h1>
+  <p>Paste your gateway's operator token. It is kept for this tab only and sent only to this gateway.</p>
+  <label>Operator token <input id="token" type="password" autocomplete="off" required></label>
+  <button type="submit" class="primary">Open dashboard</button>
+  <p id="loginError" class="err" role="alert"></p>
+</form>
+
+<div id="app" class="shell" hidden>
+  <aside class="side">
+    <div class="logo"><i id="sideLogo"></i>Tollgate</div>
+    <nav id="tabs" aria-label="Sections"></nav>
+    <div class="sidefoot">
+      <div class="kill">
+        <span id="state" class="pill"></span>
+        <small>The kill switch refuses every payment request until you turn it off.</small>
+        <button id="freeze" type="button"></button>
+      </div>
+      <button id="signout" type="button" class="ghost">Sign out</button>
+    </div>
+  </aside>
+  <main class="main">
+    <header class="top">
+      <h1 id="title"></h1>
+      <span class="grow"></span>
+      <span id="storage" class="chip plain mu"></span>
+      <span id="signer" class="chip plain mu"></span>
+      <span id="live" class="pill live ok">Live</span>
+    </header>
+    <section id="view" hidden></section>
+  </main>
+</div>
+<script src="/dashboard/app.js"></script>
+</body>
+</html>
