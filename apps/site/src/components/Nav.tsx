@@ -8,11 +8,14 @@ const LINKS = [
   ['Mandate', '#mandate'],
   ['Agent economy', '#economy'],
   ['Setup', '#setup'],
+  ['Docs', '/docs/'],
   ['Benchmark', '#bench'],
   ['FAQ', '#faq'],
 ] as const
 
-export default function Nav() {
+/** `home` is true on the homepage, where section links are on-page anchors. On any other page they point back to the homepage. */
+export default function Nav({ home = true }: { home?: boolean }) {
+  const to = (href: string) => (home || !href.startsWith('#') ? href : `/${href}`)
   const ref = useRef<HTMLElement>(null)
   const [open, setOpen] = useState(false)
 
@@ -48,17 +51,17 @@ export default function Nav() {
   return (
     <header ref={ref} className={`nav${open ? ' open' : ''}`}>
       <div className="nav-in">
-        <a className="nav-brand" href="#top" aria-label="Tollgate, back to top">
+        <a className="nav-brand" href={home ? '#top' : '/'} aria-label="Tollgate, back to top">
           <Glyph size={24} />
           <span>Tollgate</span>
         </a>
         <nav className="nav-links" aria-label="Primary">
           {LINKS.map(([label, href]) => (
-            <a key={href} href={href}><span data-t={label}>{label}</span></a>
+            <a key={href} href={to(href)} {...(!home && href === '/docs/' ? { 'aria-current': 'page' as const } : {})}><span data-t={label}>{label}</span></a>
           ))}
         </nav>
         <div className="nav-cta">
-          <RollButton href="#setup" label="Get started" />
+          <RollButton href={to('#setup')} label="Get started" />
         </div>
         <button className="nav-menu" aria-expanded={open} aria-controls="menu" onClick={() => setOpen(o => !o)}>
           <span className="nav-burger" aria-hidden="true"><i /><i /></span>
@@ -68,13 +71,13 @@ export default function Nav() {
       <div id="menu" className="menu" inert={!open} aria-hidden={!open}>
         <nav aria-label="Mobile">
           {LINKS.map(([label, href], i) => (
-            <a key={href} href={href} onClick={() => setOpen(false)} style={{ transitionDelay: `${80 + i * 50}ms` }}>
+            <a key={href} href={to(href)} onClick={() => setOpen(false)} style={{ transitionDelay: `${80 + i * 50}ms` }}>
               <span className="mono">0{i + 1}</span>{label}
             </a>
           ))}
         </nav>
         <div className="menu-foot">
-          <RollButton href="#setup" label="Get started" />
+          <RollButton href={to('#setup')} label="Get started" />
           <p className="fine">Built by Oladipo Adesiyan</p>
         </div>
       </div>

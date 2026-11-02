@@ -30,6 +30,8 @@ const HireBody = z.strictObject({
 })
 const DeliverableBody = z.strictObject({ fields: z.record(z.string(), z.unknown()), sources: z.array(z.string().max(2048)).max(50).optional() })
 const JobBody = z.strictObject({ id: z.string().min(1).max(128), mandateId: z.string().min(1).max(128), goal: z.string().max(500), receivingAddress: z.string().min(1).max(256), price: amount, currency: z.string().min(1).max(32) })
+const wholeNumber = z.string().regex(/^\d{1,30}$/, 'must be a whole number written as a string')
+const SignBody = z.strictObject({ tx: z.strictObject({ nonce: z.number().int().min(0).max(0xffffffff), gas: wholeNumber, maxFeePerGas: wholeNumber, maxPriorityFeePerGas: wholeNumber }) })
 const ReasonBody = z.strictObject({ reason: z.string().min(1, 'a reason is required').max(500) })
 const ServiceBody = z.strictObject({
   id: z.string().min(1).max(128), name: z.string().min(1).max(200), category: z.string().min(1).max(64), host: z.string().min(1).max(253), providerUrl: z.url(),
@@ -118,6 +120,11 @@ export function createApp(deps: GatewayDeps) {
     return send(c, await gw.authorize(a, { mandateId: d.mandateId, host: d.host, purpose: d.purpose, challenge: d.challenge, ...(d.payer ? { payer: d.payer } : {}), ...(d.negotiationId ? { negotiationId: d.negotiationId } : {}) }))
   }))
   app.post('/v1/payments/:decisionId/reconcile', asEither(async (c, p) => send(c, await gw.reconcile(P(c, 'decisionId'), p.role === 'agent' ? { mandateId: p.mandateId } : {}))))
+
+  app.post('/v1/payments/:decisionId/sign', asAgent(async (c, a) => {
+    const b = await parse(c, SignBody); if (!b.ok) return b.res
+    return send(c, await gw.sign(a, P(c, 'decisionId'), b.data.tx))
+  }))
 
   app.get('/v1/decisions', asOperator(async c => {
     const q = c.req.query()

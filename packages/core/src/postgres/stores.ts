@@ -78,7 +78,7 @@ export class PostgresPins implements PinStore {
 
 const AUDIT_LOCK = 7_461_001 // any fixed number: "the audit log is being extended"
 
-const auditFromRow = (r: typeof auditEntries.$inferSelect): AuditEntry => ({ seq: r.seq, ts: r.ts, type: r.type, payload: r.payload, prevHash: r.prevHash, hash: r.hash })
+const auditFromRow = (r: typeof auditEntries.$inferSelect): AuditEntry => ({ seq: r.seq, ts: r.ts, type: r.type, payload: r.payload ?? null, prevHash: r.prevHash, hash: r.hash })
 
 export class PostgresAuditStore implements AuditStore {
   private readonly db: Db

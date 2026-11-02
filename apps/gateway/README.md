@@ -4,7 +4,7 @@ The HTTP API and verifier. The only Tollgate component the agent talks to.
 
 **Trust zone:** Trusted
 
-**Status:** working, offline by default. The signer, SDK and dashboard are not built yet, so an ALLOW returns a `bind` object (the exact payment the signer will verify) but nothing is signed.
+**Status:** working, offline by default. An ALLOW returns a `bind` (the exact payment the signer will verify). With `SIGNER_URL` and `SIGNER_SERVICE_TOKEN` set, the agent can then call `POST /v1/payments/:decisionId/sign` with only `{ tx: { nonce, gas, maxFeePerGas, maxPriorityFeePerGas } }`: the gateway forwards its own STORED bind to the signer, and writes `payment.signed`, `payment.sign_refused` or `payment.sign_failed` to the audit chain. Without them the route answers 503. The SDK and dashboard are not built yet.
 
 ## Run it
 

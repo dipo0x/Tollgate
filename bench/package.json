@@ -3,5 +3,21 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Red-team benchmark: 16 attack scenarios, 5 benign controls, 3 targets."
+  "description": "Red-team benchmark: 16 attack scenarios, 5 benign controls, 3 targets.",
+  "scripts": {
+    "bench": "tsx src/run.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "start": "tsx src/run.ts"
+  },
+  "dependencies": {
+    "@tollgate/core": "workspace:*",
+    "@tollgate/gateway": "workspace:*",
+    "@tollgate/sdk": "workspace:*",
+    "@tollgate/signer": "workspace:*",
+    "viem": "^2.0.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.23.15"
+  }
 }

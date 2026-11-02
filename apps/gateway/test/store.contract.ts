@@ -201,6 +201,15 @@ export function storeContract(label: string, make: () => Promise<Made>) {
       expect((await services.byHost('m.example.com'))?.limits.timeoutMs).toBe(1006)
     }))
 
+    it('signatures: kept per decision, the first one wins, unknown decisions have none', () => using(async ({ signatures }) => {
+      const sig = { signedTx: '0x02aa', txHash: '0x' + 'a'.repeat(64), from: '0x' + 'b'.repeat(40), chainId: 42161 }
+      expect(await signatures.get('d1')).toBeUndefined()
+      await signatures.put('d1', sig)
+      await signatures.put('d1', { ...sig, signedTx: '0x02ff', txHash: '0x' + 'c'.repeat(64) }) // a second put changes nothing
+      expect(await signatures.get('d1')).toEqual(sig)
+      expect(await signatures.get('d2')).toBeUndefined()
+    }))
+
     it('the freeze flag defaults off, and keeps what it is set to', () => using(async ({ settings }) => {
       expect(await settings.frozen()).toBe(false)
       await settings.setFrozen(true); expect(await settings.frozen()).toBe(true)

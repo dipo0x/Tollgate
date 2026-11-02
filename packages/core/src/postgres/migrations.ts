@@ -89,7 +89,7 @@ export const MIGRATIONS: readonly Migration[] = [
         seq       bigint PRIMARY KEY,
         ts        text NOT NULL,
         type      text NOT NULL,
-        payload   jsonb NOT NULL,
+        payload   jsonb,  -- NULL stands for a JSON null payload
         prev_hash text NOT NULL,
         hash      text NOT NULL UNIQUE
       );

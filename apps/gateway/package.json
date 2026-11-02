@@ -6,7 +6,9 @@
   "description": "The HTTP API and verifier. The only Tollgate component the agent talks to.",
   "devDependencies": {
     "postgres": "^4.0.0",
-    "tsx": "^4.23.15"
+    "tsx": "^4.23.15",
+    "@tollgate/signer": "workspace:*",
+    "viem": "^2.0.0"
   },
   "dependencies": {
     "@hono/node-server": "^2.1.5",

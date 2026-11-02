@@ -3,7 +3,7 @@ import type { PostgresHandle } from '@tollgate/core/postgres'
 import type { Service } from '@tollgate/registry'
 import { toPrior, type Approval, type DecisionRecord, type Job } from '../state.ts'
 import { randomUUID } from 'node:crypto'
-import type { AcceptanceStore, ApprovalOutcome, DecisionFilter, DecisionStore, JobStore, LockStore, ServiceStore, SessionStore, SettingsStore, TokenOwner, TokenStore } from './types.ts'
+import type { SignatureStore, StoredSignature, AcceptanceStore, ApprovalOutcome, DecisionFilter, DecisionStore, JobStore, LockStore, ServiceStore, SessionStore, SettingsStore, TokenOwner, TokenStore } from './types.ts'
 
 type Sql = PostgresHandle['sql']
 type Row = Record<string, any>
@@ -236,6 +236,18 @@ export class PostgresSettingsStore implements SettingsStore {
   }
   async setFrozen(on: boolean) {
     await this.sql`INSERT INTO gateway_settings (key, value) VALUES ('frozen', ${json(on)}::jsonb) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`
+  }
+}
+
+export class PostgresSignatureStore implements SignatureStore {
+  private readonly sql: Sql
+  constructor(sql: Sql) { this.sql = sql }
+  async get(id: string) {
+    const [r] = await this.sql`SELECT signed_tx, tx_hash, from_address, chain_id FROM gateway_signatures WHERE decision_id = ${id}`
+    return r ? { signedTx: r['signed_tx'], txHash: r['tx_hash'], from: r['from_address'], chainId: r['chain_id'] } : undefined
+  }
+  async put(id: string, s: StoredSignature) {
+    await this.sql`INSERT INTO gateway_signatures (decision_id, signed_tx, tx_hash, from_address, chain_id) VALUES (${id}, ${s.signedTx}, ${s.txHash}, ${s.from}, ${s.chainId}) ON CONFLICT (decision_id) DO NOTHING`
   }
 }
 

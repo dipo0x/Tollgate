@@ -27,3 +27,5 @@
 .menu-foot{display:flex;flex-direction:column;gap:14px;align-items:flex-start}
 @media (max-width:1080px){.nav-links{display:none}}
 @media (max-width:720px){.nav-cta{display:none}.nav-menu{display:inline-flex}}
+
+.nav-links a[aria-current=page]{color:var(--tx)}

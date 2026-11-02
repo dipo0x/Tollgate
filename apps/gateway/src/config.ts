@@ -12,6 +12,9 @@ export const ConfigSchema = z.object({
   GATEWAY_OPERATOR_TOKEN: z.string().min(16, 'GATEWAY_OPERATOR_TOKEN must be at least 16 characters'),
   /** The 1Click key, only needed when not offline. */
   NEAR_1CLICK_API_KEY: z.string().optional(),
+  /** Where the signer listens, and the token the gateway presents to it. Both or neither: with neither, nothing can be signed. */
+  SIGNER_URL: z.string().optional().transform(v => v || undefined).pipe(z.url().optional()),
+  SIGNER_SERVICE_TOKEN: z.string().optional().transform(v => v || undefined).pipe(z.string().min(32, 'SIGNER_SERVICE_TOKEN must be at least 32 characters').optional()),
   /**
    * Where everything is kept: mandates, the budget ledger, decisions, approvals, tokens, jobs, earnings, negotiations, the
    * service list, the freeze flag and the audit chain. The server refuses to start without it (the tests build in-memory
@@ -22,7 +25,8 @@ export const ConfigSchema = z.object({
   DATABASE_SCHEMA: z.string().optional().transform(v => v || undefined).pipe(z.string().regex(/^[a-z_][a-z0-9_]{0,62}$/, 'DATABASE_SCHEMA must be a lowercase identifier').optional()),
   /** How long a payment held for approval waits for a human before it expires, in minutes. */
   APPROVAL_TTL_MINUTES: z.coerce.number().int().min(1).default(24 * 60),
-}).refine(c => c.TOLLGATE_OFFLINE || !!c.NEAR_1CLICK_API_KEY, { message: 'TOLLGATE_OFFLINE=false needs NEAR_1CLICK_API_KEY', path: ['NEAR_1CLICK_API_KEY'] })
+}).refine(c => !!c.SIGNER_URL === !!c.SIGNER_SERVICE_TOKEN, { message: 'SIGNER_URL and SIGNER_SERVICE_TOKEN go together: set both or neither', path: ['SIGNER_URL'] })
+  .refine(c => c.TOLLGATE_OFFLINE || !!c.NEAR_1CLICK_API_KEY, { message: 'TOLLGATE_OFFLINE=false needs NEAR_1CLICK_API_KEY', path: ['NEAR_1CLICK_API_KEY'] })
 
 export type Config = z.infer<typeof ConfigSchema>
 

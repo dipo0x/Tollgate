@@ -4,6 +4,7 @@ import { TokenRegistry } from './auth.ts'
 import type { Config } from './config.ts'
 import type { GatewayDeps } from './gateway.ts'
 import { Services } from './services.ts'
+import { HttpSignerClient } from './signer.ts'
 import { memoryStore, postgresStore, type GatewayStore } from './store/index.ts'
 
 /** The recorded 1Click responses that live in the core package. Offline mode answers only from these. */
@@ -29,6 +30,7 @@ function assemble(cfg: Config, durable: Durable, over: Partial<GatewayDeps>): Ga
       ? new HttpOneClick({ fetch: replayFetch(new FileFixtureStore(FIXTURES_DIR)), now: clock })
       : new HttpOneClick({ apiKey: cfg.NEAR_1CLICK_API_KEY as string, now: clock }),
     tokens: new TokenRegistry(cfg.GATEWAY_OPERATOR_TOKEN, durable.store.tokens),
+    ...(cfg.SIGNER_URL && cfg.SIGNER_SERVICE_TOKEN ? { signer: new HttpSignerClient({ url: cfg.SIGNER_URL, token: cfg.SIGNER_SERVICE_TOKEN }) } : {}),
     clock,
     approvalTtlMs: cfg.APPROVAL_TTL_MINUTES * 60_000,
     log: makeLogger(cfg.LOG_LEVEL),

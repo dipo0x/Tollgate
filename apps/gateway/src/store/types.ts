@@ -68,6 +68,15 @@ export interface ServiceStore {
   update(id: string, change: (current: Service) => Service): Promise<Service>
 }
 
+/** The signed transaction the signer produced for a decision. A signed transaction is public once broadcast, so keeping it is safe; it is what lets a retry get the SAME bytes back instead of asking the signer to sign twice. */
+export type StoredSignature = { signedTx: string; txHash: string; from: string; chainId: number }
+
+export interface SignatureStore {
+  get(decisionId: string): Promise<StoredSignature | undefined>
+  /** Keeps the first signature for a decision; a second `put` changes nothing. */
+  put(decisionId: string, sig: StoredSignature): Promise<void>
+}
+
 export interface SettingsStore {
   frozen(): Promise<boolean>
   setFrozen(on: boolean): Promise<void>
@@ -92,4 +101,5 @@ export type GatewayStore = {
   services: ServiceStore
   settings: SettingsStore
   locks: LockStore
+  signatures: SignatureStore
 }

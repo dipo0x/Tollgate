@@ -50,12 +50,13 @@ pnpm install
 
 | # | Do this | See this |
 | --- | --- | --- |
-| 1 | `pnpm bench` | A table of 16 attack scenarios and 5 benign controls run against three targets — a naive agent, the stock `mppx` policy and Tollgate — plus JSON and HTML reports in `bench/results/`. *(not implemented yet)* |
+| 1 | `pnpm bench` | A table of 16 attacks and 5 benign controls against three targets: a naive agent, a **model** of the stock `mppx` policy, and Tollgate (the real gateway, signer and SDK). It prints how many attacks each target stopped, flags any result that differs from what was written down before the run, and writes `bench/results/results.json` and `results.html`. Offline, no key, no funds. See `bench/README.md` for exactly what is real and what is scripted. |
 | 2 | `pnpm demo` | The demo agent runs one small job end to end: it decides what to buy, negotiates a price, hires workers on child mandates, sells its report, and has one over-budget purchase blocked and logged. *(not implemented yet)* |
 | 3 | `pnpm --filter @tollgate/core verify-log --db` | The audit chain stored in Postgres verifies (`OK: N entries, head …`), or the first broken entry is named. It reads the database directly, so it does not trust the gateway. `verify-log <file>` checks an exported file. |
 | 4 | `pnpm site` | The homepage on <http://localhost:5173>. |
 | 5 | `pnpm db:up`, copy `.env.example` to `.env` and fill it in, `pnpm --filter @tollgate/gateway start`, then in a second terminal `apps/gateway/scripts/try-it.sh` | The gateway answers on <http://127.0.0.1:8787> and says `storage: postgres`. The script runs one agent through it offline: a payment held for approval, then approved, three attacks refused (each naming the check that stopped it), the kill switch, and the audit check. Run it once per database: a deposit address can be used only once. For a fresh run without wiping anything, start the gateway with `DATABASE_SCHEMA=demo2`. No 1Click key, network or funds needed. |
 | 6 | `pnpm test` | The unit, property and integration tests. The Postgres tests (ledger, stores, audit, and the gateway restart and two-gateway tests) run only when `DATABASE_URL` is set. |
+| 6b | `pnpm --filter @tollgate/signer test` | The signer's tests: every refusal (tampered amount, recipient, chain or nonce, expired, frozen, revoked, over its own cap, used twice) and a check on the signed bytes themselves. See `apps/signer/README.md`. |
 | 7 | Stop the gateway and start it again | Mandates, agent tokens, pending approvals, decisions, jobs, earnings, negotiations, the service list, the freeze flag and the audit chain are all still there. The gateway keeps nothing in the process between requests, and refuses to start without `DATABASE_URL`. |
 
 Target: fresh clone to benchmark result in under five minutes.

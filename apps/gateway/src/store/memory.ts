@@ -1,7 +1,7 @@
 import type { AcceptanceSpec, NegotiationSnapshot, Prior } from '@tollgate/core'
 import type { Service } from '@tollgate/registry'
 import { isPrior, toPrior, type Approval, type DecisionRecord, type Job } from '../state.ts'
-import type { AcceptanceStore, ApprovalOutcome, DecisionFilter, DecisionStore, GatewayStore, JobStore, LockStore, ServiceStore, SessionStore, SettingsStore, TokenOwner, TokenStore } from './types.ts'
+import type { SignatureStore, StoredSignature, AcceptanceStore, ApprovalOutcome, DecisionFilter, DecisionStore, GatewayStore, JobStore, LockStore, ServiceStore, SessionStore, SettingsStore, TokenOwner, TokenStore } from './types.ts'
 
 export class MemoryDecisionStore implements DecisionStore {
   private rows = new Map<string, DecisionRecord>()
@@ -93,6 +93,12 @@ export class MemorySettingsStore implements SettingsStore {
   async setFrozen(on: boolean) { this.on = on }
 }
 
+export class MemorySignatureStore implements SignatureStore {
+  private rows = new Map<string, StoredSignature>()
+  async get(id: string) { return this.rows.get(id) }
+  async put(id: string, sig: StoredSignature) { if (!this.rows.has(id)) this.rows.set(id, sig) }
+}
+
 /** One at a time per key, inside this process. For tests only: the real gateway uses the database's version. */
 export class MemoryLockStore implements LockStore {
   private tails = new Map<string, Promise<unknown>>()
@@ -108,6 +114,6 @@ export class MemoryLockStore implements LockStore {
 export function memoryStore(): GatewayStore {
   return {
     kind: 'memory', decisions: new MemoryDecisionStore(), jobs: new MemoryJobStore(), acceptance: new MemoryAcceptanceStore(),
-    sessions: new MemorySessionStore(), tokens: new MemoryTokenStore(), services: new MemoryServiceStore(), settings: new MemorySettingsStore(), locks: new MemoryLockStore(),
+    sessions: new MemorySessionStore(), tokens: new MemoryTokenStore(), services: new MemoryServiceStore(), settings: new MemorySettingsStore(), locks: new MemoryLockStore(), signatures: new MemorySignatureStore(),
   }
 }

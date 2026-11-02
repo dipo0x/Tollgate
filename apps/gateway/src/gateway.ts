@@ -4,10 +4,12 @@ import {
   type AuditStore, type Ledger, type MandateStore, type OneClickAdapter, type Offer, type PinStore, type RevenueStore,
 } from '@tollgate/core'
 import type { Services } from './services.ts'
+import type { SignerClient } from './signer.ts'
 import type { TokenRegistry } from './auth.ts'
 import type { Approval, Bind, DecisionRecord, Job } from './state.ts'
 import type { GatewayStore } from './store/types.ts'
 import { randomUUID as uuid } from 'node:crypto'
+import { z } from 'zod'
 
 export type GatewayDeps = {
   /** Mandates. Separate from `store` because core defines this interface and a Postgres version of it. */
@@ -21,12 +23,18 @@ export type GatewayDeps = {
   oneClick: OneClickAdapter
   audit: AuditStore
   tokens: TokenRegistry
+  /** Absent when no signer is configured: payments are authorized but nothing can be signed. */
+  signer?: SignerClient
   clock: () => Date
   approvalTtlMs: number
   log: (event: string, fields: Record<string, unknown>) => void
 }
 
-export type Out = { status: 200 | 201 | 400 | 401 | 403 | 404 | 409 | 422 | 502; body: unknown }
+const SignedReply = z.object({
+  decisionId: z.string(), chainId: z.number().int().positive(), from: z.string().regex(/^0x[0-9a-fA-F]{40}$/), txHash: z.string().regex(/^0x[0-9a-fA-F]{64}$/), signedTx: z.string().regex(/^0x[0-9a-fA-F]+$/),
+})
+
+export type Out = { status: 200 | 201 | 400 | 401 | 403 | 404 | 409 | 422 | 423 | 502 | 503; body: unknown }
 const ok = (body: unknown, status: 200 | 201 = 200): Out => ({ status, body })
 const fail = (status: Out['status'], code: string, message: string, check?: string): Out =>
   ({ status, body: { error: { code, message, ...(check ? { check } : {}) } } })
@@ -294,6 +302,46 @@ export class Gateway {
   // The bind needs the chain and expiry, which the decision record does not store separately: read them back from the checks' evidence.
   private chainOf(r: DecisionRecord): string { return String(r.checks.find(c => c.id === 'C04')?.evidence['network'] ?? '') }
   private expiryOf(r: DecisionRecord): string { return String(r.checks.find(c => c.id === 'C03')?.evidence['expires'] ?? '') }
+
+  // ---- signing: the agent asks, the gateway forwards what it STORED, the signer decides ---------
+
+  /**
+   * The agent supplies only how the transaction is paid for on chain (nonce, gas, fees). Everything else, the recipient, the
+   * amount, the chain, the one-time nonce, comes from the decision the gateway stored, never from the caller. The signer then
+   * checks it all again against the same record before it touches the key.
+   */
+  async sign(agent: Agent, decisionId: string, tx: { nonce: number; gas: string; maxFeePerGas: string; maxPriorityFeePerGas: string }): Promise<Out> {
+    const rec = await this.d.store.decisions.get(decisionId)
+    if (!rec || rec.mandateId !== agent.mandateId) return fail(404, 'not_found', `no decision ${decisionId}`)
+    if (rec.state !== 'allowed' || !rec.bind) return fail(409, 'not_signable', `a decision in state "${rec.state}" cannot be signed`)
+    // A retry (the merchant answered 503 after we paid, the agent restarted): hand back the SAME signed bytes. Broadcasting the same
+    // transaction twice is harmless on chain, and the signer is never asked to sign a decision twice.
+    const earlier = await this.d.store.signatures.get(decisionId)
+    if (earlier) return ok({ decisionId, chainId: earlier.chainId, from: earlier.from, txHash: earlier.txHash, signedTx: earlier.signedTx, replayed: true })
+    if (!this.d.signer) return fail(503, 'signer_not_configured', 'no signer is configured for this gateway')
+
+    let reply
+    try { reply = await this.d.signer.sign({ decisionId, bind: rec.bind, tx }) } catch (err) {
+      // The signer could not be reached or did not answer in time. Nothing was signed, and the agent is told so.
+      await this.audit('payment.sign_failed', { decisionId, mandateId: rec.mandateId, cause: err instanceof Error ? err.name : 'error' })
+      return fail(502, 'signer_unavailable', 'the signer could not be reached; nothing was signed')
+    }
+    const body = reply.body as { error?: { code?: string; message?: string; field?: string }; txHash?: string; from?: string; chainId?: number; signedTx?: string }
+    if (reply.status !== 200) {
+      // A refusal by the signer is evidence: a tampered request, a replayed decision, a frozen signer. It goes in the audit chain.
+      await this.audit('payment.sign_refused', { decisionId, mandateId: rec.mandateId, status: reply.status, reason: body.error?.code ?? 'unknown', ...(body.error?.field ? { field: body.error.field } : {}) })
+      return { status: reply.status === 401 ? 502 : (reply.status as Out['status']), body: reply.status === 401 ? { error: { code: 'signer_rejected_gateway', message: 'the signer did not accept this gateway' } } : reply.body }
+    }
+    // Even a 200 must look like a signing result before it is recorded as one or handed back.
+    const signed = SignedReply.safeParse(reply.body)
+    if (!signed.success) {
+      await this.audit('payment.sign_failed', { decisionId, mandateId: rec.mandateId, cause: 'bad_reply' })
+      return fail(502, 'signer_bad_reply', 'the signer sent something that is not a signed transaction; nothing is recorded as signed')
+    }
+    await this.d.store.signatures.put(decisionId, { signedTx: signed.data.signedTx, txHash: signed.data.txHash, from: signed.data.from, chainId: signed.data.chainId })
+    await this.audit('payment.signed', { decisionId, mandateId: rec.mandateId, txHash: signed.data.txHash, from: signed.data.from, chainId: signed.data.chainId })
+    return ok(signed.data)
+  }
 
   // ---- paid or not: 1Click's record decides, never the agent's say-so --------------------
 

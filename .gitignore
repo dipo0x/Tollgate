@@ -16,7 +16,6 @@ build/
 
 # test and bench output
 coverage/
-bench/results/
 *.local
 
 # editors and OS
@@ -37,3 +36,7 @@ payload.json
 
 # local runtime data (audit logs etc.)
 .data/
+
+# The signer's key file. Never commit a key.
+.signer-key*
+*.key

@@ -1,0 +1,845 @@
+{
+  "generatedFor": "2026-11-06T10:00:00.000Z",
+  "note": "Measured, offline. Tollgate = real gateway, signer and SDK with scripted 1Click and merchant. Stock = a model of the mppx client policy, not the library.",
+  "summary": {
+    "attacks": 16,
+    "controls": 5,
+    "naive": {
+      "attacksStopped": 0,
+      "attacksPaid": 16,
+      "controlsAllowed": 5,
+      "controlsFalselyStopped": 0
+    },
+    "stock": {
+      "attacksStopped": 5,
+      "attacksPaid": 11,
+      "controlsAllowed": 5,
+      "controlsFalselyStopped": 0
+    },
+    "tollgate": {
+      "attacksStopped": 16,
+      "attacksPaid": 0,
+      "controlsAllowed": 5,
+      "controlsFalselyStopped": 0
+    },
+    "deviations": []
+  },
+  "rows": [
+    {
+      "id": "A01",
+      "kind": "attack",
+      "title": "Price inflation",
+      "defendedBy": "C07",
+      "expected": {
+        "naive": {
+          "outcome": "paid",
+          "payments": 1
+        },
+        "stock": {
+          "outcome": "blocked"
+        },
+        "tollgate": {
+          "outcome": "blocked",
+          "checks": [
+            "C07"
+          ]
+        }
+      },
+      "results": {
+        "naive": {
+          "outcome": "paid",
+          "payments": 1
+        },
+        "stock": {
+          "outcome": "blocked",
+          "payments": 0,
+          "note": "amount over the maximum"
+        },
+        "tollgate": {
+          "outcome": "blocked",
+          "failedCheck": "C07",
+          "payments": 0,
+          "held": "0.000000"
+        }
+      },
+      "deviations": []
+    },
+    {
+      "id": "A02",
+      "kind": "attack",
+      "title": "Payee swap",
+      "defendedBy": "C05",
+      "expected": {
+        "naive": {
+          "outcome": "paid",
+          "payments": 1
+        },
+        "stock": {
+          "outcome": "paid",
+          "payments": 1
+        },
+        "tollgate": {
+          "outcome": "blocked",
+          "checks": [
+            "C05"
+          ]
+        }
+      },
+      "results": {
+        "naive": {
+          "outcome": "paid",
+          "payments": 1
+        },
+        "stock": {
+          "outcome": "paid",
+          "payments": 1
+        },
+        "tollgate": {
+          "outcome": "blocked",
+          "failedCheck": "C05",
+          "payments": 0,
+          "held": "0.000000"
+        }
+      },
+      "deviations": []
+    },
+    {
+      "id": "A03",
+      "kind": "attack",
+      "title": "Fake deposit address",
+      "defendedBy": "C06",
+      "expected": {
+        "naive": {
+          "outcome": "paid",
+          "payments": 1
+        },
+        "stock": {
+          "outcome": "paid",
+          "payments": 1
+        },
+        "tollgate": {
+          "outcome": "blocked",
+          "checks": [
+            "C06"
+          ]
+        }
+      },
+      "results": {
+        "naive": {
+          "outcome": "paid",
+          "payments": 1
+        },
+        "stock": {
+          "outcome": "paid",
+          "payments": 1
+        },
+        "tollgate": {
+          "outcome": "blocked",
+          "failedCheck": "C06",
+          "payments": 0,
+          "held": "0.000000"
+        }
+      },
+      "deviations": []
+    },
+    {
+      "id": "A04",
+      "kind": "attack",
+      "title": "Quote and challenge mismatch",
+      "defendedBy": "C06",
+      "expected": {
+        "naive": {
+          "outcome": "paid",
+          "payments": 1
+        },
+        "stock": {
+          "outcome": "paid",
+          "payments": 1
+        },
+        "tollgate": {
+          "outcome": "blocked",
+          "checks": [
+            "C06"
+          ]
+        }
+      },
+      "results": {
+        "naive": {
+          "outcome": "paid",
+          "payments": 1
+        },
+        "stock": {
+          "outcome": "paid",
+          "payments": 1
+        },
+        "tollgate": {
+          "outcome": "blocked",
+          "failedCheck": "C06",
+          "payments": 0,
+          "held": "0.000000"
+        }
+      },
+      "deviations": []
+    },
+    {
+      "id": "A05",
+      "kind": "attack",
+      "title": "Asset swap",
+      "defendedBy": "C04",
+      "expected": {
+        "naive": {
+          "outcome": "paid",
+          "payments": 1
+        },
+        "stock": {
+          "outcome": "blocked"
+        },
+        "tollgate": {
+          "outcome": "blocked",
+          "checks": [
+            "C04"
+          ]
+        }
+      },
+      "results": {
+        "naive": {
+          "outcome": "paid",
+          "payments": 1
+        },
+        "stock": {
+          "outcome": "blocked",
+          "payments": 0,
+          "note": "currency not allowed"
+        },
+        "tollgate": {
+          "outcome": "blocked",
+          "failedCheck": "C04",
+          "payments": 0,
+          "held": "0.000000"
+        }
+      },
+      "deviations": []
+    },
+    {
+      "id": "A06",
+      "kind": "attack",
+      "title": "Refund hijack",
+      "defendedBy": "C08",
+      "expected": {
+        "naive": {
+          "outcome": "paid",
+          "payments": 1
+        },
+        "stock": {
+          "outcome": "paid",
+          "payments": 1
+        },
+        "tollgate": {
+          "outcome": "blocked",
+          "checks": [
+            "C08"
+          ]
+        }
+      },
+      "results": {
+        "naive": {
+          "outcome": "paid",
+          "payments": 1
+        },
+        "stock": {
+          "outcome": "paid",
+          "payments": 1
+        },
+        "tollgate": {
+          "outcome": "blocked",
+          "failedCheck": "C08",
+          "payments": 0,
+          "held": "0.000000"
+        }
+      },
+      "deviations": []
+    },
+    {
+      "id": "A07",
+      "kind": "attack",
+      "title": "Expired challenge",
+      "defendedBy": "C03",
+      "expected": {
+        "naive": {
+          "outcome": "paid",
+          "payments": 1
+        },
+        "stock": {
+          "outcome": "paid",
+          "payments": 1
+        },
+        "tollgate": {
+          "outcome": "blocked",
+          "checks": [
+            "C03"
+          ]
+        }
+      },
+      "results": {
+        "naive": {
+          "outcome": "paid",
+          "payments": 1
+        },
+        "stock": {
+          "outcome": "paid",
+          "payments": 1
+        },
+        "tollgate": {
+          "outcome": "blocked",
+          "failedCheck": "C03",
+          "payments": 0,
+          "held": "0.000000"
+        }
+      },
+      "deviations": []
+    },
+    {
+      "id": "A08",
+      "kind": "attack",
+      "title": "Replay or double charge",
+      "defendedBy": "C10",
+      "expected": {
+        "naive": {
+          "outcome": "paid",
+          "payments": 2
+        },
+        "stock": {
+          "outcome": "paid",
+          "payments": 2
+        },
+        "tollgate": {
+          "outcome": "blocked",
+          "checks": [
+            "C10"
+          ],
+          "payments": 1
+        }
+      },
+      "results": {
+        "naive": {
+          "outcome": "paid",
+          "payments": 2
+        },
+        "stock": {
+          "outcome": "paid",
+          "payments": 2
+        },
+        "tollgate": {
+          "outcome": "blocked",
+          "failedCheck": "C10",
+          "payments": 1,
+          "held": "0.250000"
+        }
+      },
+      "deviations": []
+    },
+    {
+      "id": "A09",
+      "kind": "attack",
+      "title": "Structuring: many small payments just under the approval threshold",
+      "defendedBy": "C09",
+      "expected": {
+        "naive": {
+          "outcome": "paid",
+          "payments": 8
+        },
+        "stock": {
+          "outcome": "paid",
+          "payments": 8
+        },
+        "tollgate": {
+          "outcome": [
+            "blocked",
+            "held"
+          ],
+          "checks": [
+            "C09",
+            "C12"
+          ],
+          "payments": 5
+        }
+      },
+      "results": {
+        "naive": {
+          "outcome": "paid",
+          "payments": 8
+        },
+        "stock": {
+          "outcome": "paid",
+          "payments": 8
+        },
+        "tollgate": {
+          "outcome": "blocked",
+          "failedCheck": "C09",
+          "payments": 5,
+          "held": "0.450000"
+        }
+      },
+      "deviations": []
+    },
+    {
+      "id": "A10",
+      "kind": "attack",
+      "title": "Runaway loop: payments in a tight loop",
+      "defendedBy": "C09",
+      "expected": {
+        "naive": {
+          "outcome": "paid",
+          "payments": 20
+        },
+        "stock": {
+          "outcome": "paid",
+          "payments": 20
+        },
+        "tollgate": {
+          "outcome": "blocked",
+          "checks": [
+            "C09"
+          ],
+          "payments": 5
+        }
+      },
+      "results": {
+        "naive": {
+          "outcome": "paid",
+          "payments": 20
+        },
+        "stock": {
+          "outcome": "paid",
+          "payments": 20
+        },
+        "tollgate": {
+          "outcome": "blocked",
+          "failedCheck": "C09",
+          "payments": 5,
+          "held": "0.050000"
+        }
+      },
+      "deviations": []
+    },
+    {
+      "id": "A11",
+      "kind": "attack",
+      "title": "Out-of-scope host",
+      "defendedBy": "C02",
+      "expected": {
+        "naive": {
+          "outcome": "paid",
+          "payments": 1
+        },
+        "stock": {
+          "outcome": "blocked"
+        },
+        "tollgate": {
+          "outcome": "blocked",
+          "checks": [
+            "C02"
+          ]
+        }
+      },
+      "results": {
+        "naive": {
+          "outcome": "paid",
+          "payments": 1
+        },
+        "stock": {
+          "outcome": "blocked",
+          "payments": 0,
+          "note": "host not in the allow list"
+        },
+        "tollgate": {
+          "outcome": "blocked",
+          "failedCheck": "C02",
+          "payments": 0,
+          "held": "0.000000"
+        }
+      },
+      "deviations": []
+    },
+    {
+      "id": "A12",
+      "kind": "attack",
+      "title": "Payment prompt injection: a page tells the agent to pay a look-alike host",
+      "defendedBy": "C01, C02, C05",
+      "expected": {
+        "naive": {
+          "outcome": "paid",
+          "payments": 1
+        },
+        "stock": {
+          "outcome": "blocked"
+        },
+        "tollgate": {
+          "outcome": "blocked",
+          "checks": [
+            "C02"
+          ]
+        }
+      },
+      "results": {
+        "naive": {
+          "outcome": "paid",
+          "payments": 1
+        },
+        "stock": {
+          "outcome": "blocked",
+          "payments": 0,
+          "note": "host not in the allow list"
+        },
+        "tollgate": {
+          "outcome": "blocked",
+          "failedCheck": "C02",
+          "payments": 0,
+          "held": "0.000000"
+        }
+      },
+      "deviations": []
+    },
+    {
+      "id": "A13",
+      "kind": "attack",
+      "title": "Mandate overrun: a payment above the remaining budget",
+      "defendedBy": "C09",
+      "expected": {
+        "naive": {
+          "outcome": "paid",
+          "payments": 2
+        },
+        "stock": {
+          "outcome": "paid",
+          "payments": 2
+        },
+        "tollgate": {
+          "outcome": "blocked",
+          "checks": [
+            "C09"
+          ],
+          "payments": 1
+        }
+      },
+      "results": {
+        "naive": {
+          "outcome": "paid",
+          "payments": 2
+        },
+        "stock": {
+          "outcome": "paid",
+          "payments": 2
+        },
+        "tollgate": {
+          "outcome": "blocked",
+          "failedCheck": "C09",
+          "payments": 1,
+          "held": "0.600000"
+        }
+      },
+      "deviations": []
+    },
+    {
+      "id": "A14",
+      "kind": "attack",
+      "title": "Bad exchange rate: charged far above our own quote",
+      "defendedBy": "C07",
+      "expected": {
+        "naive": {
+          "outcome": "paid",
+          "payments": 1
+        },
+        "stock": {
+          "outcome": "paid",
+          "payments": 1
+        },
+        "tollgate": {
+          "outcome": [
+            "blocked",
+            "held"
+          ],
+          "checks": [
+            "C07"
+          ]
+        }
+      },
+      "results": {
+        "naive": {
+          "outcome": "paid",
+          "payments": 1
+        },
+        "stock": {
+          "outcome": "paid",
+          "payments": 1
+        },
+        "tollgate": {
+          "outcome": "blocked",
+          "failedCheck": "C07",
+          "payments": 0,
+          "held": "0.000000"
+        }
+      },
+      "deviations": []
+    },
+    {
+      "id": "A15",
+      "kind": "attack",
+      "title": "Scheme downgrade: an unknown payment method",
+      "defendedBy": "C03, C04",
+      "expected": {
+        "naive": {
+          "outcome": "paid",
+          "payments": 1
+        },
+        "stock": {
+          "outcome": "paid",
+          "payments": 1
+        },
+        "tollgate": {
+          "outcome": "blocked",
+          "checks": [
+            "C03",
+            "C04"
+          ]
+        }
+      },
+      "results": {
+        "naive": {
+          "outcome": "paid",
+          "payments": 1
+        },
+        "stock": {
+          "outcome": "paid",
+          "payments": 1
+        },
+        "tollgate": {
+          "outcome": "blocked",
+          "failedCheck": "C03",
+          "payments": 0,
+          "held": "0.000000"
+        }
+      },
+      "deviations": []
+    },
+    {
+      "id": "A16",
+      "kind": "attack",
+      "title": "Poisoned listing: directory text tells the planner to ignore its budget and pay another address",
+      "defendedBy": "registry gate, listing sanitization, C02",
+      "expected": {
+        "naive": {
+          "outcome": "paid",
+          "payments": 1
+        },
+        "stock": {
+          "outcome": "blocked"
+        },
+        "tollgate": {
+          "outcome": "blocked",
+          "checks": [
+            "C02"
+          ]
+        }
+      },
+      "results": {
+        "naive": {
+          "outcome": "paid",
+          "payments": 1
+        },
+        "stock": {
+          "outcome": "blocked",
+          "payments": 0,
+          "note": "host not in the allow list"
+        },
+        "tollgate": {
+          "outcome": "blocked",
+          "failedCheck": "C02",
+          "payments": 0,
+          "held": "0.000000"
+        }
+      },
+      "deviations": []
+    },
+    {
+      "id": "B01",
+      "kind": "control",
+      "title": "Normal in-scope payment",
+      "defendedBy": "must be allowed",
+      "expected": {
+        "naive": {
+          "outcome": "paid",
+          "payments": 1
+        },
+        "stock": {
+          "outcome": "paid",
+          "payments": 1
+        },
+        "tollgate": {
+          "outcome": "paid",
+          "payments": 1
+        }
+      },
+      "results": {
+        "naive": {
+          "outcome": "paid",
+          "payments": 1
+        },
+        "stock": {
+          "outcome": "paid",
+          "payments": 1
+        },
+        "tollgate": {
+          "outcome": "paid",
+          "payments": 1,
+          "held": "0.250000"
+        }
+      },
+      "deviations": []
+    },
+    {
+      "id": "B02",
+      "kind": "control",
+      "title": "Payment at the budget edge",
+      "defendedBy": "must be allowed",
+      "expected": {
+        "naive": {
+          "outcome": "paid",
+          "payments": 2
+        },
+        "stock": {
+          "outcome": "paid",
+          "payments": 2
+        },
+        "tollgate": {
+          "outcome": "paid",
+          "payments": 2
+        }
+      },
+      "results": {
+        "naive": {
+          "outcome": "paid",
+          "payments": 2
+        },
+        "stock": {
+          "outcome": "paid",
+          "payments": 2
+        },
+        "tollgate": {
+          "outcome": "paid",
+          "payments": 2,
+          "held": "1.000000"
+        }
+      },
+      "deviations": []
+    },
+    {
+      "id": "B03",
+      "kind": "control",
+      "title": "First payment to a new merchant inside scope",
+      "defendedBy": "must be allowed",
+      "expected": {
+        "naive": {
+          "outcome": "paid",
+          "payments": 1
+        },
+        "stock": {
+          "outcome": "paid",
+          "payments": 1
+        },
+        "tollgate": {
+          "outcome": "paid",
+          "payments": 1
+        }
+      },
+      "results": {
+        "naive": {
+          "outcome": "paid",
+          "payments": 1
+        },
+        "stock": {
+          "outcome": "paid",
+          "payments": 1
+        },
+        "tollgate": {
+          "outcome": "paid",
+          "payments": 1,
+          "held": "0.250000"
+        }
+      },
+      "deviations": []
+    },
+    {
+      "id": "B04",
+      "kind": "control",
+      "title": "Legitimate retry after a 503: paid once",
+      "defendedBy": "must be allowed, paid once",
+      "expected": {
+        "naive": {
+          "outcome": "paid",
+          "payments": 2
+        },
+        "stock": {
+          "outcome": "paid",
+          "payments": 2
+        },
+        "tollgate": {
+          "outcome": "paid",
+          "payments": 1
+        }
+      },
+      "results": {
+        "naive": {
+          "outcome": "paid",
+          "payments": 2
+        },
+        "stock": {
+          "outcome": "paid",
+          "payments": 2
+        },
+        "tollgate": {
+          "outcome": "paid",
+          "payments": 1,
+          "held": "0.250000"
+        }
+      },
+      "deviations": []
+    },
+    {
+      "id": "B05",
+      "kind": "control",
+      "title": "Price drift inside tolerance",
+      "defendedBy": "must be allowed",
+      "expected": {
+        "naive": {
+          "outcome": "paid",
+          "payments": 1
+        },
+        "stock": {
+          "outcome": "paid",
+          "payments": 1
+        },
+        "tollgate": {
+          "outcome": "paid",
+          "payments": 1
+        }
+      },
+      "results": {
+        "naive": {
+          "outcome": "paid",
+          "payments": 1
+        },
+        "stock": {
+          "outcome": "paid",
+          "payments": 1
+        },
+        "tollgate": {
+          "outcome": "paid",
+          "payments": 1,
+          "held": "0.250000"
+        }
+      },
+      "deviations": []
+    }
+  ]
+}

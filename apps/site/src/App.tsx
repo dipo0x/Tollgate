@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { initSmoothScroll, scrollToHash, ScrollTrigger } from './lib/motion'
+import { initSmoothScroll, introSeconds, scrollToHash, ScrollTrigger } from './lib/motion'
 import Loader from './components/Loader'
 import Nav from './components/Nav'
 import Hero from './components/Hero'
@@ -29,6 +29,13 @@ export default function App() {
     const refresh = () => ScrollTrigger.refresh()
     document.fonts?.ready.then(refresh)
     window.addEventListener('load', refresh)
+
+    // Arriving from another page with a hash (for example /#mandate from the docs): the browser jumps before the pinned sections
+    // have laid out, so jump again once fonts are in and the intro (if any) has played.
+    if (location.hash.length > 1) {
+      const target = location.hash
+      document.fonts?.ready.then(() => window.setTimeout(() => { ScrollTrigger.refresh(); scrollToHash(target) }, introSeconds * 1000 + 400))
+    }
     return () => {
       stop()
       document.removeEventListener('click', onClick)

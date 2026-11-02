@@ -57,7 +57,7 @@ export const auditEntries = pgTable('audit_entries', {
   seq: bigint('seq', { mode: 'number' }).primaryKey(),
   ts: text('ts').notNull(),
   type: text('type').notNull(),
-  payload: jsonb('payload').notNull(),
+  payload: jsonb('payload'),
   prevHash: text('prev_hash').notNull(),
   hash: text('hash').notNull().unique(),
 })

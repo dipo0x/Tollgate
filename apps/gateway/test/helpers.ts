@@ -3,6 +3,12 @@ import { createApp } from '../src/app.ts'
 import { loadConfig } from '../src/config.ts'
 import type { GatewayDeps } from '../src/gateway.ts'
 import { buildDeps, buildPersistentDeps } from '../src/wire.ts'
+import { createSignerApp } from '@tollgate/signer'
+import { viemBackend } from '@tollgate/signer/src/backend.ts'
+import { tokensFor } from '@tollgate/signer/src/chains.ts'
+import { MemorySignerStore } from '@tollgate/signer/src/store.ts'
+import { generatePrivateKey } from 'viem/accounts'
+import { HttpSignerClient } from '../src/signer.ts'
 
 export const OPERATOR = 'test-operator-token-0123456789'
 export const T0 = new Date('2026-11-06T10:00:00Z')
@@ -77,4 +83,46 @@ export async function bootPersistent(url: string, schema: string, clockRef: { no
   const h = harness({ deps, oneClick, setNow: d => { clockRef.now = d }, now: () => clockRef.now })
   const started = await h.gateway.init()
   return { ...h, close, started }
+}
+
+// ---- a gateway wired to a REAL signer app (same process), for tests that need to sign ----------------
+
+export const RECIPIENT = '0x1234567890abcdef1234567890abcdef12345678' // a real-looking address: the signer insists on one
+export const SIGNER_SERVICE_TOKEN = 'signer-service-token-0123456789-abcdef'
+export const AUTO = { approval: { above: '1.00', riskAbove: 90, firstPayeeRequiresApproval: false } }
+export const TX = { nonce: 7, gas: '100000', maxFeePerGas: '100000000', maxPriorityFeePerGas: '10000000' }
+
+/** Lets the signer read the gateway's own stored decisions, mandates and kill switch, as the Postgres version reads the same tables. */
+export class BridgedStore extends MemorySignerStore {
+  private readonly g: ReturnType<typeof boot>
+  constructor(g: ReturnType<typeof boot>) { super(); this.g = g }
+  override async getDecision(id: string) {
+    const r = await this.g.deps.store.decisions.get(id)
+    return r ? { decisionId: r.decisionId, mandateId: r.mandateId, decision: r.decision, state: r.state, ...(r.bind ? { bind: r.bind } : {}) } : undefined
+  }
+  override async mandateState(id: string) {
+    const m = await this.g.deps.mandates.get(id)
+    return m ? { status: m.status, validUntil: m.spec.validUntil } : undefined
+  }
+  override async isFrozen() { return this.g.deps.store.settings.frozen() }
+}
+
+/** A gateway wired to a real signer app (in the same process), with the gateway's clock. */
+export function bootWithSigner(opts: { token?: string } = {}) {
+  const g = boot()
+  const backend = viemBackend(generatePrivateKey())
+  const store = new BridgedStore(g)
+  const signerApp = createSignerApp({ store, backend, limits: { tokens: tokensFor(['eip155:42161']), maxPerTx: 1_000_000n, maxGas: 200_000n, maxFeePerGas: 2_000_000_000n }, clock: () => g.deps.clock() }, SIGNER_SERVICE_TOKEN)
+  const calls: unknown[] = []
+  const toSigner = ((url: string, init: RequestInit) => { calls.push(JSON.parse(String(init.body))); return Promise.resolve(signerApp.request(new URL(url).pathname, init)) }) as unknown as typeof fetch
+  g.deps.signer = new HttpSignerClient({ url: 'http://signer.local', token: opts.token ?? SIGNER_SERVICE_TOKEN, fetch: toSigner })
+  return { ...g, backend, store, calls }
+}
+
+/** An ALLOWed payment ready to be signed. The deposit address is a real-looking one so the signer accepts it as a recipient. */
+export async function allowed(g: ReturnType<typeof bootWithSigner>, mandate: Record<string, unknown> = AUTO) {
+  const { token } = await g.setup({ mandate })
+  g.oneClick.add(record(RECIPIENT))
+  const a = await g.authorize(token, challenge('c1', RECIPIENT))
+  return { token, id: a.json.decisionId as string, a }
 }

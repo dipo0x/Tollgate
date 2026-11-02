@@ -76,4 +76,17 @@ export const GATEWAY_MIGRATIONS: readonly Migration[] = [
       );
     `,
   },
+  {
+    id: 'gateway_0003_signatures',
+    sql: `
+      -- What the signer produced for a decision, so a retry gets the same bytes back. One row per decision, never replaced.
+      CREATE TABLE gateway_signatures (
+        decision_id text PRIMARY KEY,
+        signed_tx   text NOT NULL,
+        tx_hash     text NOT NULL,
+        from_address text NOT NULL,
+        chain_id    integer NOT NULL
+      );
+    `,
+  },
 ]

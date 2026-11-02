@@ -3,5 +3,19 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Client library: wraps fetch so an HTTP 402 payment challenge is routed through the Tollgate gateway."
+  "description": "Client library: wraps fetch so an HTTP 402 payment challenge is routed through the Tollgate gateway.",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@tollgate/core": "workspace:*",
+    "@tollgate/gateway": "workspace:*",
+    "@tollgate/signer": "workspace:*"
+  },
+  "dependencies": {
+    "viem": "^2.0.0"
+  }
 }

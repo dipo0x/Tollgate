@@ -50,7 +50,8 @@ export function scrollToHash(hash: string) {
 /* The intro plays once per session; hero timing waits for it. */
 const INTRO_KEY = 'tg-intro-seen'
 export const introSeconds = (() => {
-  if (typeof window === 'undefined' || reduceMotion) return 0
+  // Only the homepage plays the intro. Another page (the docs) must not use up the once-per-session flag.
+  if (typeof window === 'undefined' || reduceMotion || location.pathname !== '/') return 0
   try {
     if (sessionStorage.getItem(INTRO_KEY)) return 0
     sessionStorage.setItem(INTRO_KEY, '1')
