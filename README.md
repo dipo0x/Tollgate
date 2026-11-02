@@ -52,10 +52,11 @@ pnpm install
 | --- | --- | --- |
 | 1 | `pnpm bench` | A table of 16 attack scenarios and 5 benign controls run against three targets — a naive agent, the stock `mppx` policy and Tollgate — plus JSON and HTML reports in `bench/results/`. *(not implemented yet)* |
 | 2 | `pnpm demo` | The demo agent runs one small job end to end: it decides what to buy, negotiates a price, hires workers on child mandates, sells its report, and has one over-budget purchase blocked and logged. *(not implemented yet)* |
-| 3 | `pnpm --filter @tollgate/core verify-log <file>` | The audit chain in `<file>` (for example `apps/gateway/.data/audit.jsonl`) verifies, or the first broken entry is named. |
+| 3 | `pnpm --filter @tollgate/core verify-log --db` | The audit chain stored in Postgres verifies (`OK: N entries, head …`), or the first broken entry is named. It reads the database directly, so it does not trust the gateway. `verify-log <file>` checks an exported file. |
 | 4 | `pnpm site` | The homepage on <http://localhost:5173>. |
-| 5 | `pnpm --filter @tollgate/gateway start`, then in a second terminal `apps/gateway/scripts/try-it.sh` | The gateway answers on <http://127.0.0.1:8787>. Run the script once per gateway start (a deposit address can be used only once). It runs one agent through the gateway offline: a payment held for approval, then approved, three attacks refused (each naming the check that stopped it), the kill switch, and the audit check. Needs `GATEWAY_OPERATOR_TOKEN` in `.env`; no 1Click key, network or funds. |
-| 6 | `pnpm test` | The unit, property and integration tests. The Postgres ledger tests run only when `DATABASE_URL` is set. |
+| 5 | `pnpm db:up`, copy `.env.example` to `.env` and fill it in, `pnpm --filter @tollgate/gateway start`, then in a second terminal `apps/gateway/scripts/try-it.sh` | The gateway answers on <http://127.0.0.1:8787> and says `storage: postgres`. The script runs one agent through it offline: a payment held for approval, then approved, three attacks refused (each naming the check that stopped it), the kill switch, and the audit check. Run it once per database: a deposit address can be used only once. For a fresh run without wiping anything, start the gateway with `DATABASE_SCHEMA=demo2`. No 1Click key, network or funds needed. |
+| 6 | `pnpm test` | The unit, property and integration tests. The Postgres tests (ledger, stores, audit, and the gateway restart and two-gateway tests) run only when `DATABASE_URL` is set. |
+| 7 | Stop the gateway and start it again | Mandates, agent tokens, pending approvals, decisions, jobs, earnings, negotiations, the service list, the freeze flag and the audit chain are all still there. The gateway keeps nothing in the process between requests, and refuses to start without `DATABASE_URL`. |
 
 Target: fresh clone to benchmark result in under five minutes.
 
@@ -70,6 +71,7 @@ Target: fresh clone to benchmark result in under five minutes.
 - Benchmark numbers are measured and published, including misses. Nothing is assumed.
 - Anything simulated — a mock merchant, a labelled demo customer — is labelled as such.
 - Stated limits: Tollgate cannot stop a fully compromised signer host, a malicious human approver, or a merchant that takes payment and delivers nothing. It reduces and records that risk; it does not prevent it.
+- Stated limit of the gateway: its state lives in Postgres, so it is only as available and as trustworthy as that database. A person with full control of the database can switch off the audit log's edit guard; the hash chain then names the first altered entry but cannot prevent the edit (anchoring the head hash on-chain is a P2 item).
 
 ## Documents
 

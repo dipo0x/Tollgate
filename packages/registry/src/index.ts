@@ -46,6 +46,11 @@ export class InMemoryRegistry {
     this.rows.set(s.id, row)
     return row
   }
+  /**
+   * Loads services exactly as they were saved, at boot. This is the one way in that skips add()'s
+   * "start unverified and disabled": these rows already went through that gate before they were saved.
+   */
+  hydrate(rows: readonly Service[]): void { for (const r of rows) this.rows.set(r.id, r) }
   get(id: string): Service | undefined { return this.rows.get(id) }
   list(): Service[] { return [...this.rows.values()] }
   byHost(host: string): Service | undefined { return this.list().find(s => s.host.toLowerCase() === host.toLowerCase()) }

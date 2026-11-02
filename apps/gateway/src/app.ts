@@ -64,20 +64,21 @@ export function createApp(deps: GatewayDeps) {
 
   // ---- helpers: who is calling, and what did they send -----------------------------------
   const who = (c: Context<Env>) => deps.tokens.resolve(bearer(c.req.header('authorization')))
+  // (resolve is async: an agent token is looked up in the store, so it still works after a restart)
   const asOperator = (h: (c: Context<Env>) => Promise<Response> | Response) => async (c: Context<Env>) => {
-    const p = who(c)
+    const p = await who(c)
     if (!p) return send(c, err(401, 'unauthorized', 'missing or invalid token'))
     if (p.role !== 'operator') return send(c, err(403, 'forbidden', 'this needs the operator token'))
     return h(c)
   }
   const asAgent = (h: (c: Context<Env>, a: Agent) => Promise<Response> | Response) => async (c: Context<Env>) => {
-    const p = who(c)
+    const p = await who(c)
     if (!p) return send(c, err(401, 'unauthorized', 'missing or invalid token'))
     if (p.role !== 'agent') return send(c, err(403, 'forbidden', 'this needs an agent token'))
     return h(c, p)
   }
   const asEither = (h: (c: Context<Env>, p: Principal) => Promise<Response> | Response) => async (c: Context<Env>) => {
-    const p = who(c)
+    const p = await who(c)
     return p ? h(c, p) : send(c, err(401, 'unauthorized', 'missing or invalid token'))
   }
   async function parse<S extends z.ZodType>(c: Context<Env>, schema: S): Promise<{ ok: true; data: z.infer<S> } | { ok: false; res: Response }> {
@@ -89,7 +90,7 @@ export function createApp(deps: GatewayDeps) {
   }
 
   // ---- public ----------------------------------------------------------------------------
-  app.get('/healthz', c => c.json({ ok: true, frozen: gw.frozen }))
+  app.get('/healthz', async c => c.json({ ok: true, frozen: await gw.isFrozen() }))
 
   // ---- mandates --------------------------------------------------------------------------
   app.post('/v1/mandates', asOperator(async c => { const raw = await c.req.json().catch(() => undefined); return send(c, await gw.createMandate(raw)) }))
@@ -118,13 +119,13 @@ export function createApp(deps: GatewayDeps) {
   }))
   app.post('/v1/payments/:decisionId/reconcile', asEither(async (c, p) => send(c, await gw.reconcile(P(c, 'decisionId'), p.role === 'agent' ? { mandateId: p.mandateId } : {}))))
 
-  app.get('/v1/decisions', asOperator(c => {
+  app.get('/v1/decisions', asOperator(async c => {
     const q = c.req.query()
-    const rows = deps.decisions.list({ ...(q['mandateId'] ? { mandateId: q['mandateId'] } : {}), ...(q['decision'] ? { decision: q['decision'] } : {}), ...(q['state'] ? { state: q['state'] } : {}) })
-    return c.json({ decisions: rows.slice(-Math.min(Number(q['limit'] ?? 100) || 100, 500)).reverse() })
+    const limit = Math.min(Number(q['limit'] ?? 100) || 100, 500)
+    return c.json({ decisions: await deps.store.decisions.list({ ...(q['mandateId'] ? { mandateId: q['mandateId'] } : {}), ...(q['decision'] ? { decision: q['decision'] } : {}), ...(q['state'] ? { state: q['state'] } : {}), limit }) })
   }))
-  app.get('/v1/decisions/:id', asOperator(c => {
-    const r = deps.decisions.get(P(c, 'id'))
+  app.get('/v1/decisions/:id', asOperator(async c => {
+    const r = await deps.store.decisions.get(P(c, 'id'))
     return r ? c.json(r) : send(c, err(404, 'not_found', 'no such decision'))
   }))
 
@@ -132,12 +133,12 @@ export function createApp(deps: GatewayDeps) {
   app.get('/v1/approvals', asOperator(async c => send(c, await gw.listApprovals())))
   app.post('/v1/approvals/:id/approve', asOperator(async c => { const b = await parse(c, ReasonBody); return b.ok ? send(c, await gw.approve(P(c, 'id'), b.data.reason)) : b.res }))
   app.post('/v1/approvals/:id/reject', asOperator(async c => { const b = await parse(c, ReasonBody); return b.ok ? send(c, await gw.reject(P(c, 'id'), b.data.reason)) : b.res }))
-  app.post('/v1/freeze', asOperator(c => send(c, gw.freeze(true))))
-  app.post('/v1/unfreeze', asOperator(c => send(c, gw.freeze(false))))
+  app.post('/v1/freeze', asOperator(async c => send(c, await gw.freeze(true))))
+  app.post('/v1/unfreeze', asOperator(async c => send(c, await gw.freeze(false))))
 
   // ---- negotiation -----------------------------------------------------------------------
   app.post('/v1/negotiations/:id/offers', asAgent(async (c, a) => { const b = await parse(c, OfferBody); return b.ok ? send(c, await gw.negotiate(a, P(c, 'id'), b.data as never)) : b.res }))
-  app.get('/v1/negotiations/:id', asAgent((c, a) => send(c, gw.getNegotiation(a, P(c, 'id')))))
+  app.get('/v1/negotiations/:id', asAgent(async (c, a) => send(c, await gw.getNegotiation(a, P(c, 'id')))))
 
   // ---- jobs and earning ------------------------------------------------------------------
   app.post('/v1/jobs', asOperator(async c => { const b = await parse(c, JobBody); return b.ok ? send(c, await gw.createJob(b.data)) : b.res }))
@@ -147,31 +148,31 @@ export function createApp(deps: GatewayDeps) {
   // ---- the service registry --------------------------------------------------------------
   app.post('/v1/services', asOperator(async c => {
     const b = await parse(c, ServiceBody); if (!b.ok) return b.res
-    try { return c.json(deps.registry.add({ ...b.data, ...(b.data.listingText === undefined ? {} : { listingText: b.data.listingText }) } as never), 201) } catch (e) { return send(c, err(409, 'service_exists', e instanceof Error ? e.message : 'exists')) }
+    try { return c.json(await deps.services.add(b.data as never), 201) } catch (e) { return send(c, err(409, 'service_exists', e instanceof Error ? e.message : 'exists')) }
   }))
-  app.get('/v1/services', asOperator(c => c.json({ services: deps.registry.list() })))
+  app.get('/v1/services', asOperator(async c => c.json({ services: await deps.services.list() })))
   // What an agent's planner may see: structured fields only. Third-party listing text never leaves this process toward a model.
-  app.get('/v1/services/planner', asAgent(c => c.json({ services: deps.registry.planner() })))
+  app.get('/v1/services/planner', asAgent(async c => c.json({ services: await deps.services.planner() })))
   app.post('/v1/services/:id/probe-result', asOperator(async c => {
     const b = await parse(c, ProbeBody); if (!b.ok) return b.res
     try {
-      const s = deps.registry.recordProbe(P(c, 'id'), { verification: b.data.verification, at: deps.clock().toISOString(), ...(b.data.payee ? { payee: b.data.payee } : {}), ...(b.data.health ? { health: b.data.health } : {}) })
-      gw.audit('service.probed', { serviceId: s.id, verification: s.verification, enabled: s.enabled })
+      const s = await deps.services.recordProbe(P(c, 'id'), { verification: b.data.verification, at: deps.clock().toISOString(), ...(b.data.payee ? { payee: b.data.payee } : {}), ...(b.data.health ? { health: b.data.health } : {}) })
+      await gw.audit('service.probed', { serviceId: s.id, verification: s.verification, enabled: s.enabled })
       return c.json(s)
     } catch (e) { return send(c, err(404, 'not_found', e instanceof Error ? e.message : 'not found')) }
   }))
   for (const [path, on] of [['enable', true], ['disable', false]] as const) {
-    app.post(`/v1/services/:id/${path}`, asOperator(c => {
-      try { const s = deps.registry.setEnabled(P(c, 'id'), on); gw.audit('service.' + path, { serviceId: s.id }); return c.json(s) } catch (e) { return send(c, err(409, 'cannot_change', e instanceof Error ? e.message : 'cannot change')) }
+    app.post(`/v1/services/:id/${path}`, asOperator(async c => {
+      try { const s = await deps.services.setEnabled(P(c, 'id'), on); await gw.audit('service.' + path, { serviceId: s.id }); return c.json(s) } catch (e) { return send(c, err(409, 'cannot_change', e instanceof Error ? e.message : 'cannot change')) }
     }))
   }
 
   // ---- audit -----------------------------------------------------------------------------
-  app.get('/v1/audit', asOperator(c => {
-    const all = deps.audit.entries(), n = Math.min(Number(c.req.query('limit') ?? 100) || 100, 1000)
-    return c.json({ length: all.length, head: deps.audit.head(), entries: all.slice(-n) })
+  app.get('/v1/audit', asOperator(async c => {
+    const n = Math.min(Number(c.req.query('limit') ?? 100) || 100, 1000), head = await deps.audit.head()
+    return c.json({ length: head.length, head: head.hash, entries: await deps.audit.tail(n) })
   }))
-  app.get('/v1/audit/verify', asOperator(c => c.json(verifyChain(deps.audit.entries()))))
+  app.get('/v1/audit/verify', asOperator(async c => c.json(verifyChain(await deps.audit.all()))))
 
   app.notFound(c => send(c, err(404, 'not_found', 'no such route')))
   return { app, gateway: gw }

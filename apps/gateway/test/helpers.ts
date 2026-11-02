@@ -1,14 +1,14 @@
-import { AuditLog, FakeOneClick, type OneClickRecord } from '@tollgate/core'
+import { FakeOneClick, MemoryAuditStore, type OneClickRecord } from '@tollgate/core'
 import { createApp } from '../src/app.ts'
 import { loadConfig } from '../src/config.ts'
 import type { GatewayDeps } from '../src/gateway.ts'
-import { buildDeps } from '../src/wire.ts'
+import { buildDeps, buildPersistentDeps } from '../src/wire.ts'
 
 export const OPERATOR = 'test-operator-token-0123456789'
 export const T0 = new Date('2026-11-06T10:00:00Z')
 export const PAYER = '0xaf88d065e77c8cc2239327c5edb3a432268e5831'
 
-export const cfg = loadConfig({ GATEWAY_OPERATOR_TOKEN: OPERATOR, LOG_LEVEL: 'silent', TOLLGATE_OFFLINE: 'true', AUDIT_FILE: '/dev/null' })
+export const cfg = loadConfig({ GATEWAY_OPERATOR_TOKEN: OPERATOR, LOG_LEVEL: 'silent', TOLLGATE_OFFLINE: 'true' })
 
 export const record = (deposit: string, over: Partial<OneClickRecord> = {}): OneClickRecord => ({
   status: 'PENDING_DEPOSIT', depositAddress: deposit, originAsset: 'USDC', amountIn: '0.250000', destination: 'merchant.near',
@@ -26,11 +26,12 @@ export const mandateBody = (over: Record<string, unknown> = {}) => ({
   refund: { mustBePayerOrPinned: true }, ...over,
 })
 
-export function boot(over: Partial<GatewayDeps> = {}) {
-  let now = T0
-  const oneClick = new FakeOneClick()
-  oneClick.quote = { amountIn: '0.250000' }
-  const deps = buildDeps(cfg, { clock: () => now, oneClick, audit: new AuditLog({ clock: () => now }), ...over })
+type Wired = { deps: GatewayDeps; oneClick: FakeOneClick; setNow: (d: Date) => void; now: () => Date }
+
+function freshOneClick() { const o = new FakeOneClick(); o.quote = { amountIn: '0.250000' }; return o }
+
+/** Everything the tests drive: an HTTP caller, helpers for the common setup, and the pieces behind them. */
+function harness({ deps, oneClick, setNow }: Wired) {
   const { app, gateway } = createApp(deps)
   const call = async (method: string, path: string, token: string | undefined, body?: unknown) => {
     const res = await app.request(path, {
@@ -42,7 +43,6 @@ export function boot(over: Partial<GatewayDeps> = {}) {
     return { status: res.status, json }
   }
   const op = (m: string, p: string, b?: unknown) => call(m, p, OPERATOR, b)
-  const setNow = (d: Date) => { now = d }
 
   /** The common setup: a registered, enabled service, a mandate, and its agent token. */
   async function setup(opts: { mandate?: Record<string, unknown>; payee?: string | null } = {}) {
@@ -57,4 +57,24 @@ export function boot(over: Partial<GatewayDeps> = {}) {
     call('POST', '/v1/authorize', token, { mandateId: 'mnd_1', host: 'merchant.example.com', purpose: 'buy a dataset', challenge: ch, payer: PAYER, ...over })
 
   return { app, gateway, deps, oneClick, call, op, setNow, setup, authorize }
+}
+
+export function boot(over: Partial<GatewayDeps> = {}) {
+  let now = T0
+  const oneClick = freshOneClick()
+  const deps = buildDeps(cfg, { clock: () => now, oneClick, audit: new MemoryAuditStore(() => now), ...over })
+  return harness({ deps, oneClick, setNow: d => { now = d }, now: () => now })
+}
+
+/**
+ * Like boot(), but everything durable lives in Postgres (in `schema`). Call it twice with the same schema
+ * and the same `clock` to model a restart: a second gateway process over the same database.
+ */
+export async function bootPersistent(url: string, schema: string, clockRef: { now: Date } = { now: T0 }, over: Partial<GatewayDeps> = {}) {
+  const oneClick = freshOneClick()
+  const clock = () => clockRef.now
+  const { deps, close } = await buildPersistentDeps({ ...cfg, DATABASE_URL: url, DATABASE_SCHEMA: schema }, { clock, oneClick, ...over })
+  const h = harness({ deps, oneClick, setNow: d => { clockRef.now = d }, now: () => clockRef.now })
+  const started = await h.gateway.init()
+  return { ...h, close, started }
 }

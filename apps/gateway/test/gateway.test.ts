@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { toMicro, verifyChain } from '@tollgate/core'
 import { loadConfig } from '../src/config.ts'
-import { boot, challenge, mandateBody, OPERATOR, record } from './helpers.ts'
+import { boot, challenge, mandateBody, OPERATOR, record, T0 } from './helpers.ts'
 
 const D1 = '0xdep0000000000000000000000000000000000001'
 const D2 = '0xdep0000000000000000000000000000000000002'
@@ -46,7 +46,7 @@ describe('authentication and request hygiene', () => {
     const g = boot(); const { token } = await g.setup()
     expect(token).toMatch(/^tg_agent_/)
     expect(JSON.stringify((await g.op('GET', '/v1/mandates/mnd_1')).json)).not.toContain(token)
-    expect(JSON.stringify(g.deps.audit.entries())).not.toContain(token)
+    expect(JSON.stringify((await g.deps.audit.all()))).not.toContain(token)
   })
 })
 
@@ -179,11 +179,13 @@ describe('approvals', () => {
   })
   it('an approval that nobody answers expires, and the proposal is released', async () => {
     const { g, id } = await held()
+    expect((await g.op('GET', '/v1/mandates/mnd_1')).json.balance).toMatchObject({ proposed: '0.250000' }) // waiting for a human
     g.setNow(new Date('2026-11-07T11:00:00Z')) // past the 24 h default
     const list = (await g.op('GET', '/v1/approvals')).json.approvals
     expect(list[0]).toMatchObject({ status: 'expired' })
     expect((await g.op('POST', `/v1/approvals/${id}/approve`, { reason: 'too late' })).status).toBe(409)
     expect((await g.op('GET', '/v1/decisions/' + id)).json.state).toBe('expired')
+    expect((await g.op('GET', '/v1/mandates/mnd_1')).json.balance).toMatchObject({ proposed: '0.000000', released: '0.250000' }) // the proposal went back
   })
   it('approving fails cleanly if the budget has gone in the meantime', async () => {
     const { g, token, id } = await held()
@@ -219,7 +221,7 @@ describe('reconcile: "paid" is decided by 1Click, never by the agent', () => {
   it('a settled amount that differs from what was reserved is flagged', async () => {
     const { g, id } = await allowed(); g.oneClick.add(record(D1, { status: 'SUCCESS', amountIn: '0.300000' }))
     expect((await rec(g, id)).json.anomaly).toContain('differs')
-    expect(g.deps.audit.entries().some(e => JSON.stringify(e.payload).includes('anomaly'))).toBe(true)
+    expect((await g.deps.audit.all()).some(e => JSON.stringify(e.payload).includes('anomaly'))).toBe(true)
   })
   it('1Click down is a 502 and changes nothing; an unknown address is a 409', async () => {
     const { g, id } = await allowed(); g.oneClick.fault = 'throw'
@@ -375,14 +377,14 @@ describe('audit trail and decisions', () => {
     const g = boot(); const { token } = await g.setup(); g.oneClick.add(record(D1))
     const a = await g.authorize(token, challenge('c1', D1)); await g.op('POST', `/v1/approvals/${a.json.decisionId}/approve`, { reason: 'ok' })
     await g.authorize(token, challenge('c9', D3)); await g.op('POST', '/v1/mandates/mnd_1/revoke')
-    const types = g.deps.audit.entries().map(e => e.type)
+    const types = (await g.deps.audit.all()).map(e => e.type)
     expect(types).toEqual(expect.arrayContaining(['mandate.created', 'decision', 'approval', 'mandate.revoked']))
     expect((await g.op('GET', '/v1/audit/verify')).json).toMatchObject({ ok: true })
-    expect(verifyChain(g.deps.audit.entries())).toMatchObject({ ok: true })
+    expect(verifyChain((await g.deps.audit.all()))).toMatchObject({ ok: true })
   })
   it('the audit log never contains a token, a challenge body or a receipt', async () => {
     const g = boot(); const { token } = await g.setup(); g.oneClick.add(record(D1)); await g.authorize(token, challenge('c1', D1, { id: 'SECRET-CHALLENGE-ID-xyz' }))
-    const text = JSON.stringify(g.deps.audit.entries())
+    const text = JSON.stringify((await g.deps.audit.all()))
     expect(text).not.toContain(token); expect(text).not.toContain(OPERATOR)
   })
   it('lists decisions with filters, newest first; agents cannot', async () => {
@@ -433,5 +435,118 @@ describe('configuration', () => {
   })
   it('defaults to offline, on port 8787', () => {
     expect(loadConfig({ GATEWAY_OPERATOR_TOKEN: 'x'.repeat(20) })).toMatchObject({ TOLLGATE_OFFLINE: true, PORT: 8787 })
+  })
+})
+
+describe('requests that overlap, and a process that stops half way', () => {
+  const AUTO = { approval: { above: '1.00', riskAbove: 90, firstPayeeRequiresApproval: false } }
+
+  it('two simultaneous requests for one challenge take ONE hold, and both get the same decision', async () => {
+    const g = boot(); const { token } = await g.setup({ mandate: AUTO }); g.oneClick.add(record(D1))
+    const [a, b] = await Promise.all([g.authorize(token, challenge('c1', D1)), g.authorize(token, challenge('c1', D1))])
+    expect(a.json.decision).toBe('ALLOW'); expect(b.json.decision).toBe('ALLOW')
+    expect(b.json.decisionId).toBe(a.json.decisionId)
+    expect((await g.op('GET', '/v1/mandates/mnd_1')).json.balance).toMatchObject({ committed: '0.250000' }) // 0.25 held once, not 0.50
+    expect((await g.op('GET', '/v1/decisions')).json.decisions).toHaveLength(1)
+  })
+
+  it('an approve and a reject at the same moment: exactly one wins, and the money agrees with the winner', async () => {
+    const g = boot(); const { token } = await g.setup(); g.oneClick.add(record(D1))
+    const id = (await g.authorize(token, challenge('c1', D1))).json.decisionId
+    const [x, y] = await Promise.all([g.op('POST', `/v1/approvals/${id}/approve`, { reason: 'yes' }), g.op('POST', `/v1/approvals/${id}/reject`, { reason: 'no' })])
+    expect([x.status, y.status].sort()).toEqual([200, 409])
+    const state = (await g.op('GET', `/v1/decisions/${id}`)).json.state
+    const held = (await g.op('GET', '/v1/mandates/mnd_1')).json.balance.committed
+    // Approved: the quarter-dollar is held. Rejected: nothing is. Either way the money and the decision agree.
+    expect(['allowed', 'rejected']).toContain(state)
+    expect(held).toBe(state === 'allowed' ? '0.250000' : '0.000000')
+  })
+
+  it('two approvals at the same moment: one succeeds, the other is told it lost, and the money is held once', async () => {
+    const g = boot(); const { token } = await g.setup(); g.oneClick.add(record(D1))
+    const id = (await g.authorize(token, challenge('c1', D1))).json.decisionId
+    const [x, y] = await Promise.all([g.op('POST', `/v1/approvals/${id}/approve`, { reason: 'one' }), g.op('POST', `/v1/approvals/${id}/approve`, { reason: 'two' })])
+    expect([x.status, y.status].sort()).toEqual([200, 409])
+    expect((await g.op('GET', '/v1/mandates/mnd_1')).json.balance).toMatchObject({ committed: '0.250000' })
+    expect((await g.deps.audit.all()).filter(e => e.type === 'approval')).toHaveLength(1) // only the winner is recorded
+  })
+
+  it('two rejections at the same moment: one succeeds, the other is told it lost, and only one is recorded', async () => {
+    const g = boot(); const { token } = await g.setup(); g.oneClick.add(record(D1))
+    const id = (await g.authorize(token, challenge('c1', D1))).json.decisionId
+    const [x, y] = await Promise.all([g.op('POST', `/v1/approvals/${id}/reject`, { reason: 'one' }), g.op('POST', `/v1/approvals/${id}/reject`, { reason: 'two' })])
+    expect([x.status, y.status].sort()).toEqual([200, 409])
+    expect((await g.deps.audit.all()).filter(e => e.type === 'approval')).toHaveLength(1)
+    expect((await g.op('GET', '/v1/mandates/mnd_1')).json.balance).toMatchObject({ committed: '0.000000', remaining: '5.000000' })
+  })
+
+  it('reject and approve in the other order at the same moment: still exactly one winner', async () => {
+    const g = boot(); const { token } = await g.setup(); g.oneClick.add(record(D1))
+    const id = (await g.authorize(token, challenge('c1', D1))).json.decisionId
+    const [x, y] = await Promise.all([g.op('POST', `/v1/approvals/${id}/reject`, { reason: 'no' }), g.op('POST', `/v1/approvals/${id}/approve`, { reason: 'yes' })])
+    expect([x.status, y.status].sort()).toEqual([200, 409])
+  })
+
+  it('a frozen refusal first, then a real ALLOW: a third retry still sees the ALLOW and does not hold twice', async () => {
+    const g = boot(); const { token } = await g.setup({ mandate: AUTO }); g.oneClick.add(record(D1))
+    await g.op('POST', '/v1/freeze'); expect((await g.authorize(token, challenge('c1', D1))).json.reason).toBe('FROZEN')
+    await g.op('POST', '/v1/unfreeze')
+    const real = await g.authorize(token, challenge('c1', D1)); expect(real.json.decision).toBe('ALLOW')
+    g.oneClick.add(record(D1, { status: 'PROCESSING' }))
+    const again = await g.authorize(token, challenge('c1', D1))
+    expect(again.json).toMatchObject({ decisionId: real.json.decisionId, resumed: true })
+    expect((await g.op('GET', '/v1/mandates/mnd_1')).json.balance).toMatchObject({ committed: '0.250000' })
+  })
+
+  it('the decision is written down BEFORE the money is held: a crash after the hold leaves a marked record, never an unexplained hold', async () => {
+    const g = boot(); const { token } = await g.setup({ mandate: AUTO }); g.oneClick.add(record(D1))
+    // The process "dies" right after the hold is taken: the hold exists, but the record was never finished.
+    const real = g.deps.ledger.reserve.bind(g.deps.ledger)
+    g.deps.ledger.reserve = async (...args) => { await real(...args); throw new Error('process killed') }
+    expect((await g.authorize(token, challenge('c1', D1))).status).toBe(500)
+    expect((await g.op('GET', '/v1/mandates/mnd_1')).json.balance).toMatchObject({ committed: '0.250000' }) // money is held...
+    const stuck = (await g.op('GET', '/v1/decisions?state=reserving')).json.decisions
+    expect(stuck).toHaveLength(1) // ...and there IS a record that explains it, and it is not an ALLOW anyone could act on
+    expect(stuck[0]).toMatchObject({ state: 'reserving', decision: 'DENY' })
+    expect(stuck[0].bind).toBeUndefined()
+
+    // Start-up cleans it: the hold goes back, the record is closed, the audit log says so.
+    g.deps.ledger.reserve = real
+    expect(await g.gateway.init()).toEqual({ recovered: 1 })
+    expect((await g.op('GET', '/v1/mandates/mnd_1')).json.balance).toMatchObject({ committed: '0.000000', remaining: '5.000000' })
+    expect((await g.op('GET', `/v1/decisions/${stuck[0].decisionId}`)).json).toMatchObject({ state: 'denied', reason: 'INTERRUPTED' })
+    expect((await g.deps.audit.all()).some(e => e.type === 'decision.recovered')).toBe(true)
+    expect(await g.gateway.init()).toEqual({ recovered: 0 }) // doing it again finds nothing
+
+    // The agent's retry of the same challenge starts clean and succeeds.
+    const retry = await g.authorize(token, challenge('c1', D1))
+    expect(retry.json.decision).toBe('ALLOW')
+    expect((await g.op('GET', '/v1/mandates/mnd_1')).json.balance).toMatchObject({ committed: '0.250000' })
+  })
+
+  it('if the audit log cannot be written the caller gets an error, never an ALLOW; the retry resumes the same decision with one hold', async () => {
+    const g = boot(); const { token } = await g.setup({ mandate: AUTO }); g.oneClick.add(record(D1))
+    const real = g.deps.audit.append.bind(g.deps.audit)
+    g.deps.audit.append = async () => { throw new Error('audit store down') }
+    expect((await g.authorize(token, challenge('c1', D1))).status).toBe(500)
+    g.deps.audit.append = real
+    g.oneClick.add(record(D1, { status: 'PROCESSING' }))
+    const retry = await g.authorize(token, challenge('c1', D1))
+    expect(retry.json).toMatchObject({ decision: 'ALLOW', resumed: true })
+    expect((await g.op('GET', '/v1/mandates/mnd_1')).json.balance).toMatchObject({ committed: '0.250000' })
+    expect((await g.op('GET', '/v1/audit/verify')).json).toMatchObject({ ok: true })
+  })
+
+  it('a service whose payee changes under a probe is disabled and cannot be paid until a human re-enables it', async () => {
+    const g = boot(); const { token } = await g.setup({ mandate: AUTO }); g.oneClick.add(record(D1))
+    const swapped = await g.op('POST', '/v1/services/svc_1/probe-result', { verification: 'endpoint-checked', payee: 'attacker.near' })
+    expect(swapped.json).toMatchObject({ enabled: false, verification: 'disabled', payee: 'merchant.near' }) // the old payee is kept, not replaced
+    expect((await g.authorize(token, challenge('c1', D1))).json).toMatchObject({ decision: 'DENY', failedCheck: 'C02' })
+  })
+
+  it('a record still marked "reserving" is never treated as an earlier decision by the checks', async () => {
+    const g = boot(); const { token } = await g.setup({ mandate: AUTO }); g.oneClick.add(record(D1))
+    await g.deps.store.decisions.put({ decisionId: 'dec_x', mandateId: 'mnd_1', mandateVersion: 1, agentId: 'agent-1', host: 'merchant.example.com', purpose: '', challengeId: 'c1', depositAddress: D1, amount: '0.250000', currency: 'USDC', decision: 'DENY', checks: [], state: 'reserving', createdAt: T0.toISOString() })
+    expect((await g.authorize(token, challenge('c1', D1))).json.decision).toBe('ALLOW')
   })
 })

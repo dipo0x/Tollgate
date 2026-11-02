@@ -69,3 +69,28 @@ export class AuditLog {
   entries(): readonly AuditEntry[] { return this.list }
   verify(): ChainResult { return verifyChain(this.list) }
 }
+
+/**
+ * Where a log lives. The gateway talks to this, not to AuditLog directly, so the chain can be kept in Postgres:
+ * a restart loses nothing, and two gateways over one database extend one chain, not two.
+ */
+export interface AuditStore {
+  /** Adds the next entry. Entries are numbered and chained by the store, one at a time, even across processes. */
+  append(type: string, payload: unknown): Promise<AuditEntry>
+  /** The whole chain, oldest first (for verification). */
+  all(): Promise<AuditEntry[]>
+  /** The last `n` entries, oldest first. */
+  tail(n: number): Promise<AuditEntry[]>
+  head(): Promise<{ length: number; hash: string }>
+}
+
+/** For tests and tools: the same rules as the Postgres store, kept in a list. Never used by the running gateway. */
+export class MemoryAuditStore implements AuditStore {
+  private readonly log: AuditLog
+  constructor(clock: () => Date = () => new Date()) { this.log = new AuditLog({ clock }) }
+  async append(type: string, payload: unknown) { return this.log.append(type, payload) }
+  async all() { return [...this.log.entries()] }
+  async tail(n: number) { return this.log.entries().slice(-n) }
+  async head() { return { length: this.log.entries().length, hash: this.log.head() } }
+}
+

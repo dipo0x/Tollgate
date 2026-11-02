@@ -3,9 +3,9 @@
 # kill switch, and the audit check. Offline: it replays recorded 1Click responses, so it needs no key,
 # no network and no funds. Start the gateway first:  pnpm --filter @tollgate/gateway start
 #
-# Run it ONCE per gateway process. The recorded deposit addresses are single-use, and the gateway refuses to
-# let one be used twice (check C10). A second run is stopped at step 3 for exactly that reason: restart the
-# gateway to run the walkthrough again.
+# Run it ONCE per database. The recorded deposit addresses are single-use, and the gateway refuses to let one be
+# used twice (check C10), now across restarts too. A second run is stopped at step 3 for exactly that reason. To run
+# the walkthrough again, start the gateway on a fresh schema:  DATABASE_SCHEMA=demo2 pnpm --filter @tollgate/gateway start
 set -euo pipefail
 cd "$(dirname "$0")/../../.."
 set -a; [ -f .env ] && . ./.env; set +a
@@ -38,7 +38,7 @@ say "3. The agent asks to pay an honest merchant (first time paying this payee, 
 R=$(auth honest 0xdep0000000000000000000000000000000000001); echo "$R" | show
 if ! echo "$R" | grep -q '"NEEDS_APPROVAL"'; then
   echo "  Stopped here on purpose: this gateway has already seen the demo's deposit address, and a deposit address"
-  echo "  can only be used once (check C10). Restart the gateway to run the walkthrough again."; exit 0
+  echo "  can only be used once (check C10). Start the gateway with a new DATABASE_SCHEMA to run the walkthrough again."; exit 0
 fi
 ID=$(echo "$R" | python3 -c "import sys,json; print(json.load(sys.stdin)['decisionId'])")
 

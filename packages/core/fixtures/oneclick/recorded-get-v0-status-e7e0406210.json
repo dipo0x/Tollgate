@@ -2,7 +2,7 @@
   "version": 1,
   "key": "e7e04062104bb9db72e18b7cd484206cafc910de06caa7813436337a43adb7ad",
   "synthetic": false,
-  "recordedAt": "2026-10-31T09:15:08.651Z",
+  "recordedAt": "2026-11-02T17:54:06.255Z",
   "request": {
     "method": "GET",
     "path": "/v0/status",
@@ -12,7 +12,7 @@
   },
   "response": {
     "status": 404,
-    "bodyText": "{\"message\":\"Deposit address 0x0000000000000000000000000000000000000001 not found\",\"error\":\"Not Found\",\"statusCode\":404,\"timestamp\":\"2026-10-31T09:15:08.718Z\",\"path\":\"/v0/status?depositAddress=0x0000000000000000000000000000000000000001\"}"
+    "bodyText": "{\"message\":\"Deposit address 0x0000000000000000000000000000000000000001 not found\",\"error\":\"Not Found\",\"statusCode\":404,\"timestamp\":\"2026-11-02T17:54:06.360Z\",\"path\":\"/v0/status?depositAddress=0x0000000000000000000000000000000000000001\"}"
   },
   "scrubbed": false,
   "note": "recorded from the live service"

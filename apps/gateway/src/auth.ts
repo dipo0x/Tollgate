@@ -1,5 +1,6 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
 import type { Principal } from './state.ts'
+import type { TokenStore } from './store/types.ts'
 
 export const sha256 = (s: string): string => createHash('sha256').update(s).digest('hex')
 
@@ -14,29 +15,28 @@ export const newAgentToken = (): string => `tg_agent_${randomBytes(24).toString(
 /**
  * Tokens are stored only as SHA-256 digests (PRD: "hashed at rest"), so a leaked store cannot be
  * replayed. The operator token comes from the environment; agent tokens are minted when a mandate
- * (or a worker) is created and shown exactly once.
+ * (or a worker) is created and shown exactly once. The digests live in the gateway store, so a
+ * restart does not lock every agent out.
  */
 export class TokenRegistry {
-  private agents = new Map<string, { mandateId: string; agentId: string }>()
   private readonly operatorDigest: string
+  private readonly store: TokenStore
 
-  constructor(operatorToken: string) { this.operatorDigest = sha256(operatorToken) }
+  constructor(operatorToken: string, store: TokenStore) { this.operatorDigest = sha256(operatorToken); this.store = store }
 
-  issueAgent(mandateId: string, agentId: string): string {
+  async issueAgent(mandateId: string, agentId: string): Promise<string> {
     const token = newAgentToken()
-    this.agents.set(sha256(token), { mandateId, agentId })
+    await this.store.put(sha256(token), { mandateId, agentId })
     return token
   }
 
-  revokeMandate(mandateId: string): void {
-    for (const [digest, v] of this.agents) if (v.mandateId === mandateId) this.agents.delete(digest)
-  }
+  revokeMandate(mandateId: string): Promise<void> { return this.store.revokeMandate(mandateId) }
 
-  resolve(token: string | undefined): Principal | undefined {
+  async resolve(token: string | undefined): Promise<Principal | undefined> {
     if (!token) return undefined
     const digest = sha256(token)
     if (sameDigest(digest, this.operatorDigest)) return { role: 'operator' }
-    const hit = this.agents.get(digest)
+    const hit = await this.store.find(digest)
     return hit ? { role: 'agent', mandateId: hit.mandateId, agentId: hit.agentId } : undefined
   }
 }

@@ -5,6 +5,7 @@
   "type": "module",
   "description": "The HTTP API and verifier. The only Tollgate component the agent talks to.",
   "devDependencies": {
+    "postgres": "^4.0.0",
     "tsx": "^4.23.15"
   },
   "dependencies": {

@@ -41,7 +41,7 @@ export class InMemoryPins implements PinStore {
   private payees = new Map<string, string>()
   private refunds = new Map<string, string[]>()
   pinPayee(host: string, address: string): this { this.payees.set(host, address); return this }
-  pinRefund(host: string, address: string): this { this.refunds.set(host, [...(this.refunds.get(host) ?? []), address]); return this }
+  pinRefund(host: string, address: string): this { const cur = this.refunds.get(host) ?? []; if (!cur.includes(address)) this.refunds.set(host, [...cur, address]); return this }
   async payee(host: string): Promise<string | undefined> { return this.payees.get(host) }
   async refundTargets(host: string): Promise<readonly string[]> { return this.refunds.get(host) ?? [] }
 }

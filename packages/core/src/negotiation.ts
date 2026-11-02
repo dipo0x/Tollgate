@@ -35,6 +35,16 @@ export type LogEntry = { n: number; at: Date; offer: Offer; outcome: 'recorded' 
 /** An offer or counter: the messages that carry a price and count as a round. */
 export type PriceOffer = Extract<Offer, { price: string }>
 
+/** Everything needed to carry a negotiation across a restart. Plain JSON: dates are ISO strings. */
+export type NegotiationSnapshot = {
+  status: Status
+  deal?: Deal
+  prices: PriceOffer[]
+  log: { n: number; at: string; offer: Offer; outcome: LogEntry['outcome'] }[]
+}
+
+const STATUSES: readonly Status[] = ['open', 'agreed', 'walked', 'closed']
+
 export class Negotiation {
   private _status: Status = 'open'
   private _deal: Deal | undefined
@@ -46,6 +56,21 @@ export class Negotiation {
     private readonly mandate: Mandate,
     private readonly clock: () => Date = () => new Date(),
   ) {}
+
+  /** The mandate is NOT saved here: a restored negotiation is judged against the mandate as it is now. */
+  snapshot(): NegotiationSnapshot {
+    return { status: this._status, ...(this._deal ? { deal: this._deal } : {}), prices: [...this.prices], log: this._log.map(e => ({ ...e, at: e.at.toISOString() })) }
+  }
+
+  static restore(id: string, mandate: Mandate, snap: NegotiationSnapshot, clock: () => Date = () => new Date()): Negotiation {
+    if (!STATUSES.includes(snap.status) || !Array.isArray(snap.prices) || !Array.isArray(snap.log)) throw new Error(`negotiation ${id}: stored state is unreadable`)
+    const n = new Negotiation(id, mandate, clock)
+    n._status = snap.status
+    n._deal = snap.deal
+    n.prices = [...snap.prices]
+    n._log = snap.log.map(e => ({ ...e, at: new Date(e.at) }))
+    return n
+  }
 
   get status(): Status { return this._status }
   get deal(): Deal | undefined { return this._deal }

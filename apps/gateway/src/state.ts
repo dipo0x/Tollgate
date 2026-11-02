@@ -1,15 +1,15 @@
-import type { CheckResult, DecisionIndex, Prior, Verdict } from '@tollgate/core'
+import type { CheckResult, Prior, Verdict } from '@tollgate/core'
 
-/**
- * Everything the gateway remembers. It is all behind small classes so a Postgres version can replace
- * each one without touching the routes. For now it lives in memory: restart the process and decisions,
- * approvals and tokens are gone (the audit log, written to a file, is not).
- */
+/** The shapes the gateway remembers. Where they are kept (memory or Postgres) is decided in `store/`. */
 
 /** The exact thing the signer will later verify before it signs. A signature request differing in any field is refused. */
 export type Bind = { chain: string; asset: string; amount: string; to: string; expiresAt: string; nonce: string }
 
-export type DecisionState = 'allowed' | 'pending' | 'settled' | 'denied' | 'rejected' | 'expired' | 'released'
+/**
+ * 'reserving' is internal: the decision was written down BEFORE the budget hold was taken, so a crash between
+ * the two leaves a marked record to clean up at start-up instead of a hold nobody knows about.
+ */
+export type DecisionState = 'reserving' | 'allowed' | 'pending' | 'settled' | 'denied' | 'rejected' | 'expired' | 'released'
 
 export type DecisionRecord = {
   decisionId: string
@@ -37,37 +37,18 @@ export type DecisionRecord = {
   indexed?: boolean
 }
 
-export class DecisionLog implements DecisionIndex {
-  private rows = new Map<string, DecisionRecord>()
+/**
+ * The view C06, C09 and C10 read. Pending, rejected and expired approvals are reported as "denied": they
+ * hold no money, and a retry of one must not look like a resumable payment. A decision that says nothing
+ * about the challenge (frozen, 1Click briefly down) or has expired is not a prior at all.
+ */
+export function isPrior(r: DecisionRecord): boolean {
+  return r.indexed !== false && r.state !== 'expired' && r.state !== 'reserving' && r.challengeId !== undefined && r.depositAddress !== undefined
+}
 
-  put(r: DecisionRecord): void { this.rows.set(r.decisionId, r) }
-  get(id: string): DecisionRecord | undefined { return this.rows.get(id) }
-  update(id: string, patch: Partial<DecisionRecord>): DecisionRecord {
-    const cur = this.rows.get(id)
-    if (!cur) throw new Error(`no decision ${id}`)
-    const next = { ...cur, ...patch }
-    this.rows.set(id, next)
-    return next
-  }
-  list(filter: { mandateId?: string; decision?: string; state?: string } = {}): DecisionRecord[] {
-    return [...this.rows.values()].filter(r =>
-      (!filter.mandateId || r.mandateId === filter.mandateId) && (!filter.decision || r.decision === filter.decision) && (!filter.state || r.state === filter.state))
-  }
-  blockedCount(mandateId: string): number { return this.list({ mandateId, decision: 'DENY' }).length }
-
-  // The view C06, C09 and C10 read. Pending, rejected and expired approvals are reported as "denied":
-  // they hold no money, and a retry of one must not look like a resumable payment.
-  private toPrior(r: DecisionRecord | undefined): Prior | undefined {
-    if (!r || r.indexed === false || r.state === 'expired' || r.challengeId === undefined || r.depositAddress === undefined) return undefined
-    const state: Prior['state'] = r.state === 'allowed' ? 'allowed' : r.state === 'settled' ? 'settled' : 'denied'
-    return { decisionId: r.decisionId, mandateId: r.mandateId, challengeId: r.challengeId, depositAddress: r.depositAddress, state }
-  }
-  async byChallenge(mandateId: string, challengeId: string) {
-    return this.toPrior([...this.rows.values()].find(r => r.mandateId === mandateId && r.challengeId === challengeId))
-  }
-  async byDeposit(depositAddress: string) {
-    return this.toPrior([...this.rows.values()].find(r => r.depositAddress?.toLowerCase() === depositAddress.toLowerCase()))
-  }
+export function toPrior(r: DecisionRecord): Prior {
+  const state: Prior['state'] = r.state === 'allowed' ? 'allowed' : r.state === 'settled' ? 'settled' : 'denied'
+  return { decisionId: r.decisionId, mandateId: r.mandateId, challengeId: r.challengeId as string, depositAddress: r.depositAddress as string, state }
 }
 
 export type Approval = {
