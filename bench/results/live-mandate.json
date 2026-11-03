@@ -1,0 +1,80 @@
+{
+ "at": "2026-11-03T09:32:30.511Z",
+ "note": "Live 1Click deposit addresses; gateway had no signer; nothing signed or paid.",
+ "passed": 9,
+ "total": 9,
+ "rows": [
+  {
+   "scenario": "Everything within the rules",
+   "rule": "the everyday mandate",
+   "expected": "ALLOW",
+   "got": "ALLOW",
+   "ok": true,
+   "depositAddress": "921010c6660ce201743676016863e14ed3d95a2f316726ab6002786a43e9407a"
+  },
+  {
+   "scenario": "Price above the per-payment limit",
+   "rule": "perPayment 0.10 (the item costs ~0.20)",
+   "expected": "DENY C09",
+   "got": "DENY C09",
+   "ok": true,
+   "depositAddress": "1f5f2f0f57308108a766e127775a704a7bf5dfbe7591bf18462fe9e78e38086d"
+  },
+  {
+   "scenario": "More than the whole budget",
+   "rule": "total 0.15",
+   "expected": "DENY C09",
+   "got": "DENY C09",
+   "ok": true,
+   "depositAddress": "c107b563e544ea2a26bcc7b23d4323deed8da5d91b53a2d25a2e8501cd7c25c4"
+  },
+  {
+   "scenario": "Paying from a network the owner did not allow",
+   "rule": "only Arbitrum allowed; the request is from NEAR",
+   "expected": "DENY C04",
+   "got": "DENY C04",
+   "ok": true,
+   "depositAddress": "2b18711904e8b3ac9909256e2fe10cab3b680c34798ecd8ad85cde92e722a4e6"
+  },
+  {
+   "scenario": "A website the owner did not allow",
+   "rule": "allowedHosts: other.example.com only",
+   "expected": "DENY C02",
+   "got": "DENY C02",
+   "ok": true,
+   "depositAddress": "acc91ab607180c4602d83af23bb8288ce147197b064448a2364b6b9c7319bc45"
+  },
+  {
+   "scenario": "Mandate not valid yet",
+   "rule": "validFrom one hour from now",
+   "expected": "DENY C01",
+   "got": "DENY C01",
+   "ok": true,
+   "depositAddress": "e3342134668c58cbbed1d80f8c5505724aad45f6f3952bee8875d2f8782ffabd"
+  },
+  {
+   "scenario": "Above the owner's approval threshold",
+   "rule": "approval.above 0.05",
+   "expected": "NEEDS_APPROVAL C12",
+   "got": "NEEDS_APPROVAL C12",
+   "ok": true,
+   "depositAddress": "7b976fec21dfca2847ef7101c2730ca4c65350882a0e86fca60c15dac1683c0b"
+  },
+  {
+   "scenario": "Merchant raises the price after the quote",
+   "rule": "the everyday mandate; the challenge says 0.45",
+   "expected": "DENY C06",
+   "got": "DENY C06",
+   "ok": true,
+   "depositAddress": "1b65c336f54bd50a5770f61a48860085808a77357ca284d3ff112b03ad7aed41"
+  },
+  {
+   "scenario": "Merchant points the refund at a stranger",
+   "rule": "the everyday mandate; refund to another account",
+   "expected": "DENY C06",
+   "got": "DENY C06",
+   "ok": true,
+   "depositAddress": "80d6274428b2f01c7871a169b9905fd7c292b94276031698d80215f961677dd3"
+  }
+ ]
+}

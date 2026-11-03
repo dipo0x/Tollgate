@@ -73,6 +73,12 @@ If a setting is missing it says which, and exits. To let Tollgate pay this merch
   tampered copies: a deposit address 1Click never issued, the same address with the price changed to 0.60, and the refund redirected to a stranger. One run, one
   merchant, our own. The gateway in that run had no signer, so **nothing was signed or sent**, and the deposit address was never paid.
 - **Run with real money, 3 Nov 2026 (`pnpm live:near`):** the merchant asked live 1Click for a NEAR-origin deposit address (0.206712 USDC); all 12 checks passed; after a human yes the signer signed a NEP-141 `ft_transfer` from NEAR; 1Click reported `SUCCESS`; the merchant checked 1Click itself and delivered; the gateway reconciled the payment to `settled`. Transaction: https://nearblocks.io/txns/389TS16z3FKSkuiWnrLcWpSzU5R6DjpEio2rW84FLr1X. Note: first runs were refused by C05 because live 1Click's first lookup of a new deposit address took ~5 s, over the 2.5 s check limit (fail closed); the live run sets `CHECK_TIMEOUT_MS=10000`.
+- **Mandate rules against live 1Click, 3 Nov 2026 (`pnpm live:mandate`, results in `bench/results/live-mandate.json`):** nine mandates, each with
+  one rule tightened, each tested with a real 1Click payment request. Tollgate refused every one that broke a rule, at the check that owns
+  that rule: per-payment limit and whole budget (C09), a network the owner did not allow (C04), a website the owner did not allow (C02),
+  a mandate not yet valid (C01), a raised price and a redirected refund (C06), and it held a payment above the approval threshold for a
+  human (C12). It allowed the one request that broke nothing. Run 1: 8 of 9, because the allowed request was refused when live 1Click's
+  first lookup failed (fail closed: no proof, no payment). Run 2: 9 of 9. No signer was attached, so nothing was signed or paid.
 - **Not yet run:** the negotiation and hiring paths against these services. Neither claim is made anywhere until it is measured.
 
 Reproduce the live run (needs `MERCHANT_NEAR_ACCOUNT` and `NEAR_1CLICK_API_KEY` in `.env`, and `pnpm db:up`):

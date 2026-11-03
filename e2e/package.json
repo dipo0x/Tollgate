@@ -10,7 +10,8 @@
     "sandbox": "tsx src/sandbox.ts",
     "live": "tsx src/live.ts",
     "agent": "node examples/agent.mjs",
-    "live:near": "tsx src/live-near.ts"
+    "live:near": "tsx src/live-near.ts",
+    "live:mandate": "tsx src/live-mandate.ts"
   },
   "dependencies": {
     "@tollgate/core": "workspace:*",

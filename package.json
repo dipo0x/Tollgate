@@ -30,7 +30,8 @@
     "sandbox": "pnpm --filter trytollgate build && pnpm --filter @tollgate/e2e sandbox",
     "sandbox:agent": "pnpm --silent --filter @tollgate/e2e agent",
     "prepare": "pnpm --filter trytollgate build",
-    "live:near": "pnpm --filter @tollgate/e2e live:near"
+    "live:near": "pnpm --filter @tollgate/e2e live:near",
+    "live:mandate": "pnpm --filter @tollgate/e2e live:mandate"
   },
   "devDependencies": {
     "@types/node": "^22.20.5",

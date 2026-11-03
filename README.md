@@ -62,6 +62,7 @@ passed on live data; the run stopped until the owner said yes; the signer signed
 `SUCCESS`; the merchant checked 1Click itself before delivering; the gateway reconciled the payment to `settled`.
 
 - **Transaction:** [389TS16z3FKSkuiWnrLcWpSzU5R6DjpEio2rW84FLr1X](https://nearblocks.io/txns/389TS16z3FKSkuiWnrLcWpSzU5R6DjpEio2rW84FLr1X) (0.206712 USDC)
+- **The mandate, tested live:** `pnpm live:mandate` sends real 1Click payment requests against nine mandates, each with one rule tightened. Every rule held, at the check that owns it (9 of 9 on the second run; the first run's allowed request was refused when live 1Click's first lookup failed, which is the fail-closed behaviour). Details in `docs/SERVICES.md`.
 - **Reproduce:** `pnpm live:near` (needs your own funded NEAR key, a 1Click key and Docker; see `docs/SERVICES.md`).
 - **Limits:** one payment, to our own reference merchant, not a third party. The payee's account name is blurred in the screenshot below.
 - **Corrections, stated plainly.** (1) When this payment was made, the dashboard's decision panel labelled its network "Arbitrum". The label
