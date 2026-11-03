@@ -66,4 +66,4 @@ NEAR's native USDC contract with two calls, both built from the stored decision:
 address with the token if it is not already; the deposit is refunded if it is) and `ft_transfer` of exactly the stored amount, with the
 1 yoctoNEAR the token standard requires. That attached deposit is why a NEAR function-call key cannot make this payment, and why the
 limits live in this signer. The caller supplies only the access key's nonce and a recent block hash. Tests: `test/near.test.ts`.
-Not yet run with a funded NEAR account.
+Run once with real money on 3 Nov 2026: [389TS16z3F…](https://nearblocks.io/txns/389TS16z3FKSkuiWnrLcWpSzU5R6DjpEio2rW84FLr1X).

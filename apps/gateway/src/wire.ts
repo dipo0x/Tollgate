@@ -34,6 +34,7 @@ function assemble(cfg: Config, durable: Durable, over: Partial<GatewayDeps>): Ga
     ...(cfg.SIGNER_URL && cfg.SIGNER_SERVICE_TOKEN ? { signer: new HttpSignerClient({ url: cfg.SIGNER_URL, token: cfg.SIGNER_SERVICE_TOKEN }) } : {}),
     clock,
     approvalTtlMs: cfg.APPROVAL_TTL_MINUTES * 60_000,
+    checkTimeoutMs: cfg.CHECK_TIMEOUT_MS,
     log: makeLogger(cfg.LOG_LEVEL),
     ...over,
   }

@@ -46,3 +46,5 @@ payload.json
 
 # The signer's NEAR key (ed25519). Never committed.
 .signer-near-key*
+.near-pay-confirm
+.near-pay-result.json

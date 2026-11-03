@@ -73,5 +73,4 @@ const tollgate = createTollgate({
 })
 ```
 
-It reads the access key's nonce and a block hash in one RPC call, and broadcasts the signed bytes with `send_tx`. Tested against a fake RPC;
-not yet run with a funded NEAR account.
+It reads the access key's nonce and a block hash in one RPC call, and broadcasts the signed bytes with `send_tx`. Tested against a fake RPC, and used for one real payment on 3 Nov 2026 ([transaction](https://nearblocks.io/txns/389TS16z3FKSkuiWnrLcWpSzU5R6DjpEio2rW84FLr1X)).

@@ -19,7 +19,7 @@ What exists, what is simulated, and what is not built. Written for a reviewer wh
 | Part | State |
 | --- | --- |
 | Gateway: 12 checks, budget ledger, approvals, kill switch, audit chain, negotiation, hiring, earning | **Built and tested.** All state in Postgres (the server refuses to start without `DATABASE_URL`). |
-| Signer: signs a USDC transfer only for a stored ALLOW, once, within its own limits | **Built and tested.** Two rails: an ERC-20 transfer on an EVM chain (Arbitrum), and **a NEP-141 `ft_transfer` of USDC on NEAR** to the 1Click deposit address. Never broadcasts. Neither rail has been run with a funded key. |
+| Signer: signs a USDC transfer only for a stored ALLOW, once, within its own limits | **Built and tested.** Two rails: an ERC-20 transfer on an EVM chain (Arbitrum), and **a NEP-141 `ft_transfer` of USDC on NEAR** to the 1Click deposit address. Never broadcasts. The NEAR rail has made one real payment (3 Nov 2026, see below); the EVM rail has not been run with a funded key. |
 | SDK: wraps `fetch`, handles a 402 end to end | **Built and tested** against the real gateway and signer. Published on npm as [`trytollgate`](https://www.npmjs.com/package/trytollgate) (source in `packages/sdk`). TypeScript only: other languages call the gateway's HTTP API (examples in Python and Go under `e2e/examples`). |
 | Benchmark: 16 attacks, 5 controls, 3 targets | **Built.** Offline. See `bench/README.md` for what is real and what is scripted. |
 | Demo (`pnpm demo`): buy, haggle, hire, earn, attacks, kill switch | **Built.** Real gateway, signer and SDK; everything outside them is simulated and labelled. |
@@ -29,10 +29,10 @@ What exists, what is simulated, and what is not built. Written for a reviewer wh
 | Reference services (`apps/workers`): a merchant, a seller, a worker | **Built and tested (13 tests), and run once against live 1Click** (see `docs/SERVICES.md`). We operate them; they are not a third-party marketplace. Hiring through the gateway is still exercised with the worker played inline in the demo. |
 | An LLM planner | **Built, not yet run against a funded API account.** `pnpm demo --llm` lets a Claude model (`claude-opus-5-5` by default, `PLANNER_MODEL` to change) plan the agent's negotiation moves. It sees only prices and limits, never merchant text, and the gateway still enforces the mandate on every move. If the model fails, the agent makes no move and buys nothing (seen on 3 Nov, when the account had no credit). Without `--llm` the demo is scripted and needs no key. Not on NEAR AI Cloud. |
 | Live 1Click | **Run once (`pnpm live`, 3 Nov 2026):** the reference merchant got a real deposit address from live 1Click, and Tollgate's 12 checks returned ALLOW on the real challenge and DENY (C06) on three tampered copies. The gateway had no signer. Needs your own 1Click key and NEAR account. |
-| A payment with real money | **Not done.** Nothing in this repository has moved real funds, and the signer has never been run with a funded key. |
+| A payment with real money | **Done once, on NEAR mainnet (3 Nov 2026).** 0.206712 USDC from the signer's NEAR account to a live 1Click deposit address, after all 12 checks passed on live data and a human said yes; 1Click reported `SUCCESS` and the owner's own NEAR account (our reference merchant's payee) received 0.20 USDC. Transaction: [389TS16z3FKSkuiWnrLcWpSzU5R6DjpEio2rW84FLr1X](https://nearblocks.io/txns/389TS16z3FKSkuiWnrLcWpSzU5R6DjpEio2rW84FLr1X). Reproduce: `pnpm live:near` (needs your own funded NEAR key, 1Click key and Docker). The merchant is ours; no third party has been paid. |
 | Real MPP / x402 wire format | **Not built.** The SDK and mock merchants speak a simple 402 format of our own (see `packages/sdk/README.md`). |
 
-Nothing on this page has been run against real money. Benchmark results are produced by one command (`pnpm bench`) and rerunning it gives identical output.
+Apart from the one NEAR payment above, nothing on this page has been run against real money. Benchmark results are produced by one command (`pnpm bench`) and rerunning it gives identical output.
 
 ## Repository layout
 
@@ -54,6 +54,31 @@ docs/               PRD and system architecture
 ```
 
 Trust boundaries: `demo-agent`, `workers` and `sdk` run in the **untrusted** zone. `gateway`, `core`, `registry` and `dashboard` are **trusted**. `signer` is the most sensitive component and is reachable only by the gateway. `mock-merchants` is test-only.
+
+## A real payment, on NEAR mainnet (3 Nov 2026)
+
+One real payment, end to end: the reference merchant asked live 1Click for a deposit address; all twelve checks
+passed on live data; the run stopped until the owner said yes; the signer signed a NEP-141 USDC `ft_transfer` from NEAR; 1Click reported
+`SUCCESS`; the merchant checked 1Click itself before delivering; the gateway reconciled the payment to `settled`.
+
+- **Transaction:** [389TS16z3FKSkuiWnrLcWpSzU5R6DjpEio2rW84FLr1X](https://nearblocks.io/txns/389TS16z3FKSkuiWnrLcWpSzU5R6DjpEio2rW84FLr1X) (0.206712 USDC)
+- **Reproduce:** `pnpm live:near` (needs your own funded NEAR key, a 1Click key and Docker; see `docs/SERVICES.md`).
+- **Limits:** one payment, to our own reference merchant, not a third party. The payee's account name is blurred in the screenshot below.
+- **Corrections, stated plainly.** (1) When this payment was made, the dashboard's decision panel labelled its network "Arbitrum". The label
+  was hard-coded from when Arbitrum was the only rail; the payment itself was on NEAR (see the transaction, and check C04's evidence
+  `"network":"near"`). The dashboard now reads the network from each decision. (2) The merchant delivered its report, but the report's own
+  live rate came back empty (`amountIn: null`) because its quote call failed; the payment and the twelve checks were not affected.
+
+| | |
+| --- | --- |
+| ![The decision on the dashboard: paid, all twelve checks green](docs/images/live-near-decisions.png) | ![The twelve checks with the evidence from live 1Click](docs/images/live-near-checks.png) |
+| **The decision.** Paid, 0.21 USDC, all twelve checks green. | **The evidence.** Each check and what it saw from live 1Click: network `near`, the 1Click record, the price against Tollgate's own quote, the refund target. |
+| ![The audit chain: probed, enabled, mandate, decision, signed, settled](docs/images/live-near-audit.png) | ![Overview: 0.21 spent, settled with 1Click](docs/images/live-near-overview.png) |
+| **The audit chain.** Service probed and enabled, mandate created, decision, `payment.signed` (with the NEAR transaction hash), `payment.settled`. | **The money.** 0.21 of a 0.30 budget spent, settled with 1Click; nothing held, nothing stopped. |
+
+![After the fix: the decision panel labels a NEAR payment NEAR](docs/images/live-near-label-fixed.png)
+
+*Every decision names the network it settles on. Here, a NEAR payment request cleared by all twelve checks.*
 
 ## The dashboard
 
@@ -104,7 +129,7 @@ Steps 1 to 4 need no keys, no database and no network beyond the install. The SD
 
 ## How NEAR fits
 
-- **Paying from NEAR.** With `SIGNER_CHAINS=near`, the agent's money sits in a NEAR account and a payment is a NEP-141 `ft_transfer` of NEAR's native USDC to the deposit address 1Click issued (with a `storage_deposit` in the same transaction, in case that address is not yet registered with the token). The signer builds it from the stored decision and signs it with an ed25519 key; the SDK's `nearRpcRail` reads the access-key nonce and broadcasts. Tested offline (the signed transaction decodes to exactly the stored decision and its signature verifies); not yet run with a funded NEAR account.
+- **Paying from NEAR.** With `SIGNER_CHAINS=near`, the agent's money sits in a NEAR account and a payment is a NEP-141 `ft_transfer` of NEAR's native USDC to the deposit address 1Click issued (with a `storage_deposit` in the same transaction, in case that address is not yet registered with the token). The signer builds it from the stored decision and signs it with an ed25519 key; the SDK's `nearRpcRail` reads the access-key nonce and broadcasts. Tested offline (the signed transaction decodes to exactly the stored decision and its signature verifies), and **run once with real money on 3 Nov 2026**: 0.206712 USDC from NEAR, approved by all 12 checks on live 1Click, settled by 1Click (`SUCCESS`), 0.20 USDC received by the merchant account: [389TS16z3F…](https://nearblocks.io/txns/389TS16z3FKSkuiWnrLcWpSzU5R6DjpEio2rW84FLr1X).
 - **NEAR Intents / 1Click** is the settlement path for agent payments. Check C06 cross-checks the merchant's challenge against the 1Click API — the advertised deposit address, amount, asset and refund target must match the quote, or the payment is denied.
 - **NEAR AI Cloud** is the intended home of the demo agent's reasoning. It is **not wired in**: the demo agent's decisions are scripted and no model is called, and there is no attestation display.
 - **NEAR function-call keys** are discussed honestly: they cannot attach deposits or move tokens, and NEP-413 intent signing needs a full-access key. That is exactly why the limits live in a policy gate in front of an isolated signer, not in the key type.

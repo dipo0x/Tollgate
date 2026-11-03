@@ -8,6 +8,8 @@ export const ConfigSchema = z.object({
   PORT: z.coerce.number().int().min(1).max(65535).default(8787),
   /** Offline replays recorded 1Click fixtures: no network, no key, no funds. The default, and what CI uses. */
   TOLLGATE_OFFLINE: bool.default(true),
+  /** Per-check time limit. A slower check fails (DENY), never passes. 2.5 s suits recorded answers; live 1Click needs more (its first lookup of a new deposit address was measured at ~5 s). */
+  CHECK_TIMEOUT_MS: z.coerce.number().int().min(500).max(15_000).default(2500),
   LOG_LEVEL: z.enum(['silent', 'info', 'debug']).default('info'),
   /** Owner-level access. Never shown in logs; compared as a digest. */
   GATEWAY_OPERATOR_TOKEN: z.string().min(16, 'GATEWAY_OPERATOR_TOKEN must be at least 16 characters'),

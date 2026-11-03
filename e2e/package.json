@@ -9,9 +9,11 @@
     "typecheck": "tsc --noEmit",
     "sandbox": "tsx src/sandbox.ts",
     "live": "tsx src/live.ts",
-    "agent": "node examples/agent.mjs"
+    "agent": "node examples/agent.mjs",
+    "live:near": "tsx src/live-near.ts"
   },
   "dependencies": {
+    "@tollgate/core": "workspace:*",
     "@tollgate/signer": "workspace:*",
     "postgres": "^4.0.0",
     "trytollgate": "workspace:*"

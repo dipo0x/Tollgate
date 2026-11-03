@@ -35,6 +35,8 @@ export type ServicesOptions = {
 }
 
 const EVM = /^0x[0-9a-fA-F]{40}$/
+/** A NEAR account id (named, or a 64-hex implicit account). A payer that sends one pays FROM NEAR. */
+const NEAR_ACCOUNT = /^(?=.{2,64}$)(([a-z\d]+[-_])*[a-z\d]+\.)*([a-z\d]+[-_])*[a-z\d]+$/
 const Amount = z.string().regex(/^\d{1,12}(\.\d{1,6})?$/)
 const Proof = z.strictObject({ challengeId: z.string().min(1).max(128), txHash: z.string().min(1).max(128), depositAddress: z.string().min(1).max(128) })
 const NegotiateBody = z.strictObject({ price: Amount, asset: z.string().min(1).max(16) })
@@ -86,13 +88,15 @@ export function createServices(o: ServicesOptions) {
 
     if (proofRaw === undefined) {
       const payer = c.req.header('x-payer') ?? ''
-      if (!EVM.test(payer)) return bad(c, 400, 'payer_required', 'send your wallet address in the x-payer header: a failed payment is refunded to it')
+      const fromNear = !EVM.test(payer) && NEAR_ACCOUNT.test(payer)
+      if (!EVM.test(payer) && !fromNear) return bad(c, 400, 'payer_required', 'send your wallet address (an EVM address or a NEAR account) in the x-payer header: a failed payment is refunded to it')
+      const origin = fromNear ? 'near' : network
       let dep
-      try { dep = await o.makeDeposit({ originNetwork: network, symbol, amountOut: p.price, payee: o.payee, refundTo: payer, ttlSeconds: ttl }) }
+      try { dep = await o.makeDeposit({ originNetwork: origin, symbol, amountOut: p.price, payee: o.payee, refundTo: payer, ttlSeconds: ttl }) }
       catch (e) { return bad(c, 502, 'upstream', `could not get a deposit address from 1Click: ${(e as Error).message}`) }
       return c.json({ challenge: {
         id: `ch_${dep.depositAddress}`.slice(0, 128), method: 'nearintents', recipient: dep.depositAddress, amount: dep.amountIn,
-        currency: symbol, originNetwork: network, refundTo: payer, expires: dep.deadline,
+        currency: symbol, originNetwork: origin, refundTo: payer, expires: dep.deadline,
       } }, 402)
     }
 

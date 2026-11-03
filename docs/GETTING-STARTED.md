@@ -348,7 +348,7 @@ const tollgate = createTollgate({ /* gateway, token, mandate as above */ payer: 
 ```
 
 A NEAR payment is one transaction to the USDC contract: `storage_deposit` (registers the deposit address if needed; refunded if not) and
-`ft_transfer` of exactly the approved amount. **Tested offline only. It has not been run with a funded NEAR account**; fund the account
+`ft_transfer` of exactly the approved amount. It has been run once with real money (3 Nov 2026, 0.206712 USDC, [transaction](https://nearblocks.io/txns/389TS16z3FKSkuiWnrLcWpSzU5R6DjpEio2rW84FLr1X); reproduce with `pnpm live:near`). Fund the account
 (a little NEAR for gas and the USDC it may spend) only when you decide to try it with real money. `nearRpcRail` needs SDK 0.2.0 or later.
 
 ## Step 7. Check that it all works

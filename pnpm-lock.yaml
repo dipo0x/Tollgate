@@ -230,6 +230,9 @@ importers:
 
   e2e:
     dependencies:
+      '@tollgate/core':
+        specifier: workspace:*
+        version: link:../packages/core
       '@tollgate/signer':
         specifier: workspace:*
         version: link:../apps/signer

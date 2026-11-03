@@ -63,7 +63,7 @@ describe('merchant: GET /data', () => {
   it('without a payer address: 400, and no deposit address is created', async () => {
     const { get, made } = build()
     expect((await get('/data')).status).toBe(400)
-    expect((await get('/data', { 'x-payer': 'not-an-address' })).status).toBe(400)
+    expect((await get('/data', { 'x-payer': 'Not An Address!' })).status).toBe(400)  // invalid as an EVM address and as a NEAR account
     expect(made).toHaveLength(0)
   })
   it('answers 402 with a challenge Tollgate itself accepts, paying the real deposit address, refunding the payer', async () => {
@@ -75,6 +75,14 @@ describe('merchant: GET /data', () => {
     expect(p.ok).toBe(true)
     expect(p.ok && p.challenge).toMatchObject({ method: 'nearintents', recipient: '0xDEP0517', amount: '0.307935', refundTo: PAYER, originNetwork: 'eip155:42161' })
     expect(made[0]).toMatchObject({ payee: PAYEE, refundTo: PAYER, amountOut: '0.30' })
+  })
+  it('a NEAR payer gets a NEAR-origin challenge, refunded to that NEAR account', async () => {
+    const { get, made } = build()
+    const NEARPAYER = 'a55dcd6b86ca2f4466512b4a002d643408c9b28267b17a3b6487833661d9bc9e'
+    const { challenge } = await (await get('/data', { 'x-payer': NEARPAYER })).json() as { challenge: unknown }
+    const p = parseChallenge(challenge)
+    expect(p.ok && p.challenge).toMatchObject({ originNetwork: 'near', refundTo: NEARPAYER })
+    expect(made[0]).toMatchObject({ originNetwork: 'near', refundTo: NEARPAYER })
   })
   it('if 1Click is down: 502, never a made-up challenge', async () => {
     const { app } = createServices({ payee: PAYEE, opening: '0.30', floor: '0.20', dealSecret: SECRET, makeDeposit: async () => { throw new Error('down') }, oneClick: { status: async () => ({ found: false }), dryQuote: async () => ({}) } })

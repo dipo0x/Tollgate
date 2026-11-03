@@ -57,7 +57,13 @@ function copyBtn(value) {
 }
 const addr = v => el('span', { class: 'addr', title: String(v) }, short(v), copyBtn(v))
 const tokenChip = c => el('span', { class: 'tok' }, el('i', null, '$'), c || 'USDC')
-const netChip = () => el('span', { class: 'net' }, el('i', null, 'A'), 'Arbitrum')
+// The network the payment is made on, read from the decision itself: the signed bind, else check C04's evidence. Never assumed.
+const NETS = { 'eip155:42161': ['A', 'Arbitrum', 'arb'], 'eip155:8453': ['B', 'Base', 'base'], near: ['N', 'NEAR', 'near'] }
+const netChip = d => {
+  const id = (d && d.bind && d.bind.chain) || ((d && d.checks) || []).filter(c => c.id === 'C04').map(c => c.evidence && c.evidence.network)[0]
+  const n = NETS[id]
+  return n ? el('span', { class: `net ${n[2]}` }, el('i', null, n[0]), n[1]) : el('span', { class: 'net' }, id ? String(id) : 'network unknown')
+}
 
 function label(d) {
   const m = { settled: ['Paid', 'ok'], allowed: ['Allowed', 'ok'], pending: ['Needs approval', 'ap'], rejected: ['Rejected', 'mu'], expired: ['Expired', 'mu'], released: ['Refunded', 'mu'], reserving: ['In flight', 'wn'] }
@@ -128,7 +134,7 @@ function openDrawer(d) {
   const scrim = el('div', { class: 'scrim', onclick: closeDrawer })
   const panel = el('aside', { class: 'drawer', role: 'dialog', 'aria-label': 'Decision detail' },
     el('button', { type: 'button', class: 'close ghost', onclick: closeDrawer }, 'Close'),
-    el('div', { class: 'row' }, avatar(d.host), el('div', null, el('div', { class: 'row wrap' }, pill(d), netChip()), el('div', { class: 'muted' }, d.host))),
+    el('div', { class: 'row' }, avatar(d.host), el('div', null, el('div', { class: 'row wrap' }, pill(d), netChip(d)), el('div', { class: 'muted' }, d.host))),
     el('div', { class: 'row' }, el('span', { class: 'bignum' }, d.amount ? money(d.amount) : '—'), tokenChip(d.currency)),
     el('h3', null, 'Result of the twelve checks'), ribbon(d.checks),
     d.failedCheck ? el('p', { class: 'no' }, 'Stopped by ' + d.failedCheck + (d.reason ? ': ' + d.reason : '')) : (d.reason ? el('p', { class: 'muted' }, d.reason) : []),
@@ -255,7 +261,7 @@ const PAGE_LOADERS = {
 function approvalCard(a) {
   const d = a.decision || {}, reason = el('input', { type: 'text', placeholder: 'A reason (required)', maxlength: 500, 'aria-label': 'Reason' })
   const decide = what => { if (!reason.value.trim()) { reason.focus(); return } api('/v1/approvals/' + encodeURIComponent(a.decisionId) + '/' + what, { method: 'POST', body: { reason: reason.value.trim() } }).then(load).catch(showError) }
-  return el('div', { class: 'card' }, el('div', { class: 'row' }, avatar(d.host || a.decisionId), el('div', { class: 'grow' }, el('b', null, d.host || ''), el('div', { class: 'muted' }, d.purpose || '')), netChip()),
+  return el('div', { class: 'card' }, el('div', { class: 'row' }, avatar(d.host || a.decisionId), el('div', { class: 'grow' }, el('b', null, d.host || ''), el('div', { class: 'muted' }, d.purpose || '')), netChip(d)),
     el('div', { class: 'row wrap' }, el('span', { class: 'bignum' }, money(d.amount)), tokenChip(d.currency), d.risk !== undefined ? gauge(d.risk) : []),
     ribbon(d.checks), el('p', { class: 'muted' }, 'Expires ' + when(a.expiresAt)),
     el('div', { class: 'row wrap' }, reason, el('button', { type: 'button', class: 'good', onclick: () => decide('approve') }, 'Approve'), el('button', { type: 'button', class: 'danger', onclick: () => decide('reject') }, 'Reject'), el('button', { type: 'button', class: 'ghost', onclick: () => d.checks && openDrawer(d) }, 'See all checks')))

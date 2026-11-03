@@ -72,7 +72,8 @@ If a setting is missing it says which, and exits. To let Tollgate pay this merch
   Tollgate's twelve checks, on live 1Click data, returned **ALLOW with all 12 passing** for the real challenge, and **DENY (stopped by C06)** for each of three
   tampered copies: a deposit address 1Click never issued, the same address with the price changed to 0.60, and the refund redirected to a stranger. One run, one
   merchant, our own. The gateway in that run had no signer, so **nothing was signed or sent**, and the deposit address was never paid.
-- **Not yet run:** a real payment, and the negotiation and hiring paths against these services. Neither claim is made anywhere until it is measured.
+- **Run with real money, 3 Nov 2026 (`pnpm live:near`):** the merchant asked live 1Click for a NEAR-origin deposit address (0.206712 USDC); all 12 checks passed; after a human yes the signer signed a NEP-141 `ft_transfer` from NEAR; 1Click reported `SUCCESS`; the merchant checked 1Click itself and delivered; the gateway reconciled the payment to `settled`. Transaction: https://nearblocks.io/txns/389TS16z3FKSkuiWnrLcWpSzU5R6DjpEio2rW84FLr1X. Note: first runs were refused by C05 because live 1Click's first lookup of a new deposit address took ~5 s, over the 2.5 s check limit (fail closed); the live run sets `CHECK_TIMEOUT_MS=10000`.
+- **Not yet run:** the negotiation and hiring paths against these services. Neither claim is made anywhere until it is measured.
 
 Reproduce the live run (needs `MERCHANT_NEAR_ACCOUNT` and `NEAR_1CLICK_API_KEY` in `.env`, and `pnpm db:up`):
 

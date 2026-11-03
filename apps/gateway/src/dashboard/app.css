@@ -71,6 +71,8 @@ input:focus-visible,button:focus-visible{outline:2px solid var(--ac2);outline-of
 .tok i{display:grid;place-items:center;width:18px;height:18px;border-radius:50%;background:#2775ca;color:#fff;font:700 10px var(--sans);font-style:normal}
 .net{display:inline-flex;align-items:center;gap:6px;padding:2px 9px 2px 3px;border-radius:99px;background:var(--panel2);border:1px solid var(--line);font:600 11.5px var(--sans);color:var(--mu)}
 .net i{display:grid;place-items:center;width:17px;height:17px;border-radius:50%;background:#28a0f0;color:#fff;font:700 9px var(--sans);font-style:normal}
+.net.base i{background:#0052ff}
+.net.near i{background:#00c08b;color:#06120d}
 .addr{display:inline-flex;align-items:center;gap:6px;font:12.5px var(--mono);color:var(--mu)}
 .copy{padding:2px 6px;border-radius:6px;font:600 10px var(--mono);color:var(--dm);background:var(--panel)}
 .copy:hover{color:var(--tx)}

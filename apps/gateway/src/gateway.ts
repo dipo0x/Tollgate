@@ -29,6 +29,8 @@ export type GatewayDeps = {
   info?: { mode: 'offline' | 'live' }
   clock: () => Date
   approvalTtlMs: number
+  /** How long one check may take before it fails (fail closed). Live 1Click's first lookup of a new deposit address was measured at ~5 s. */
+  checkTimeoutMs?: number
   log: (event: string, fields: Record<string, unknown>) => void
 }
 
@@ -180,7 +182,7 @@ export class Gateway {
       registry: await this.d.services.lookupFor(req.host), ledger: this.d.ledger,
       adapters: { oneClick: this.d.oneClick, pins: this.d.pins, decisions: this.d.store.decisions },
       ...(req.payer ? { payer: req.payer } : {}), ...(deal ? { deal } : {}),
-    })
+    }, undefined, this.d.checkTimeoutMs ? { checkTimeoutMs: this.d.checkTimeoutMs } : {})
 
     // C10 said "this is a retry of my own earlier ALLOW": hand back that decision. No second hold, no second payment.
     // That includes an ALLOW a person gave: asking again after approval must resume it, not raise a second approval for the same
