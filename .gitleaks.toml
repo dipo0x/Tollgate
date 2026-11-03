@@ -16,4 +16,6 @@ regexes = [
   '''NEAR_1CLICK_API_KEY:\s*.e2e-simulated-1click-key''',
   # A throwaway signing secret used only by the reference-services unit tests.
   '''const SECRET = .test-secret-0123456789-abcdef''',
+  # A recorded-fixture lookup hash: a 64-hex sha256 of the request, stored under "key" in packages/core/fixtures. Not a credential.
+  '''^\s*"key":\s*"[0-9a-f]{64}",?$''',
 ]
