@@ -75,6 +75,16 @@ When it finishes it prints a web address and a token. Open the address, paste th
 Another no-setup check, the red-team benchmark: `pnpm bench` runs 16 attacks and 5 ordinary payments against three kinds of agent and
 prints a table.
 
+## What the dashboard looks like
+
+This is the owner's dashboard you will open in Step 3 (shown with the demo's simulated data):
+
+![Overview: budget, spend, outcomes and what stopped payments](images/dashboard-overview.jpg)
+
+Click any decision to see the twelve checks and their evidence, as below.
+
+![One blocked payment, with all twelve checks and their evidence](images/dashboard-decision-checks.jpg)
+
 ## Step 3. Run the real system on your computer
 
 This starts the actual gateway and signer (the programs you would run in production), with a local database.

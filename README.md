@@ -55,6 +55,17 @@ docs/               PRD and system architecture
 
 Trust boundaries: `demo-agent`, `workers` and `sdk` run in the **untrusted** zone. `gateway`, `core`, `registry` and `dashboard` are **trusted**. `signer` is the most sensitive component and is reachable only by the gateway. `mock-merchants` is test-only.
 
+## The dashboard
+
+Screenshots of the owner's dashboard (`/dashboard`, served by the gateway), taken from `pnpm demo --serve`. **Everything in them is the demo's simulated data**: the merchants, the customer and the chain are simulated, and the timestamps are the demo's fixed clock, not the time it ran.
+
+| | |
+| --- | --- |
+| ![Overview: budget, spend, outcomes and what stopped payments](docs/images/dashboard-overview.jpg) | ![One blocked payment, with all twelve checks and their evidence](docs/images/dashboard-decision-checks.jpg) |
+| **Overview.** Money spent, held and remaining, the last 12 outcomes, and which checks stopped payments. The kill switch is bottom left. | **One decision.** A 0.42 USDC request stopped by C07 (price), with each of the twelve checks and the evidence behind it. |
+| ![Mandates: the research agent and the worker it hired](docs/images/dashboard-mandates.jpg) | ![Audit: the hash-chained record, with a verify button](docs/images/dashboard-audit.jpg) |
+| **Mandates.** The agent's rules and money, and the worker it hired with a smaller budget carved out of its own. | **Audit.** Every event, hash-chained so an edit to any past entry breaks every hash after it, with a button that verifies the chain. |
+
 ## Quick start
 
 **You need:** Node 22+, pnpm 10+, and Git. Docker Desktop is needed only for the local database (steps 5 onward). Check with
