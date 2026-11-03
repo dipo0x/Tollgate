@@ -49,9 +49,9 @@ Tollgate is a payment firewall between an agent and its wallet. Twelve fail-clos
 
 The same gateway runs the agent economy inside the owner's limits: negotiation bounded by a price ceiling, hired workers paid from a carved-out budget and released only when their work passes a check, and earnings credited only against a verified, fresh receipt.
 
-A benchmark of 16 attacks and 5 ordinary payments runs offline: Tollgate stopped 16 of 16 and allowed 5 of 5; a naive agent stopped 0 and a modelled stock policy 5. One command, `pnpm demo`, shows the whole story. Limits are stated in the README: merchants, 1Click, the chain and the customer are simulated, the agent's decisions are scripted, the dashboard is not built, and nothing was run with real funds.
+A benchmark of 16 attacks and 5 ordinary payments runs offline: Tollgate stopped 16 of 16 and allowed 5 of 5; a naive agent stopped 0 and a modelled stock policy 5. One command, `pnpm demo`, shows the whole story, and an owner dashboard shows every decision with the evidence behind each check. Once, against the live 1Click API, a real deposit address was allowed and three tampered copies of it were denied. The SDK is on npm as trytollgate. Limits are stated in the README: the benchmark and demo use simulated merchants, chain and customer, the demo agent's decisions are scripted, and nothing was run with real funds.
 
-*(Count the characters before sending: 20–2000. This draft is about 1,500.)*
+*(Count the characters before sending: 20–2000. This draft is about 1,650.)*
 
 ## 2b. Draft of the X post
 
