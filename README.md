@@ -19,7 +19,7 @@ What exists, what is simulated, and what is not built. Written for a reviewer wh
 | Part | State |
 | --- | --- |
 | Gateway: 12 checks, budget ledger, approvals, kill switch, audit chain, negotiation, hiring, earning | **Built and tested.** All state in Postgres (the server refuses to start without `DATABASE_URL`). |
-| Signer: signs a USDC transfer only for a stored ALLOW, once, within its own limits | **Built and tested.** Never broadcasts. Not run with a funded key. |
+| Signer: signs a USDC transfer only for a stored ALLOW, once, within its own limits | **Built and tested.** Two rails: an ERC-20 transfer on an EVM chain (Arbitrum), and **a NEP-141 `ft_transfer` of USDC on NEAR** to the 1Click deposit address. Never broadcasts. Neither rail has been run with a funded key. |
 | SDK: wraps `fetch`, handles a 402 end to end | **Built and tested** against the real gateway and signer. Published on npm as [`trytollgate`](https://www.npmjs.com/package/trytollgate) (source in `packages/sdk`). TypeScript only: other languages call the gateway's HTTP API (examples in Python and Go under `e2e/examples`). |
 | Benchmark: 16 attacks, 5 controls, 3 targets | **Built.** Offline. See `bench/README.md` for what is real and what is scripted. |
 | Demo (`pnpm demo`): buy, haggle, hire, earn, attacks, kill switch | **Built.** Real gateway, signer and SDK; everything outside them is simulated and labelled. |
@@ -27,7 +27,7 @@ What exists, what is simulated, and what is not built. Written for a reviewer wh
 | Marketing site and `/docs/` page | **Built** (`apps/site`). |
 | Dashboard (owner UI) | **Built, minimal, local.** Served by the gateway at `/dashboard`: decisions with every check's evidence, approvals (approve or reject with a required reason), mandates and their money, the service list, the audit chain with a verify button, and the kill switch. Read-only apart from those two actions. **Not built:** a jobs screen, a live push feed, a hosted version. Try it on the demo's data with `pnpm demo --serve`. |
 | Reference services (`apps/workers`): a merchant, a seller, a worker | **Built and tested (13 tests), and run once against live 1Click** (see `docs/SERVICES.md`). We operate them; they are not a third-party marketplace. Hiring through the gateway is still exercised with the worker played inline in the demo. |
-| An LLM planner on NEAR AI Cloud | **Not built.** The demo agent's decisions are scripted; no model is called. |
+| An LLM planner | **Built, not yet run against a funded API account.** `pnpm demo --llm` lets a Claude model (`claude-opus-5-5` by default, `PLANNER_MODEL` to change) plan the agent's negotiation moves. It sees only prices and limits, never merchant text, and the gateway still enforces the mandate on every move. If the model fails, the agent makes no move and buys nothing (seen on 3 Nov, when the account had no credit). Without `--llm` the demo is scripted and needs no key. Not on NEAR AI Cloud. |
 | Live 1Click | **Run once (`pnpm live`, 3 Nov 2026):** the reference merchant got a real deposit address from live 1Click, and Tollgate's 12 checks returned ALLOW on the real challenge and DENY (C06) on three tampered copies. The gateway had no signer. Needs your own 1Click key and NEAR account. |
 | A payment with real money | **Not done.** Nothing in this repository has moved real funds, and the signer has never been run with a funded key. |
 | Real MPP / x402 wire format | **Not built.** The SDK and mock merchants speak a simple 402 format of our own (see `packages/sdk/README.md`). |
@@ -104,6 +104,7 @@ Steps 1 to 4 need no keys, no database and no network beyond the install. The SD
 
 ## How NEAR fits
 
+- **Paying from NEAR.** With `SIGNER_CHAINS=near`, the agent's money sits in a NEAR account and a payment is a NEP-141 `ft_transfer` of NEAR's native USDC to the deposit address 1Click issued (with a `storage_deposit` in the same transaction, in case that address is not yet registered with the token). The signer builds it from the stored decision and signs it with an ed25519 key; the SDK's `nearRpcRail` reads the access-key nonce and broadcasts. Tested offline (the signed transaction decodes to exactly the stored decision and its signature verifies); not yet run with a funded NEAR account.
 - **NEAR Intents / 1Click** is the settlement path for agent payments. Check C06 cross-checks the merchant's challenge against the 1Click API — the advertised deposit address, amount, asset and refund target must match the quote, or the payment is denied.
 - **NEAR AI Cloud** is the intended home of the demo agent's reasoning. It is **not wired in**: the demo agent's decisions are scripted and no model is called, and there is no attestation display.
 - **NEAR function-call keys** are discussed honestly: they cannot attach deposits or move tokens, and NEP-413 intent signing needs a full-access key. That is exactly why the limits live in a policy gate in front of an isolated signer, not in the key type.
@@ -141,7 +142,7 @@ of it.
 - **One repository (Q-003).** No separate repo. The diff a judge should review is
   `git diff pre-hackathon..hackathon-submission`.
 - **Existing product on another chain (Q-002).** None. Tollgate is new.
-- **Libraries and generated code (Q-005).** Third-party: Hono, Drizzle, Zod, viem, Vitest,
+- **Libraries and generated code (Q-005).** Third-party: Hono, Drizzle, Zod, the Anthropic TypeScript SDK (optional `--llm` planner), the official `@near-js` packages (NEAR signing), viem, Vitest,
   fast-check, postgres.js, happy-dom, React, Vite, GSAP, Lenis, Three.js. No pre-hackathon libraries of
   my own are reused. Parts of this codebase were written with AI assistance (Claude Code);
   every line is reviewed and owned by the author.

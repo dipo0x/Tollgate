@@ -1,6 +1,6 @@
 {
   "name": "trytollgate",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Wraps fetch so an HTTP 402 payment challenge is checked by a Tollgate gateway before anything is signed or paid. For AI agents.",
   "license": "MIT",
   "type": "module",

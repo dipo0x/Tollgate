@@ -43,3 +43,6 @@ payload.json
 
 # The running sandbox's addresses and throwaway tokens.
 .sandbox.json
+
+# The signer's NEAR key (ed25519). Never committed.
+.signer-near-key*

@@ -58,3 +58,12 @@ The last row is the claim: one atomic database insert (`signer_claims`, primary 
 - The signer's database role should be able to SELECT `gateway_decisions`, `gateway_settings` and `mandates` and use `signer_claims`, and nothing else. This repo does not create roles for you.
 - No rate limiting on the signer yet.
 - A claim taken but never completed (the process died mid-signing) stays claimed: the decision must be authorized again. That fails closed.
+
+## Paying from NEAR
+
+Add `near` to `SIGNER_CHAINS` and make a key with `pnpm --filter @tollgate/signer keygen-near`. A NEAR payment is one transaction to
+NEAR's native USDC contract with two calls, both built from the stored decision: `storage_deposit` (registers the 1Click deposit
+address with the token if it is not already; the deposit is refunded if it is) and `ft_transfer` of exactly the stored amount, with the
+1 yoctoNEAR the token standard requires. That attached deposit is why a NEAR function-call key cannot make this payment, and why the
+limits live in this signer. The caller supplies only the access key's nonce and a recent block hash. Tests: `test/near.test.ts`.
+Not yet run with a funded NEAR account.

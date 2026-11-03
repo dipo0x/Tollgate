@@ -57,3 +57,21 @@ To wait for a person instead of throwing, pass `approval: { wait: true }`: the S
 - The 402 format here is Tollgate's own: the challenge in the response body as JSON (or `{ "challenge": {...} }`), and the proof in an `x-payment-proof` header. It is what `apps/mock-merchants` speaks. Real MPP / x402 headers are a separate adapter, to be added once the payment path is chosen.
 - A request body must be replayable (a string or buffer, not a one-shot stream), because it is sent again on the retry.
 - `httpRpcRail` reads a nonce and fees over public JSON-RPC and broadcasts the signed transaction. Using it with a funded key spends real money; that is always the owner's decision.
+
+## Paying from NEAR (0.2.0+)
+
+`nearRpcRail` pays from a NEAR account instead of an EVM chain. The gateway's signer must be configured for NEAR (see the repository's
+getting-started guide); `publicKey` is the signer's PUBLIC key from its `/healthz`.
+
+```ts
+import { createTollgate, nearRpcRail } from 'trytollgate'
+
+const tollgate = createTollgate({
+  gatewayUrl: 'http://127.0.0.1:8787', agentToken: process.env.TOLLGATE_AGENT_TOKEN!, mandateId: 'mnd_1',
+  payer: 'your-agent.near',
+  rail: nearRpcRail({ rpcUrl: 'https://rpc.mainnet.near.org', publicKey: 'ed25519:...' }),
+})
+```
+
+It reads the access key's nonce and a block hash in one RPC call, and broadcasts the signed bytes with `send_tx`. Tested against a fake RPC;
+not yet run with a funded NEAR account.

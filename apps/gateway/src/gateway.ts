@@ -4,7 +4,7 @@ import {
   type AuditStore, type Ledger, type MandateStore, type OneClickAdapter, type Offer, type PinStore, type RevenueStore,
 } from '@tollgate/core'
 import type { Services } from './services.ts'
-import type { SignerClient } from './signer.ts'
+import type { SignerClient, TxParams } from './signer.ts'
 import type { TokenRegistry } from './auth.ts'
 import type { Approval, Bind, DecisionRecord, Job } from './state.ts'
 import type { GatewayStore } from './store/types.ts'
@@ -32,9 +32,12 @@ export type GatewayDeps = {
   log: (event: string, fields: Record<string, unknown>) => void
 }
 
-const SignedReply = z.object({
-  decisionId: z.string(), chainId: z.number().int().positive(), from: z.string().regex(/^0x[0-9a-fA-F]{40}$/), txHash: z.string().regex(/^0x[0-9a-fA-F]{64}$/), signedTx: z.string().regex(/^0x[0-9a-fA-F]+$/),
-})
+// What a signer may answer. EVM: a chain id, an address and hex. NEAR: chainId 0 ("not EVM"; the decision's bind says near),
+// a NEAR account, a base58 hash and a base64 transaction. Anything else is treated as a failed signing.
+const SignedReply = z.union([
+  z.object({ decisionId: z.string(), chainId: z.number().int().positive(), from: z.string().regex(/^0x[0-9a-fA-F]{40}$/), txHash: z.string().regex(/^0x[0-9a-fA-F]{64}$/), signedTx: z.string().regex(/^0x[0-9a-fA-F]+$/) }),
+  z.object({ decisionId: z.string(), chainId: z.literal(0), from: z.string().regex(/^(([a-z\d]+[-_])*[a-z\d]+\.)*([a-z\d]+[-_])*[a-z\d]+$/).min(2).max(64), txHash: z.string().regex(/^[1-9A-HJ-NP-Za-km-z]{32,44}$/), signedTx: z.string().regex(/^[A-Za-z0-9+/]+={0,2}$/) }),
+])
 
 export type Out = { status: 200 | 201 | 400 | 401 | 403 | 404 | 409 | 422 | 423 | 502 | 503; body: unknown }
 const ok = (body: unknown, status: 200 | 201 = 200): Out => ({ status, body })
@@ -380,11 +383,11 @@ export class Gateway {
    * amount, the chain, the one-time nonce, comes from the decision the gateway stored, never from the caller. The signer then
    * checks it all again against the same record before it touches the key.
    */
-  async sign(agent: Agent, decisionId: string, tx: { nonce: number; gas: string; maxFeePerGas: string; maxPriorityFeePerGas: string }): Promise<Out> {
+  async sign(agent: Agent, decisionId: string, tx: TxParams): Promise<Out> {
     return this.d.store.locks.run(`decision:${decisionId}`, () => this.signLocked(agent, decisionId, tx))
   }
 
-  private async signLocked(agent: Agent, decisionId: string, tx: { nonce: number; gas: string; maxFeePerGas: string; maxPriorityFeePerGas: string }): Promise<Out> {
+  private async signLocked(agent: Agent, decisionId: string, tx: TxParams): Promise<Out> {
     const rec = await this.d.store.decisions.get(decisionId)
     if (!rec || rec.mandateId !== agent.mandateId) return fail(404, 'not_found', `no decision ${decisionId}`)
     if (rec.state !== 'allowed' || !rec.bind) return fail(409, 'not_signable', `a decision in state "${rec.state}" cannot be signed`)

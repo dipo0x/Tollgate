@@ -56,7 +56,7 @@ The agent never reaches the signer or the store directly.
 | Audit | Append-only hash chain, `verify-log` CLI | SHA-256 over canonical JSON | Tamper-evident |
 | Signer | Verifies a decision against the stored record and signs only matching transactions | Separate Node process, viem | Most sensitive: smallest code, smallest float |
 | Dashboard | Mandates, decision feed, approvals, jobs, registry, spend, audit verify, benchmark view | React, Vite, Tailwind | Trusted, authenticated |
-| Demo agent | Plans with an LLM on NEAR AI Cloud, buys, negotiates, hires, sells its report | TypeScript | Untrusted — it is what we protect |
+| Demo agent | Buys, negotiates, hires, sells its report. Scripted by default; with `--llm` a Claude model plans its negotiation moves from structured prices and limits only (not NEAR AI Cloud) | TypeScript | Untrusted — it is what we protect |
 | Hired workers | Two or three small agents running under child mandates | TypeScript | Untrusted |
 | Earn endpoint | The agent's own paid endpoint: issues a challenge, returns the report after payment | Hono, mppx server | Untrusted input; revenue credited only after the gateway verifies the receipt |
 | Mock merchants | Fake sellers and directory issuing legitimate and malicious challenges, plus a negotiating seller | Hono | Test only |
@@ -68,6 +68,7 @@ The agent never reaches the signer or the store directly.
 | --- | --- | --- |
 | Language | TypeScript across SDK, API, signer, dashboard | One language, shared types, fastest for a solo 14-day build |
 | Wallet path (MVP) | EVM-origin USDC on Arbitrum via viem; merchant receives USDC on NEAR through 1Click | It is the documented, working mppx path. NEAR-origin is a stretch. |
+| Wallet path (NEAR) | Optional: the agent pays from a NEAR account. The signer builds a NEP-141 `ft_transfer` of NEAR's native USDC to the 1Click deposit address (plus `storage_deposit` in the same transaction) and signs it with an ed25519 key; the SDK's `nearRpcRail` reads the nonce and broadcasts | Makes NEAR the payment rail, not only the check. Limits stay in the signer because `ft_transfer` needs 1 yoctoNEAR attached, which a function-call key cannot do. Tested offline; not yet run with a funded NEAR account |
 | Payment path | MPP with NEAR Intents; x402 only if the Day-0 probe shows it is the practical path | One path done well beats two half-working ones |
 | Where limits live | In the gateway and signer, not in key types | NEAR function-call keys cannot move tokens, so key-type limits are not possible |
 | Signing model | Decision-bound: the signer checks the stored ALLOW before signing | A compromised API cannot ask for arbitrary signatures without a matching decision |

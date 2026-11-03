@@ -85,6 +85,10 @@ Click any decision to see the twelve checks and their evidence, as below.
 
 ![One blocked payment, with all twelve checks and their evidence](images/dashboard-decision-checks.jpg)
 
+> **Optional: let a model plan the negotiation.** `pnpm demo --llm` lets a Claude model choose the agent's negotiation moves. It needs
+> `ANTHROPIC_API_KEY` in `.env` and a funded Anthropic account; it sees only prices and limits, and the gateway still enforces the mandate.
+> If the model fails, the agent makes no move and buys nothing. Without `--llm` the demo needs no key.
+
 ## Step 3. Run the real system on your computer
 
 This starts the actual gateway and signer (the programs you would run in production), with a local database.
@@ -326,6 +330,26 @@ request and read `decision`; (3) only on `ALLOW`, `POST /v1/payments/{decisionId
 (`eth_sendRawTransaction`), because Tollgate signs but never sends; (5) ask the merchant again with an `x-payment-proof` header. Any language that can send HTTP can do it.
 These files were run against the sandbox in Python and Go, both ways: paying an honest merchant and being blocked by cheating ones. They have not been run against a
 real merchant or real money.
+
+### Paying from NEAR instead of Arbitrum
+
+The signer can also pay from a NEAR account, in NEAR's native USDC. From the repo root:
+
+```bash
+pnpm --filter @tollgate/signer keygen-near     # makes .signer-near-key (mode 600); prints the PUBLIC account and key only
+```
+
+Then in `.env` set `SIGNER_CHAINS=eip155:42161,near`, allow `near` in the mandate (`"allowedOriginNetworks": ["near"]`), and in the agent use the NEAR rail:
+
+```js
+import { createTollgate, nearRpcRail } from 'trytollgate'
+const tollgate = createTollgate({ /* gateway, token, mandate as above */ payer: 'THE_NEAR_ACCOUNT_PRINTED_ABOVE',
+  rail: nearRpcRail({ rpcUrl: 'https://rpc.mainnet.near.org', publicKey: 'THE_PUBLIC_KEY_PRINTED_ABOVE' }) })
+```
+
+A NEAR payment is one transaction to the USDC contract: `storage_deposit` (registers the deposit address if needed; refunded if not) and
+`ft_transfer` of exactly the approved amount. **Tested offline only. It has not been run with a funded NEAR account**; fund the account
+(a little NEAR for gas and the USDC it may spend) only when you decide to try it with real money. `nearRpcRail` needs SDK 0.2.0 or later.
 
 ## Step 7. Check that it all works
 

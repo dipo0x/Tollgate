@@ -1,4 +1,5 @@
 import { encodeFunctionData, erc20Abi, getAddress, isAddress, type Hex } from 'viem'
+import { isNearAccount, validBlockHash, type NearToken, type NearTxParams } from './near.ts'
 
 /**
  * The signer's whole decision, as one pure function. It answers: given the decision the gateway stored and the request
@@ -23,7 +24,7 @@ export type MandateState = { status: 'active' | 'revoked'; validUntil: string }
 /** What the caller may choose: only how the transaction is paid for on chain. All bounded by the signer's own limits. */
 export type TxParams = { nonce: number; gas: bigint; maxFeePerGas: bigint; maxPriorityFeePerGas: bigint }
 
-export type SignRequest = { decisionId: string; bind: Bind; tx: TxParams }
+export type SignRequest = { decisionId: string; bind: Bind; tx: TxParams | NearTxParams }
 
 export type Token = { chainId: number; contract: Hex; decimals: number }
 
@@ -35,6 +36,8 @@ export type Limits = {
   maxPerTx: bigint
   maxGas: bigint
   maxFeePerGas: bigint
+  /** ("near", asset) -> NEP-141 token. Absent: this signer does not pay from NEAR. */
+  nearTokens?: Readonly<Record<string, NearToken>>
 }
 
 export type Refusal =
@@ -59,8 +62,14 @@ export function parseAmount(s: string, decimals: number): bigint | undefined {
 
 const FIELDS = ['chain', 'asset', 'amount', 'to', 'expiresAt', 'nonce'] as const
 
-export function check(req: SignRequest, stored: StoredDecision | undefined, mandate: MandateState | undefined, frozen: boolean, now: Date, limits: Limits): Checked {
-  const no = (reason: Refusal, detail: string, field?: string): Checked => ({ ok: false, reason, detail, ...(field ? { field } : {}) })
+type No = { ok: false; reason: Refusal; detail: string; field?: string }
+const no = (reason: Refusal, detail: string, field?: string): No => ({ ok: false, reason, detail, ...(field ? { field } : {}) })
+
+/**
+ * What every payment must pass, whatever chain it is on: the kill switch, an ALLOW that is waiting to be paid, a live mandate,
+ * a claim equal to the stored decision in every field, and an expiry judged on the signer's own clock.
+ */
+export function checkCommon(req: SignRequest, stored: StoredDecision | undefined, mandate: MandateState | undefined, frozen: boolean, now: Date): { ok: true; bind: Bind; mandateId: string } | No {
 
   // The kill switch first: nothing else matters while it is on.
   if (frozen) return no('frozen', 'signing is frozen')
@@ -82,6 +91,14 @@ export function check(req: SignRequest, stored: StoredDecision | undefined, mand
   // Expiry is judged against the signer's clock and the STORED value.
   const expires = Date.parse(bind.expiresAt)
   if (!Number.isFinite(expires) || expires <= now.getTime()) return no('expired', 'the decision has expired')
+  return { ok: true, bind, mandateId: stored.mandateId }
+}
+
+export function check(req: SignRequest, stored: StoredDecision | undefined, mandate: MandateState | undefined, frozen: boolean, now: Date, limits: Limits): Checked {
+  const common = checkCommon(req, stored, mandate, frozen, now)
+  if (!common.ok) return common
+  const { bind } = common
+  if (!('gas' in req.tx)) return no('bad_tx_params', 'an EVM payment needs nonce, gas and fees')
 
   // From here on, only the stored bind is used.
   const token = limits.tokens[tokenKey(bind.chain, bind.asset)]
@@ -101,7 +118,7 @@ export function check(req: SignRequest, stored: StoredDecision | undefined, mand
   if (!okTx) return no('bad_tx_params', 'the nonce, gas or fee is outside what this signer allows')
 
   return {
-    ok: true, amount, recipient, bind, mandateId: stored.mandateId,
+    ok: true, amount, recipient, bind, mandateId: common.mandateId,
     tx: {
       type: 'eip1559', chainId: token.chainId, to: token.contract, value: 0n, nonce: t.nonce, gas: t.gas, maxFeePerGas: t.maxFeePerGas, maxPriorityFeePerGas: t.maxPriorityFeePerGas,
       data: encodeFunctionData({ abi: erc20Abi, functionName: 'transfer', args: [recipient, amount] }),
@@ -113,4 +130,27 @@ export function check(req: SignRequest, stored: StoredDecision | undefined, mand
 function sameAmount(a: string, b: string): boolean {
   const x = parseAmount(a, 18), y = parseAmount(b, 18)
   return x !== undefined && y !== undefined && x === y
+}
+
+export type CheckedNear =
+  | { ok: true; bind: Bind; mandateId: string; token: NearToken; to: string; amount: bigint; tx: NearTxParams }
+  | No
+
+/** The NEAR path: the same common checks, then a NEP-141 token this signer knows, a valid NEAR recipient, its own cap, and sane tx params. */
+export function checkNear(req: SignRequest, stored: StoredDecision | undefined, mandate: MandateState | undefined, frozen: boolean, now: Date, limits: Limits): CheckedNear {
+  const common = checkCommon(req, stored, mandate, frozen, now)
+  if (!common.ok) return common
+  const { bind } = common
+  const token = limits.nearTokens?.[tokenKey(bind.chain, bind.asset)]
+  if (!token) return no('unsupported_asset', `${bind.asset} on ${bind.chain} is not something this signer will pay`)
+  if (!isNearAccount(bind.to)) return no('invalid_recipient', 'the recipient is not a NEAR account id')
+  if (bind.to === token.contract) return no('invalid_recipient', 'the recipient is the token contract itself')
+  const amount = parseAmount(bind.amount, token.decimals)
+  if (amount === undefined) return no('invalid_amount', 'the amount is not a positive decimal the token can express')
+  if (amount > limits.maxPerTx) return no('over_signer_cap', "the amount is over this signer's own per-payment cap")
+  const t = req.tx
+  if (!('blockHash' in t) || typeof t.nonce !== 'bigint' || t.nonce <= 0n || t.nonce >= 2n ** 64n || !validBlockHash(t.blockHash)) {
+    return no('bad_tx_params', 'a NEAR payment needs a positive access-key nonce and a 32-byte base58 block hash')
+  }
+  return { ok: true, bind, mandateId: common.mandateId, token, to: bind.to, amount, tx: { nonce: t.nonce, blockHash: t.blockHash } }
 }

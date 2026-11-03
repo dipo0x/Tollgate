@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { tokensFor } from './chains.ts'
+import { NEAR_CHAIN, NEAR_USDC } from './near.ts'
 import { parseAmount, type Limits } from './policy.ts'
 
 export const ConfigSchema = z.object({
@@ -10,13 +11,17 @@ export const ConfigSchema = z.object({
   SIGNER_KEY_FILE: z.string().min(1).default('.signer-key'),
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required: the signer reads the stored decision from the database'),
   DATABASE_SCHEMA: z.string().regex(/^[a-z_][a-z0-9_]{0,62}$/, 'DATABASE_SCHEMA must be a lowercase identifier').optional(),
-  /** Chains it will pay on, comma separated. Default: Arbitrum only (one path end to end). */
+  /** Chains it will pay on, comma separated: CAIP-2 EVM ids and/or `near`. Default: Arbitrum only (one path end to end). */
   SIGNER_CHAINS: z.string().default('eip155:42161'),
   /** Its OWN cap per payment, in USDC. Independent of any mandate: a compromised gateway still cannot move more than this. */
   SIGNER_MAX_PER_TX: z.string().default('1.00'),
   SIGNER_MAX_GAS: z.coerce.bigint().min(21_000n).default(200_000n),
   /** Wei. */
   SIGNER_MAX_FEE_PER_GAS: z.coerce.bigint().min(1n).default(2_000_000_000n),
+  /** Only read when SIGNER_CHAINS includes `near`. Make one with `pnpm --filter @tollgate/signer keygen-near`. */
+  SIGNER_NEAR_KEY_FILE: z.string().min(1).default('.signer-near-key'),
+  /** The named NEAR account the key belongs to (e.g. agent.yourname.near). Empty: the key's own implicit account. */
+  SIGNER_NEAR_ACCOUNT: z.string().optional(),
   LOG_LEVEL: z.enum(['silent', 'info']).default('info'),
 })
 export type Config = z.infer<typeof ConfigSchema>
@@ -36,5 +41,10 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
 export function limitsFrom(c: Config): Limits {
   const maxPerTx = parseAmount(c.SIGNER_MAX_PER_TX, 6)
   if (maxPerTx === undefined) throw new Error('SIGNER_MAX_PER_TX must be a positive decimal with at most 6 places')
-  return { tokens: tokensFor(c.SIGNER_CHAINS.split(',').map(s => s.trim()).filter(Boolean)), maxPerTx, maxGas: c.SIGNER_MAX_GAS, maxFeePerGas: c.SIGNER_MAX_FEE_PER_GAS }
+  const chains = c.SIGNER_CHAINS.split(',').map(s => s.trim()).filter(Boolean)
+  const near = chains.includes(NEAR_CHAIN)
+  return {
+    tokens: tokensFor(chains.filter(x => x !== NEAR_CHAIN)), maxPerTx, maxGas: c.SIGNER_MAX_GAS, maxFeePerGas: c.SIGNER_MAX_FEE_PER_GAS,
+    ...(near ? { nearTokens: { [`${NEAR_CHAIN}:USDC`]: NEAR_USDC } } : {}),
+  }
 }

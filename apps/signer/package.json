@@ -10,10 +10,14 @@
     "start": "tsx src/server.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "keygen": "tsx src/keygen.ts"
+    "keygen": "tsx src/keygen.ts",
+    "keygen-near": "tsx src/keygen-near.ts"
   },
   "dependencies": {
     "@hono/node-server": "^2.1.5",
+    "@near-js/crypto": "2.5.1",
+    "@near-js/transactions": "2.5.1",
+    "@near-js/utils": "2.5.1",
     "hono": "^4.13.16",
     "postgres": "^4.0.0",
     "viem": "^2.0.0",

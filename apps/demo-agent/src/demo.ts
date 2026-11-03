@@ -11,6 +11,14 @@ import { viemBackend } from '@tollgate/signer/src/backend.ts'
 import { tokensFor } from '@tollgate/signer/src/chains.ts'
 import { MemorySignerStore } from '@tollgate/signer/src/store.ts'
 import { generatePrivateKey } from 'viem/accounts'
+import { nextMove, plannerAvailable, PLANNER_MODEL, type Move } from './planner.ts'
+
+// `--llm`: a real model plans the agent's negotiation moves. Only the key is read from .env; everything else stays offline and simulated.
+const LLM = process.argv.includes('--llm')
+if (LLM) {
+  try { process.loadEnvFile(new URL('../../../.env', import.meta.url)) } catch { /* rely on the environment */ }
+  if (!plannerAvailable()) { console.error('--llm needs ANTHROPIC_API_KEY in .env (see docs/GETTING-STARTED.md). Without --llm the demo needs no key.'); process.exit(2) }
+}
 
 // ---- presentation -------------------------------------------------------------------------------------------------------
 const c = { dim: '\x1b[2m', b: '\x1b[1m', g: '\x1b[32m', r: '\x1b[31m', y: '\x1b[33m', c: '\x1b[36m', x: '\x1b[0m' }
@@ -57,7 +65,7 @@ const shop = (host: string, behavior: MerchantBehavior, price: string, payee = '
 console.log(`${c.b}Tollgate demo${c.x}  verify before you pay`)
 line(`${c.g}REAL${c.x}       the gateway, the 12 checks, the budget ledger, the signer (a throwaway key), the SDK, the audit chain`)
 line(`${c.y}SIMULATED${c.x}  every merchant, 1Click, the chain, the customer and the seller agent. Nothing is broadcast, nothing is funded.`)
-line(`${c.y}SCRIPTED${c.x}   the agent's decisions (no model is called). A NEAR AI Cloud planner is not wired in yet.`)
+line(LLM ? `${c.y}MODEL${c.x}      the agent's negotiation moves are planned by ${PLANNER_MODEL}. It sees only prices and limits, never merchant text. Everything else is scripted.` : `${c.y}SCRIPTED${c.x}   the agent's decisions (no model is called). Run with --llm to let a model plan its negotiation.`)
 
 // ---- the owner's setup --------------------------------------------------------------------------------------------------
 act(0, 'The owner sets the rules')
@@ -99,6 +107,28 @@ line(`seller opens at ${(ask as { price: string }).price}  ${c.dim}(simulated se
 let mine = '0.20', deal: { price: string } | undefined
 for (let round = 0; round < 4 && !deal; round++) {
   const lastAsk = (ask as { price: string }).price
+  if (LLM) {
+    // The model proposes. The gateway checks every proposal against the mandate (ceiling 0.30, at most 4 rounds).
+    let m: Move
+    try { m = await nextMove({ item: 'the daily market brief', sellerAsk: lastAsk, myLastOffer: round === 0 ? null : mine, round: round + 1, maxRounds: 4, ceiling: '0.30' }) } catch (e) {
+      line(`${c.r}planner failed${c.x} (${(e as Error).message}): the agent makes no move and walks away. Nothing is bought.`); await talk({ from: 'agent', kind: 'walk' }); break
+    }
+    line(`${c.dim}model:${c.x} ${m.action}${m.price ? ' ' + m.price : ''}  ${c.dim}"${m.reason}"${c.x}`)
+    if (m.action === 'walk') { await talk({ from: 'agent', kind: 'walk' }); line('agent walks away'); break }
+    if (m.action === 'accept') {
+      const r = await talk({ from: 'agent', kind: 'accept' })
+      if (r.status < 300 && r.json.deal) { deal = r.json.deal; line(`agent accepts ${lastAsk}`) } else line(`${c.r}gateway refused the accept${c.x}: ${r.json.error?.message ?? r.status}`)
+      continue
+    }
+    mine = m.price as string
+    const counter = { from: 'agent', kind: 'counter', price: mine, asset: 'USDC', payee: 'merchant.near' }
+    const r = await talk(counter)
+    if (r.status >= 300) { line(`${c.r}gateway refused the model's offer ${mine}${c.x}: ${r.json.error?.message ?? r.status}`); continue }
+    line(`agent counters ${mine}`)
+    const reply = seller.respond(counter as never); await talk(reply)
+    if (reply.kind === 'accept') { deal = { price: mine }; line(`seller accepts ${mine}`) } else if (reply.kind === 'counter') { ask = reply; line(`seller counters ${reply.price}`) }
+    continue
+  }
   if (toMicro(lastAsk) <= toMicro('0.30')) { const r = await talk({ from: 'agent', kind: 'accept' }); deal = r.json.deal; line(`agent accepts ${lastAsk}`); break }
   mine = midpoint(mine, lastAsk); if (toMicro(mine) > toMicro('0.30')) mine = '0.30'
   const counter = { from: 'agent', kind: 'counter', price: mine, asset: 'USDC', payee: 'merchant.near' }
@@ -106,10 +136,12 @@ for (let round = 0; round < 4 && !deal; round++) {
   const reply = seller.respond(counter as never); await talk(reply)
   if (reply.kind === 'accept') { deal = { price: mine }; line(`seller accepts ${mine}`) } else if (reply.kind === 'counter') { ask = reply; line(`seller counters ${reply.price}`) }
 }
-if (!deal) throw new Error('the demo expected a deal')
-line(`${c.dim}Deal at ${deal.price}. The mandate's ceiling (0.30) bound every offer the agent could make, whatever a model might have said.${c.x}`)
-shop('merchant.example.com', 'honest', deal.price)
-await buy(`honest merchant, agreed price ${deal.price}`, 'merchant.example.com', { negotiationId: 'neg_1' })
+if (!deal && !LLM) throw new Error('the demo expected a deal')
+if (deal) {
+  line(`${c.dim}Deal at ${deal.price}. The mandate's ceiling (0.30) bound every offer the agent could make, whatever a model might have said.${c.x}`)
+  shop('merchant.example.com', 'honest', deal.price)
+  await buy(`honest merchant, agreed price ${deal.price}`, 'merchant.example.com', { negotiationId: 'neg_1' })
+} else line(`${c.dim}No deal this time: nothing was bought in this act.${c.x}`)
 
 // ---- act 2: a payment that needs the owner ------------------------------------------------------------------------------
 act(2, 'A bigger purchase needs the owner')

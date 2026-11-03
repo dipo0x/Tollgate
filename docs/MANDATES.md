@@ -52,7 +52,7 @@ loudly instead of silently doing nothing.
 | `budget.perHour` (optional) | Spend ceiling over any rolling hour. | Stops a fast drain. Leave it out only if `total` is tiny. |
 | `budget.maxPaymentsPerMinute` (optional) | Payments allowed per rolling minute. | Stops a runaway loop. `3` to `10` is typical. |
 | `allowedHosts` | The websites the agent may pay. At least one. | Only hosts you registered as services. Anything else is refused. |
-| `allowedOriginNetworks` | The chains it may pay from, e.g. `eip155:42161` (Arbitrum). At least one. | The chain your signer wallet holds funds on. |
+| `allowedOriginNetworks` | The chains it may pay from: `eip155:42161` (Arbitrum) and/or `near`. At least one. | The chain your signer wallet holds funds on. |
 | `allowedAssets` | The tokens it may pay with. At least one. | Usually just `USDC`. |
 | `payee.mode` | How Tollgate knows who should be paid. | `registry`: only the payee recorded on the service (strictest, recommended). `pin-on-first-approval`: the first payee is approved by a human, then pinned. |
 | `price.tolerancePct` | How far above Tollgate's own independent price quote a charge may be. | `0` to `5`. Above `100%` over the quote (2×) is always refused regardless. |

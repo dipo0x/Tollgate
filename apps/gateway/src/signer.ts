@@ -2,10 +2,13 @@
  * The gateway's way of asking the signer to sign. The signer is a separate process that holds the only key; the gateway
  * never sees the key, and the agent never reaches the signer. The gateway proves who it is with a service token.
  */
+/** EVM: nonce, gas and fees. NEAR: the access key's nonce (as a string; it can exceed 2^53) and a recent block hash. */
+export type TxParams = { nonce: number; gas: string; maxFeePerGas: string; maxPriorityFeePerGas: string } | { nonce: string; blockHash: string }
+
 export type SignerRequest = {
   decisionId: string
   bind: { chain: string; asset: string; amount: string; to: string; expiresAt: string; nonce: string }
-  tx: { nonce: number; gas: string; maxFeePerGas: string; maxPriorityFeePerGas: string }
+  tx: TxParams
 }
 
 export type SignerReply = { status: number; body: unknown }

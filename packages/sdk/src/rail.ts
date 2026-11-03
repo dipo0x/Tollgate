@@ -1,7 +1,10 @@
 import { keccak256, type Hex } from 'viem'
 
 /** The nonce and fees for the next payment from an account. The gateway forwards these to the signer, which bounds them. */
-export type TxParams = { nonce: number; gas: string; maxFeePerGas: string; maxPriorityFeePerGas: string }
+export type EvmTxParams = { nonce: number; gas: string; maxFeePerGas: string; maxPriorityFeePerGas: string }
+/** NEAR: the access key's next nonce (a string: it can exceed 2^53) and a recent block hash, which anchors the transaction's expiry. */
+export type NearTxParams = { nonce: string; blockHash: string }
+export type TxParams = EvmTxParams | NearTxParams
 
 /**
  * How a signed payment reaches the chain. The SDK does not know about wallets or keys: it asks the gateway for a signature
@@ -42,6 +45,37 @@ export function httpRpcRail(urls: Readonly<Record<string, string>>, doFetch: typ
         if (/already known|known transaction|already imported/i.test((e as Error).message)) return keccak256(signedTx as Hex)
         throw e
       }
+    },
+  }
+}
+
+/**
+ * A Rail for paying FROM NEAR, over plain NEAR JSON-RPC. `publicKey` is the signer's PUBLIC key (from the signer's /healthz), used
+ * to read that key's nonce. The signed bytes come from the gateway; this only reads chain state and broadcasts. Mainnet RPC:
+ * https://rpc.mainnet.near.org (or any provider listed at https://docs.near.org/api/rpc/providers).
+ */
+export function nearRpcRail(o: { rpcUrl: string; publicKey: string }, doFetch: typeof fetch = fetch): Rail {
+  async function rpc<T>(method: string, params: unknown): Promise<T> {
+    const res = await doFetch(o.rpcUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 'tollgate', method, params }), signal: AbortSignal.timeout(20_000) })
+    const j = await res.json() as { result?: T & { error?: string }; error?: { message?: string; data?: unknown; cause?: { name?: string } } }
+    if (j.error || j.result === undefined) throw new Error(`${method} failed: ${j.error?.cause?.name ?? j.error?.message ?? 'no result'}`)
+    if (typeof j.result.error === 'string') throw new Error(`${method} failed: ${j.result.error}`)
+    return j.result
+  }
+  const onlyNear = (chain: string) => { if (chain !== 'near') throw new Error(`this rail pays from NEAR only, not ${chain}`) }
+  return {
+    async txParams(from, chain) {
+      onlyNear(chain)
+      // One call gives both: the access key's current nonce, and the hash of the block it was read at.
+      const r = await rpc<{ nonce: number | string; block_hash: string }>('query', { request_type: 'view_access_key', finality: 'final', account_id: from, public_key: o.publicKey })
+      return { nonce: (BigInt(r.nonce) + 1n).toString(), blockHash: r.block_hash }
+    },
+    async send(chain, signedTx) {
+      onlyNear(chain)
+      const r = await rpc<{ transaction?: { hash?: string } }>('send_tx', { signed_tx_base64: signedTx, wait_until: 'EXECUTED_OPTIMISTIC' })
+      const hash = r.transaction?.hash
+      if (!hash) throw new Error('send_tx returned no transaction hash')
+      return hash
     },
   }
 }

@@ -13,7 +13,11 @@ const uint = z.string().regex(/^\d{1,30}$/, 'must be a whole number written as a
 const Body = z.strictObject({
   decisionId: z.string().min(1).max(128),
   bind: z.strictObject({ chain: z.string().max(64), asset: z.string().max(32), amount: z.string().max(40), to: z.string().max(100), expiresAt: z.string().max(40), nonce: z.string().max(128) }),
-  tx: z.strictObject({ nonce: z.number().int().min(0).max(0xffffffff), gas: uint, maxFeePerGas: uint, maxPriorityFeePerGas: uint }),
+  // EVM: nonce, gas and fees. NEAR: the access key's nonce (a string: it can exceed 2^53) and a recent block hash.
+  tx: z.union([
+    z.strictObject({ nonce: z.number().int().min(0).max(0xffffffff), gas: uint, maxFeePerGas: uint, maxPriorityFeePerGas: uint }),
+    z.strictObject({ nonce: uint, blockHash: z.string().regex(/^[1-9A-HJ-NP-Za-km-z]{32,44}$/, 'must be a base58 block hash') }),
+  ]),
 })
 
 const STATUS: Record<Refusal, 403 | 404 | 409 | 423> = {
@@ -34,7 +38,8 @@ export function createSignerApp(deps: SignerDeps, serviceToken: string, log: (ev
     return c.json({ error: { code: 'internal', message: 'something went wrong; nothing was signed' } }, 500)
   })
 
-  app.get('/healthz', c => c.json({ ok: true, address: deps.backend.address }))
+  // PUBLIC identities only: the EVM address, and the NEAR account and public key when this signer pays from NEAR.
+  app.get('/healthz', c => c.json({ ok: true, address: deps.backend.address, ...(deps.near ? { near: { accountId: deps.near.accountId, publicKey: deps.near.publicKey } } : {}) }))
 
   app.post('/v1/sign', async c => {
     const m = /^Bearer\s+(\S+)$/i.exec(c.req.header('authorization') ?? '')
@@ -44,7 +49,8 @@ export function createSignerApp(deps: SignerDeps, serviceToken: string, log: (ev
     const p = Body.safeParse(raw)
     if (!p.success) return c.json({ error: { code: 'invalid_request', message: `${p.error.issues[0]?.path.join('.') || 'body'}: ${p.error.issues[0]?.message}` } }, 400)
     const b = p.data
-    const req: SignRequest = { decisionId: b.decisionId, bind: b.bind, tx: { nonce: b.tx.nonce, gas: BigInt(b.tx.gas), maxFeePerGas: BigInt(b.tx.maxFeePerGas), maxPriorityFeePerGas: BigInt(b.tx.maxPriorityFeePerGas) } }
+    const t = b.tx
+    const req: SignRequest = { decisionId: b.decisionId, bind: b.bind, tx: 'blockHash' in t ? { nonce: BigInt(t.nonce), blockHash: t.blockHash } : { nonce: t.nonce, gas: BigInt(t.gas), maxFeePerGas: BigInt(t.maxFeePerGas), maxPriorityFeePerGas: BigInt(t.maxPriorityFeePerGas) } }
     const r = await signPayment(deps, req)
     if (!r.ok) {
       log('refused', { decisionId: req.decisionId, reason: r.reason, ...(r.field ? { field: r.field } : {}) })

@@ -32,7 +32,11 @@ const HireBody = z.strictObject({
 const DeliverableBody = z.strictObject({ fields: z.record(z.string(), z.unknown()), sources: z.array(z.string().max(2048)).max(50).optional() })
 const JobBody = z.strictObject({ id: z.string().min(1).max(128), mandateId: z.string().min(1).max(128), goal: z.string().max(500), receivingAddress: z.string().min(1).max(256), price: amount, currency: z.string().min(1).max(32) })
 const wholeNumber = z.string().regex(/^\d{1,30}$/, 'must be a whole number written as a string')
-const SignBody = z.strictObject({ tx: z.strictObject({ nonce: z.number().int().min(0).max(0xffffffff), gas: wholeNumber, maxFeePerGas: wholeNumber, maxPriorityFeePerGas: wholeNumber }) })
+// EVM: nonce, gas and fees. NEAR: the access key's nonce (a string; it can exceed 2^53) and a recent base58 block hash.
+const SignBody = z.strictObject({ tx: z.union([
+  z.strictObject({ nonce: z.number().int().min(0).max(0xffffffff), gas: wholeNumber, maxFeePerGas: wholeNumber, maxPriorityFeePerGas: wholeNumber }),
+  z.strictObject({ nonce: wholeNumber, blockHash: z.string().regex(/^[1-9A-HJ-NP-Za-km-z]{32,44}$/) }),
+]) })
 const ReasonBody = z.strictObject({ reason: z.string().min(1, 'a reason is required').max(500) })
 const ServiceBody = z.strictObject({
   id: z.string().min(1).max(128), name: z.string().min(1).max(200), category: z.string().min(1).max(64), host: z.string().min(1).max(253), providerUrl: z.url(),
