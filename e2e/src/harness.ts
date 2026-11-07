@@ -107,7 +107,10 @@ export async function nearFunds(rpc: string, account: string): Promise<{ usdcMic
     if (j.error) throw new Error(j.error.cause?.name ?? j.error.message ?? 'NEAR RPC error')
     return j.result
   }
-  const acct = await q({ request_type: 'view_account', account_id: account }).catch(() => ({ amount: '0' }))
-  const r = await q({ request_type: 'call_function', account_id: USDC_NEAR, method_name: 'ft_balance_of', args_base64: Buffer.from(JSON.stringify({ account_id: account })).toString('base64') })
+  // Both reads at once: each is a round trip to the NEAR RPC provider.
+  const [acct, r] = await Promise.all([
+    q({ request_type: 'view_account', account_id: account }).catch(() => ({ amount: '0' })),
+    q({ request_type: 'call_function', account_id: USDC_NEAR, method_name: 'ft_balance_of', args_base64: Buffer.from(JSON.stringify({ account_id: account })).toString('base64') }),
+  ])
   return { usdcMicro: BigInt(JSON.parse(Buffer.from(r.result as number[]).toString('utf8')) as string), nearYocto: BigInt(acct.amount as string) }
 }

@@ -41,6 +41,7 @@ function AppStack() {
       <Stack.Screen name="approval/[id]" />
       <Stack.Screen name="chat/[id]" />
       <Stack.Screen name="freeze" options={{ presentation: 'modal' }} />
+      <Stack.Screen name="switch" options={{ presentation: 'modal' }} />
       <Stack.Screen name="agents/new" options={{ presentation: 'modal' }} />
     </Stack>
   )

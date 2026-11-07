@@ -9,6 +9,7 @@ const STEPS: [string, [string, string][]][] = [
   ['Registry', [['Services', 'A curated list'], ['Verification', 'Probed before paid'], ['Listing text', 'Never shown to the model'], ['Unverified', 'Never paid']]],
   ['Approvals', [['Threshold', 'Above an amount you set'], ['Risk score', 'Explained, 0 to 100'], ['First payee', 'Goes to you'], ['Kill switch', 'One action freezes signing']]],
   ['Live', [['Decisions', 'Explained per check'], ['Signer', 'Bound to ALLOW'], ['Audit log', 'Hash chained'], ['Change anything', 'New mandate version']]],
+  ['Phone', [['Pair it', 'Scan the dashboard QR'], ['Approve', 'Hold, then Face ID'], ['Freeze', 'One tap, no Face ID'], ['No wallet key', 'Stays with the signer']]],
 ]
 
 const pad = (n: number) => String(n).padStart(2, '0')
@@ -66,7 +67,7 @@ export default function Steps() {
         <div className="st-stage">
           <div className="frame st-head">
             <div>
-              <p className="eyebrow">Set up in five steps.</p>
+              <p className="eyebrow">Set up in six steps.</p>
               <DecodeText lines={['Your gate, your rules.']} variant="ghost" className="st-h" />
             </div>
             <p className="st-count mono" aria-hidden="true">01 / {pad(STEPS.length)}</p>

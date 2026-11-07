@@ -1,7 +1,9 @@
 import { router, useLocalSearchParams } from 'expo-router'
 import { useCallback } from 'react'
-import { View } from 'react-native'
+import { Linking, Pressable, View } from 'react-native'
 import { CHECK_NAME, kindOf, KIND_LABEL, shortId, when } from '../../src/lib/format'
+import { safeExplorer } from '../../src/api/gateway'
+import { TxLink } from '../../src/ui/TxLink'
 import { useGateway } from '../../src/state/session'
 import { useNow, usePoll } from '../../src/state/usePoll'
 import { Amount, Card, Circle, ErrorNote, Icon, KindIcon, Loading, Row, Screen, T, TopBar } from '../../src/ui/kit'
@@ -16,6 +18,7 @@ export default function DecisionDetail() {
   const { data: d, error, loading, refresh } = usePoll(load, 8000, `decision:${id}`)
   const k = d ? kindOf(d) : undefined
   const failed = d?.checks.find(c => c.id === d.failedCheck) ?? d?.checks.find(c => c.result === 'fail')
+  const link = safeExplorer(d?.onchain?.explorer)
   const reason = failed?.evidence && typeof failed.evidence['reason'] === 'string' ? (failed.evidence['reason'] as string) : d?.reason
 
   return (
@@ -43,6 +46,26 @@ export default function DecisionDetail() {
             <Row title="When" right={<T v="sub" style={{ fontSize: 16 }}>{when(d.createdAt, now)}</T>} />
             <Row title="Decision" right={<T v="sub" style={{ fontSize: 16 }}>{shortId(d.decisionId, 8, 4)}</T>} />
           </Card>
+          {d.onchain ? (
+            <>
+              <T v="sub" style={{ marginTop: 26, marginBottom: 8, marginLeft: 4, fontSize: 14 }}>On the blockchain</T>
+              <Card>
+                <Row first title="Network" right={<T>{d.onchain.network}</T>} />
+                <Row title="Transaction" sub={d.state === 'settled' ? 'Confirmed paid by 1Click' : 'Signed and sent. It shows on the chain once confirmed.'}
+                  right={<TxLink hash={d.onchain.txHash} explorer={d.onchain.explorer} />} />
+                <Row title="Paid from" right={<T v="sub" style={{ fontSize: 16 }}>{shortId(d.onchain.from, 6, 4)}</T>} />
+              </Card>
+              {link ? (
+                <Pressable onPress={() => void Linking.openURL(link)} accessibilityRole="link" accessibilityLabel={`View on ${new URL(link).hostname}`}
+                  style={({ pressed }) => ({ marginTop: 12, height: 52, borderRadius: 26, backgroundColor: C.button, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, opacity: pressed ? 0.8 : 1 })}>
+                  <Icon name="globe" size={18} color="#000" width={2.2} />
+                  <T v="bodyStrong" style={{ color: '#000', fontSize: 17 }}>View on {new URL(link).hostname}</T>
+                </Pressable>
+              ) : null}
+            </>
+          ) : k === 'paid' ? (
+            <T v="small" style={{ marginTop: 14, marginHorizontal: 4 }}>No blockchain transaction is recorded for this payment, so there is no link to show.</T>
+          ) : null}
           {k === 'blocked' || k === 'rejected' ? (
             <View style={{ marginTop: 12, padding: 16, borderRadius: 22, backgroundColor: C.card, flexDirection: 'row', gap: 10, alignItems: 'center' }}>
               <Icon name="check" size={18} color={C.green} width={2.6} /><T style={{ fontSize: 15 }}>Nothing was signed. Nothing was paid.</T>

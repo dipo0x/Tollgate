@@ -39,7 +39,8 @@ if (TASK.length > 240) { console.error('The task is too long (max 240 characters
 const KEY = need('NEAR_1CLICK_API_KEY'), PAYEE = need('MERCHANT_NEAR_ACCOUNT'), DEAL = need('WORKERS_DEAL_SECRET')
 const REC = ownerRecord(), DB = REC.db, MANDATE = `mnd_spend_${REC.run}`
 const NEAR_KEY = `${ROOT}.signer-near-key`, EVM_KEY = `${ROOT}.signer-key`
-const RPC = process.env['NEAR_RPC_URL'] ?? 'https://rpc.mainnet.near.org'
+// FastNEAR: the same chain, answered in ~0.3 s. rpc.mainnet.near.org is throttled (3.5-19 s a call, measured 8 Nov). NEAR_RPC_URL overrides.
+const RPC = process.env['NEAR_RPC_URL'] ?? 'https://free.rpc.fastnear.com'
 const PRICE = process.env['LIVE_PRICE'] ?? '0.20'
 const SIGNER_CAP = process.env['LIVE_SIGNER_CAP'] ?? '0.25'
 const BUDGET = process.env['LIVE_BUDGET'] ?? '0.50'

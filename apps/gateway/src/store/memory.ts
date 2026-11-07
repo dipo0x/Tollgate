@@ -87,6 +87,17 @@ export class MemoryTaskStore implements TaskStore {
     t.messages.push({ ...msg }); if (status) t.status = status; t.updatedAt = at
     return true
   }
+  async touch(id: string, mandateId: string, at: string) {
+    const t = this.rows.get(id)
+    if (!t || t.mandateId !== mandateId || t.status !== 'working') return false
+    t.updatedAt = at
+    return true
+  }
+  async closeAbandoned(before: string, msg: TaskMessage) {
+    const stale = [...this.rows.values()].filter(t => t.status === 'working' && Date.parse(t.updatedAt) < Date.parse(before))
+    for (const t of stale) { t.messages.push({ ...msg }); t.status = 'failed'; t.updatedAt = msg.at }
+    return stale.map(this.copy)
+  }
 }
 
 export class MemoryAcceptanceStore implements AcceptanceStore {

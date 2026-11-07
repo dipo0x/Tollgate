@@ -215,6 +215,17 @@ export class PostgresTaskStore implements TaskStore {
       WHERE id = ${id} AND mandate_id = ${mandateId} RETURNING id`
     return rows.length > 0
   }
+  async touch(id: string, mandateId: string, at: string) {
+    const rows = await this.sql`UPDATE gateway_tasks SET updated_at = ${at}::timestamptz WHERE id = ${id} AND mandate_id = ${mandateId} AND status = 'working' RETURNING id`
+    return rows.length > 0
+  }
+  async closeAbandoned(before: string, msg: TaskMessage) {
+    // One statement: a heartbeat that lands at the same moment either renews the task first or finds it already failed, never half.
+    const rows = await this.sql`
+      UPDATE gateway_tasks SET messages = messages || ${json([msg])}::jsonb, status = 'failed', updated_at = ${msg.at}::timestamptz
+      WHERE status = 'working' AND updated_at < ${before}::timestamptz RETURNING *`
+    return rows.map(taskFromRow)
+  }
 }
 
 export class PostgresHistoryStore implements HistoryStore {

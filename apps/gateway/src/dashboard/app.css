@@ -79,6 +79,10 @@ input:focus-visible,button:focus-visible{outline:2px solid var(--ac2);outline-of
 .net.base i{background:#0052ff}
 .net.near i{background:#00c08b;color:#06120d}
 .addr{display:inline-flex;align-items:center;gap:6px;font:12.5px var(--mono);color:var(--mu)}
+.exlink{display:inline-flex;align-items:center;gap:7px;margin-top:12px;padding:9px 14px;border:1px solid var(--line);border-radius:10px;color:var(--tx);text-decoration:none;transition:border-color .2s,background .2s}
+.exlink:hover{border-color:var(--line2);background:var(--panel2)}
+.exlink svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.8}
+td .exlink{margin-top:0;padding:4px 9px;font:12.5px var(--mono)}
 .copy{padding:2px 6px;border-radius:6px;font:600 10px var(--mono);color:var(--dm);background:var(--panel)}
 .copy:hover{color:var(--tx)}
 

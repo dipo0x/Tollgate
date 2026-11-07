@@ -8,6 +8,7 @@ import { GatewayError } from '../../src/api/gateway'
 import { parseUsd } from '../../src/lib/format'
 import { confirmWithFace, useGateway } from '../../src/state/session'
 import { usePoll } from '../../src/state/usePoll'
+import { loaders } from '../../src/state/loaders'
 import { Card, Circle, ErrorNote, Icon, Label, Pill, Row, Screen, T, TopBar } from '../../src/ui/kit'
 import { C, F } from '../../src/ui/theme'
 
@@ -21,7 +22,7 @@ const PER_PICKS = [1, 2, 5, 10]
  */
 export default function NewAgent() {
   const gw = useGateway()
-  const load = useCallback(() => gw.services(), [gw])
+  const load = useCallback(() => loaders.services(gw), [gw])
   const { data: services, error } = usePoll(load, 30_000, 'services')
   const shops = (services ?? []).filter(s => s.enabled)
   const [name, setName] = useState('')

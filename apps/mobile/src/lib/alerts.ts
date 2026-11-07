@@ -17,7 +17,7 @@ export function newAlerts(seen: Seen, approvals: readonly Approval[], convos: re
     const key = `approval:${a.decisionId}`
     if (seen.keys.has(key)) continue
     const d = a.decision
-    out.push({ key, title: `${d.agentId} needs your yes`, body: `Pay ${d.amount ? Number(d.amount).toFixed(2) : '?'} ${d.currency ?? 'USDC'} to ${d.host}${d.purpose ? ` · ${d.purpose}` : ''}`, url: `/approval/${encodeURIComponent(a.decisionId)}` })
+    out.push({ key, title: 'Payment waiting for your approval', body: `${d.agentId} wants to pay ${d.amount ? Number(d.amount).toFixed(2) : '?'} ${d.currency ?? 'USDC'} to ${d.host}${d.purpose ? ` for ${d.purpose}` : ''}. Tap to review.`, url: `/approval/${encodeURIComponent(a.decisionId)}` })
   }
   for (const c of convos) {
     for (const t of c.tasks) {
@@ -25,7 +25,7 @@ export function newAlerts(seen: Seen, approvals: readonly Approval[], convos: re
         const key = `msg:${t.id}:${i}`
         if (m.from !== 'agent' || m.at <= seen.since || seen.keys.has(key)) return
         if (m.decisionId && waitingIds.has(m.decisionId)) return
-        out.push({ key, title: c.agentId, body: m.text.length > 140 ? `${m.text.slice(0, 137)}…` : m.text, url: `/chat/${encodeURIComponent(c.agentId)}` })
+        out.push({ key, title: 'Your agent replied', body: m.text.length > 140 ? `${m.text.slice(0, 137)}…` : m.text, url: `/chat/${encodeURIComponent(c.agentId)}` })
       })
     }
   }

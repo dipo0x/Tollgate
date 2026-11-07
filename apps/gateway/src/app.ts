@@ -5,6 +5,7 @@ import { z } from 'zod'
 import { verifyChain } from '@tollgate/core'
 import { bearer } from './auth.ts'
 import { Gateway, type GatewayDeps, type Out } from './gateway.ts'
+import { onchainFor } from './explorer.ts'
 import type { Principal } from './state.ts'
 import { dashboardAsset, dashboardFont, DASHBOARD_FONTS } from './dashboard.ts'
 
@@ -184,8 +185,9 @@ export function createApp(deps: GatewayDeps) {
     return c.json({ decisions: await deps.store.decisions.list({ ...(q['mandateId'] ? { mandateId: q['mandateId'] } : {}), ...(q['decision'] ? { decision: q['decision'] } : {}), ...(q['state'] ? { state: q['state'] } : {}), limit }) })
   })))
   app.get('/v1/decisions/:id', asOperator(cached(async c => {
-    const r = await deps.store.decisions.get(P(c, 'id'))
-    return r ? c.json(r) : send(c, err(404, 'not_found', 'no such decision'))
+    // With its transaction on the blockchain, once signed: the owner can open it in the chain's explorer (explorer.ts).
+    const [r, sig] = await Promise.all([deps.store.decisions.get(P(c, 'id')), deps.store.signatures.get(P(c, 'id'))])
+    return r ? c.json({ ...r, ...(sig ? { onchain: onchainFor(sig) } : {}) }) : send(c, err(404, 'not_found', 'no such decision'))
   })))
 
   // ---- approvals and the kill switch -----------------------------------------------------
@@ -202,9 +204,11 @@ export function createApp(deps: GatewayDeps) {
   // ---- jobs and earning ------------------------------------------------------------------
   app.post('/v1/jobs', asOperator(async c => { const b = await parse(c, JobBody); return b.ok ? send(c, await gw.createJob(b.data)) : b.res }))
   app.post('/v1/agents/:mandateId/tasks', asOperator(async c => { const b = await parse(c, TaskBody); return b.ok ? send(c, await gw.createTask(P(c, 'mandateId'), b.data.text)) : b.res }))
-  app.get('/v1/agents/:mandateId/tasks', asOperator(cached(async c => send(c, await gw.listTasks(P(c, 'mandateId'), Math.min(Number(c.req.query('limit') ?? 50) || 50, 200))))))
-  app.get('/v1/conversations/:agentId', asOperator(cached(async c => send(c, await gw.conversation(P(c, 'agentId'), Math.min(Number(c.req.query('limit') ?? 100) || 100, 300))))))
+  // The chat is read live, never from the read cache: the agent replies through its own gateway, whose writes this one cannot see.
+  app.get('/v1/agents/:mandateId/tasks', asOperator(async c => send(c, await gw.listTasks(P(c, 'mandateId'), Math.min(Number(c.req.query('limit') ?? 50) || 50, 200)))))
+  app.get('/v1/conversations/:agentId', asOperator(async c => send(c, await gw.conversation(P(c, 'agentId'), Math.min(Number(c.req.query('limit') ?? 100) || 100, 300)))))
   app.post('/v1/tasks/next', asAgent(async (c, a) => { const o = await gw.nextTask(a); if ((o.body as { task?: unknown }).task) reads.invalidate(); return send(c, o) }))
+  app.post('/v1/tasks/:id/alive', asAgent(async (c, a) => send(c, await gw.heartbeatTask(a, P(c, 'id')))))
   app.post('/v1/tasks/:id/reply', asAgent(async (c, a) => { const b = await parse(c, TaskReplyBody); return b.ok ? send(c, await gw.replyTask(a, P(c, 'id'), b.data)) : b.res }))
   app.get('/v1/history', asOperator(cached(async c => send(c, await gw.listHistory(Math.min(Number(c.req.query('limit') ?? 100) || 100, 500))))))
   app.post('/v1/history', asOperator(async c => { const b = await parse(c, HistoryBody); return b.ok ? send(c, await gw.importHistory(b.data)) : b.res }))

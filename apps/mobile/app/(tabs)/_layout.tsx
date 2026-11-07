@@ -1,54 +1,36 @@
-import * as Haptics from 'expo-haptics'
-import { Tabs } from 'expo-router'
-import { Pressable, View } from 'react-native'
-import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import { NativeTabs } from 'expo-router/native-tabs'
 import { useAlerts } from '../../src/state/alerts'
-import { Glass } from '../../src/ui/Glass'
-import { Icon, T, type IconName } from '../../src/ui/kit'
 import { C } from '../../src/ui/theme'
 
-/** The parts of the tab bar props this dock uses. */
-type DockProps = { state: { index: number; routes: { key: string; name: string }[] }; navigateToTab: (routeKey: string) => void }
-
-const TABS: Record<string, { label: string; icon: IconName }> = {
-  home: { label: 'Home', icon: 'home' },
-  agents: { label: 'Agents', icon: 'agents' },
-  activity: { label: 'Activity', icon: 'clock' },
-  account: { label: 'Account', icon: 'person' },
-}
-
-/** The floating dock: Liquid Glass on iOS 26 (frosted before that), the active tab in a lighter pill. */
-function Dock({ state, navigateToTab }: DockProps) {
-  const insets = useSafeAreaInsets()
-  return (
-    <View style={{ position: 'absolute', left: 16, right: 16, bottom: Math.max(insets.bottom, 12) + 4, height: 70 }}>
-      <Glass radius={35} interactive style={{ flex: 1, flexDirection: 'row', padding: 5, gap: 4 }}>
-        {state.routes.map((r, i) => {
-          const t = TABS[r.name]
-          if (!t) return null
-          const on = state.index === i
-          return (
-            <Pressable key={r.key} accessibilityRole="tab" accessibilityState={{ selected: on }} accessibilityLabel={t.label}
-              onPress={() => { if (!on) { void Haptics.selectionAsync(); navigateToTab(r.key) } }}
-              style={{ flex: 1, borderRadius: 30, alignItems: 'center', justifyContent: 'center', gap: 4, backgroundColor: on ? 'rgba(255,255,255,0.12)' : 'transparent' }}>
-              <Icon name={t.icon} size={24} />
-              <T style={{ fontSize: 12, color: C.text, opacity: on ? 1 : 0.85 }}>{t.label}</T>
-            </Pressable>
-          )
-        })}
-      </Glass>
-    </View>
-  )
-}
-
+/**
+ * The tab bar is Apple's own (UITabBar through Expo Router's native tabs), not one drawn by the app. On iOS 26 that is the real
+ * Liquid Glass bar: clear glass over the content, a glass lens on the selected tab that bends what is behind it and slides between
+ * tabs, and it shrinks out of the way when the owner scrolls down. Older iOS gets the system bar of its own version. Icons are SF
+ * Symbols, outlined, filled when selected, as in Apple's apps.
+ *
+ * Why native rather than our own drawing: no hand-made view can do the lens. The system tab bar renders it, and it also brings
+ * VoiceOver, Dynamic Type and haptics for free. The cost: the bar's look is Apple's, not ours (labels are in the system font).
+ */
 export default function TabsLayout() {
   useAlerts()
   return (
-    <Tabs tabBar={p => <Dock state={p.state} navigateToTab={p.navigateToTab} />} screenOptions={{ headerShown: false, sceneStyle: { backgroundColor: C.bg } }}>
-      <Tabs.Screen name="home" />
-      <Tabs.Screen name="agents" />
-      <Tabs.Screen name="activity" />
-      <Tabs.Screen name="account" />
-    </Tabs>
+    <NativeTabs tintColor={C.text} minimizeBehavior="onScrollDown">
+      <NativeTabs.Trigger name="home">
+        <NativeTabs.Trigger.Icon sf={{ default: 'house', selected: 'house.fill' }} />
+        <NativeTabs.Trigger.Label>Home</NativeTabs.Trigger.Label>
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="agents">
+        <NativeTabs.Trigger.Icon sf={{ default: 'person.2', selected: 'person.2.fill' }} />
+        <NativeTabs.Trigger.Label>Agents</NativeTabs.Trigger.Label>
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="activity">
+        <NativeTabs.Trigger.Icon sf={{ default: 'clock', selected: 'clock.fill' }} />
+        <NativeTabs.Trigger.Label>Activity</NativeTabs.Trigger.Label>
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="account">
+        <NativeTabs.Trigger.Icon sf={{ default: 'person.crop.circle', selected: 'person.crop.circle.fill' }} />
+        <NativeTabs.Trigger.Label>Account</NativeTabs.Trigger.Label>
+      </NativeTabs.Trigger>
+    </NativeTabs>
   )
 }

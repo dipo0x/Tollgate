@@ -8,6 +8,7 @@ const QA: [string, ReactNode][] = [
   ['Can the model talk its way past a decision?', 'No. The model can propose what to buy and what to offer. Decisions are made by code over structured data, and third-party listing text never reaches the model prompt.'],
   ['How is this different from a spending cap?', 'A cap limits how much a bad payment can cost. Tollgate checks the request itself: the payee, the price against an independent quote, the deposit address, the refund target and replays. Use both.'],
   ['How do I use the agent economy features?', <>Negotiating, hiring and earning are switched on by your mandate and used through the gateway. The <a href="/docs/#agent-economy">docs</a> show each one with the exact calls, what the gateway enforces, and what is not built yet.</>],
+  ['Is there a phone app?', <>Yes, an iPhone app built with Expo: approve or reject a payment, freeze everything, see every decision, add or stop an agent, text an agent, and read jobs and shops. It pairs by scanning the QR code on your dashboard and holds no wallet key. It is not in the App Store yet, so today it runs from the source in Expo Go or the iOS simulator. See <a href="#phone">the app</a>.</>],
   ['Are the numbers on this page real?', 'Counts such as 12 checks and 16 attack scenarios are design facts. Every decision, price and job figure shown here is illustrative. Measured benchmark results are published with the report.'],
 ]
 

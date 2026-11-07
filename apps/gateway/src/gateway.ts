@@ -41,6 +41,8 @@ export type GatewayDeps = {
   approvalTtlMs: number
   /** How long one check may take before it fails (fail closed). Live 1Click's first lookup of a new deposit address was measured at ~5 s. */
   checkTimeoutMs?: number
+  /** How long a task may sit in "working" without a word or a heartbeat from its agent before it is closed as abandoned. */
+  taskLeaseMs?: number
   log: (event: string, fields: Record<string, unknown>) => void
 }
 
@@ -50,6 +52,10 @@ const SignedReply = z.union([
   z.object({ decisionId: z.string(), chainId: z.number().int().positive(), from: z.string().regex(/^0x[0-9a-fA-F]{40}$/), txHash: z.string().regex(/^0x[0-9a-fA-F]{64}$/), signedTx: z.string().regex(/^0x[0-9a-fA-F]+$/) }),
   z.object({ decisionId: z.string(), chainId: z.literal(0), from: z.string().regex(/^(([a-z\d]+[-_])*[a-z\d]+\.)*([a-z\d]+[-_])*[a-z\d]+$/).min(2).max(64), txHash: z.string().regex(/^[1-9A-HJ-NP-Za-km-z]{32,44}$/), signedTx: z.string().regex(/^[A-Za-z0-9+/]+={0,2}$/) }),
 ])
+
+/** An agent that has said nothing and sent no heartbeat for this long has stopped. Its heartbeat runs every 20 s (e2e/src/live-app.ts). */
+export const TASK_LEASE_MS = 90_000
+export const ABANDONED_TEXT = 'Tollgate: the agent stopped before it answered this. Nothing is paid without your yes; Activity shows anything that was. Send it again when the agent is running.'
 
 export type Out = { status: 200 | 201 | 400 | 401 | 403 | 404 | 409 | 422 | 423 | 502 | 503; body: unknown }
 const ok = (body: unknown, status: 200 | 201 = 200): Out => ({ status, body })
@@ -584,7 +590,31 @@ export class Gateway {
     return ok({ task }, 201)
   }
 
-  async listTasks(mandateId: string, limit: number): Promise<Out> { return ok({ tasks: await this.d.store.tasks.list(mandateId, limit) }) }
+  async listTasks(mandateId: string, limit: number): Promise<Out> {
+    await this.closeAbandonedTasks()
+    return ok({ tasks: await this.d.store.tasks.list(mandateId, limit) })
+  }
+
+  /**
+   * A task the agent claimed and then went silent on (its process was killed, crashed or hung) would show "typing" forever. The agent
+   * renews its lease with every reply and with a heartbeat while it works; a task past its lease is closed as failed, with a line from
+   * Tollgate saying so. Closing it never moves money: a payment the agent asked for still needs the owner's yes, and one already paid
+   * shows in Activity. Run from the sweep timer and before every chat read, so the owner never sees a stale "typing".
+   */
+  async closeAbandonedTasks(): Promise<number> {
+    const now = this.d.clock()
+    const before = new Date(now.getTime() - (this.d.taskLeaseMs ?? TASK_LEASE_MS)).toISOString()
+    const closed = await this.d.store.tasks.closeAbandoned(before, { at: now.toISOString(), from: 'agent', text: ABANDONED_TEXT })
+    for (const t of closed) await this.audit('task.abandoned', { taskId: t.id, mandateId: t.mandateId })
+    if (closed.length) this.reads.invalidate()
+    return closed.length
+  }
+
+  /** The agent is still working on this task. 404 when it is not this agent's working task (already closed, or someone else's). */
+  async heartbeatTask(agent: Agent, id: string): Promise<Out> {
+    if (!(await this.d.store.tasks.touch(id, agent.mandateId, this.d.clock().toISOString()))) return fail(404, 'not_found', `no working task ${id}`)
+    return ok({ ok: true })
+  }
 
   /**
    * One conversation per agent NAME, across all its runs (mandates). A run ends (expires, or is stopped) and a new one with the same
@@ -596,6 +626,7 @@ export class Gateway {
     if (runs.length === 0) return fail(404, 'not_found', `no agent named ${agentId}`)
     const shown = runs.map(m => ({ id: m.spec.id, status: this.shownStatus(m), validFrom: m.spec.validFrom, validUntil: m.spec.validUntil }))
     const running = shown.filter(r => r.status === 'active').sort((a, b) => b.validFrom.localeCompare(a.validFrom))[0]
+    await this.closeAbandonedTasks()
     const tasks = await this.d.store.tasks.listForMandates(shown.map(r => r.id), limit)
     return ok({ agentId, runningMandateId: running?.id ?? null, runs: shown, tasks })
   }

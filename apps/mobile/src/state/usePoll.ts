@@ -1,19 +1,12 @@
 import { useFocusEffect } from 'expo-router'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { GatewayError } from '../api/gateway'
+import { lastSeen } from './screenMemory'
+export { clearScreenCache, hasScreen, peekScreen, primeScreen } from './screenMemory'
 
 /** Failures in a row before a screen that already shows data says the gateway is not answering. One slow answer is not an outage. */
 export const FAILS_BEFORE_ERROR = 3
 
-/**
- * The last data each screen showed, in memory only (never written to the phone's storage: it is the owner's money records).
- * A screen with a key opens at once with what it showed last time, then refreshes. Emptied when the phone pairs or unpairs, so
- * one gateway's data never shows for another. Screens that act on money (approve, freeze) take no key and always load fresh.
- */
-const lastSeen = new Map<string, unknown>()
-export function clearScreenCache(): void { lastSeen.clear() }
-/** What another screen last loaded, to draw this one at once (e.g. an agent's row from the Agents list). Undefined if never seen. */
-export function peekScreen<T>(key: string): T | undefined { return lastSeen.get(key) as T | undefined }
 
 /**
  * Keep one piece of gateway data fresh while its screen is on show: load now, then every few seconds, and stop when the

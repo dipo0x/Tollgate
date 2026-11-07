@@ -9,7 +9,7 @@ const fresh = (): Seen => ({ keys: new Set(), since: '2026-11-07T19:59:00Z' })
 describe('newAlerts: what deserves a notification', () => {
   it('a payment waiting for you: who, how much, to whom, and a tap opens the Approve screen', () => {
     expect(newAlerts(fresh(), [approval('pending')], [])).toEqual([
-      { key: 'approval:dec_1', title: 'spend-agent needs your yes', body: 'Pay 0.21 USDC to 127.0.0.1 · bridge brief', url: '/approval/dec_1' },
+      { key: 'approval:dec_1', title: 'Payment waiting for your approval', body: 'spend-agent wants to pay 0.21 USDC to 127.0.0.1 for bridge brief. Tap to review.', url: '/approval/dec_1' },
     ])
   })
   it('an approved or rejected payment raises nothing', () => {
@@ -17,7 +17,7 @@ describe('newAlerts: what deserves a notification', () => {
   })
   it('an agent reply opens its chat; your own messages never alert', () => {
     const a = newAlerts(fresh(), [], [{ agentId: 'spend-agent', tasks: [task([{ at: '2026-11-07T20:00:01Z', from: 'owner', text: 'hi' }, { at: '2026-11-07T20:00:05Z', from: 'agent', text: 'Hello! What can I get you?' }])] }])
-    expect(a).toEqual([{ key: 'msg:task_1:1', title: 'spend-agent', body: 'Hello! What can I get you?', url: '/chat/spend-agent' }])
+    expect(a).toEqual([{ key: 'msg:task_1:1', title: 'Your agent replied', body: 'Hello! What can I get you?', url: '/chat/spend-agent' }])
   })
   it('the agent asking for a payment you are already alerted about is not a second alert', () => {
     const a = newAlerts(fresh(), [approval('pending')], [{ agentId: 'spend-agent', tasks: [task([{ at: '2026-11-07T20:00:05Z', from: 'agent', text: 'Approve it in Tollgate.', decisionId: 'dec_1' }])] }])

@@ -72,6 +72,20 @@ function copyBtn(value) {
   return el('button', { type: 'button', class: 'copy', title: 'Copy', onclick: e => { e.stopPropagation(); copyText(value).then(ok => toast(ok ? 'Copied' : 'Copy failed')) } }, 'copy')
 }
 const addr = v => el('span', { class: 'addr', title: String(v) }, short(v), copyBtn(v))
+// Public explorers this dashboard will link to. A stored link is still only data, so it is checked here before it becomes an
+// href: https only, a known explorer host, no embedded credentials. Anything else gets no link; the hash itself is still shown.
+const EXPLORER_HOSTS = ['nearblocks.io', 'etherscan.io', 'optimistic.etherscan.io', 'polygonscan.com', 'basescan.org', 'arbiscan.io']
+function safeExplorer(url) {
+  if (!url) return undefined
+  try {
+    const u = new URL(String(url))
+    return u.protocol === 'https:' && EXPLORER_HOSTS.indexOf(u.hostname) >= 0 && !u.username && !u.password ? u.href : undefined
+  } catch (e) { return undefined }
+}
+function explorerLink(url, text) {
+  const safe = safeExplorer(url)
+  return safe ? el('a', { class: 'exlink', href: safe, target: '_blank', rel: 'noopener noreferrer' }, text || ('View on ' + new URL(safe).hostname), icon('out')) : undefined
+}
 const tokenChip = c => el('span', { class: 'tok' }, el('i', null, '$'), c || 'USDC')
 // The network the payment is made on, read from the decision itself: the signed bind, else check C04's evidence. Never assumed.
 const NETS = { 'eip155:42161': ['A', 'Arbitrum', 'arb'], 'eip155:8453': ['B', 'Base', 'base'], near: ['N', 'NEAR', 'near'] }
@@ -145,9 +159,26 @@ function gauge(risk) {
 function checkList(checks) {
   return el('ul', { class: 'checks' }, (checks || []).map(c => el('li', null, el('span', { class: 'id' }, c.id), el('span', null, c.name), el('span', { class: 'chip ' + ({ pass: 'ok', fail: 'no', warn: 'wn' }[c.result] || 'mu') }, c.result), el('pre', null, JSON.stringify(c.evidence)))))
 }
+/**
+ * The transaction section of the drawer. The decision in the feed carries no transaction: the gateway only attaches `onchain`
+ * (network, hash, payer, explorer link) to GET /v1/decisions/:id, once the signer has signed. So the drawer opens with an empty
+ * placeholder and fills it from that one extra call. A decision that was blocked, or is still waiting, has nothing to fill in.
+ */
+function fillChain(panel, box, decisionId) {
+  api('/v1/decisions/' + encodeURIComponent(decisionId)).then(full => {
+    const o = full && full.onchain
+    if (!drawer || drawer.panel !== panel || !o) return
+    const link = explorerLink(o.explorer)
+    box.replaceChildren(el('h3', null, 'On the blockchain'),
+      el('dl', { class: 'kv' }, el('dt', null, 'Network'), el('dd', null, o.network), el('dt', null, 'Transaction'), el('dd', null, addr(o.txHash)), el('dt', null, 'Paid from'), el('dd', null, addr(o.from))),
+      link || el('p', { class: 'muted' }, 'No public explorer is known for this chain, so there is no link. The transaction id is above.'),
+      el('p', { class: 'muted' }, 'The link proves this transaction is on the chain. Whether the shop was paid is 1Click’s answer above, not the explorer’s.'))
+  }).catch(() => {})
+}
 function openDrawer(d) {
   closeDrawer()
   const scrim = el('div', { class: 'scrim', onclick: closeDrawer })
+  const chain = el('div', { class: 'chain' })
   const panel = el('aside', { class: 'drawer', role: 'dialog', 'aria-label': 'Decision detail' },
     el('button', { type: 'button', class: 'close ghost', onclick: closeDrawer }, 'Close'),
     el('div', { class: 'row' }, avatar(d.host), el('div', null, el('div', { class: 'row wrap' }, pill(d), netChip(d)), el('div', { class: 'muted' }, d.host))),
@@ -158,9 +189,11 @@ function openDrawer(d) {
     el('dl', { class: 'kv' }, el('dt', null, 'Decision'), el('dd', null, addr(d.decisionId)), el('dt', null, 'Mandate'), el('dd', null, d.mandateId), el('dt', null, 'Agent'), el('dd', null, d.agentId),
       el('dt', null, 'Purpose'), el('dd', null, d.purpose || '—'), el('dt', null, 'Time (UTC)'), el('dd', { class: 'mono' }, when(d.createdAt)),
       d.depositAddress ? [el('dt', null, 'Deposit address'), el('dd', null, addr(d.depositAddress))] : [], d.bind ? [el('dt', null, 'Will be signed'), el('dd', { class: 'mono' }, d.bind.amount + ' ' + d.bind.asset + ' to ' + short(d.bind.to) + ' on ' + d.bind.chain)] : []),
+    chain,
     d.risk !== undefined ? [el('h3', null, 'Risk score'), gauge(d.risk)] : [],
     el('h3', null, 'The checks, with their evidence'), checkList(d.checks))
   document.body.append(scrim, panel); drawer = { scrim, panel }
+  if (d.decisionId) fillChain(panel, chain, d.decisionId)
 }
 
 // ---- charts ---------------------------------------------------------------------------------------------------------------------------
@@ -271,7 +304,7 @@ const PAGE_LOADERS = {
             el('td', { class: 'mono muted' }, when(x.occurredAt)),
             el('td', null, el('span', { class: 'amt' }, x.amount), ' ', tokenChip(x.currency)),
             el('td', null, el('span', { class: 'chip bl plain' }, 'imported'), ' ', x.status),
-            el('td', null, x.txHash ? el('a', { href: x.explorer || '#', target: '_blank', rel: 'noopener noreferrer' }, short(x.txHash)) : '—')))))) : el('p', { class: 'empty' }, 'None recorded.')]
+            el('td', null, x.txHash ? (explorerLink(x.explorer, short(x.txHash)) || addr(x.txHash)) : '—')))))) : el('p', { class: 'empty' }, 'None recorded.')]
     })
   },
   services() {

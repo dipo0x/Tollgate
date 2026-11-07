@@ -5,6 +5,7 @@ import { useCallback, useState } from 'react'
 import { Alert, Switch, View } from 'react-native'
 import { useGateway, useSession } from '../../src/state/session'
 import { usePoll } from '../../src/state/usePoll'
+import { loaders } from '../../src/state/loaders'
 import { Card, Circle, Dot, ErrorNote, Glyph, Label, Row, Screen, T } from '../../src/ui/kit'
 import { C } from '../../src/ui/theme'
 
@@ -13,7 +14,7 @@ export default function Account() {
   const gw = useGateway()
   const { url, unpair } = useSession()
   const [copied, setCopied] = useState(false)
-  const load = useCallback(() => gw.status(), [gw])
+  const load = useCallback(() => loaders.account(gw), [gw])
   const { data, error, refresh } = usePoll(load, 8000, 'account')
   const host = url ? new URL(url).host : ''
 
@@ -54,7 +55,8 @@ export default function Account() {
 
       <Label>About</Label>
       <Card>
-        <Row first icon="globe" title="Network" right={<T v="sub">NEAR</T>} />
+        <Row first icon="globe" title="Change gateway address" sub="New Wi-Fi or a new address. Keeps everything." onPress={() => router.push('/switch')} />
+        <Row icon="globe" title="Network" right={<T v="sub">NEAR</T>} />
         <Row icon="out" title="Unpair this phone" danger chevron={false} onPress={confirmUnpair} />
       </Card>
       <T v="small" style={{ textAlign: 'center', marginTop: 22, color: C.text3 }}>Tollgate {Constants.expoConfig?.version ?? ''}</T>

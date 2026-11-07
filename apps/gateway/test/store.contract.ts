@@ -177,7 +177,25 @@ export function storeContract(label: string, make: () => Promise<Made>) {
       expect(new Set(ids).size).toBe(6)
     }))
 
-    it('acceptance specs round-trip and can be replaced', () => using(async ({ acceptance }) => {
+    it('tasks: a heartbeat renews only its own working task; a working task past its lease is closed, nothing else is', () => using(async ({ tasks }) => {
+      const t = (id: string, mandateId: string, at: string) => ({ id, mandateId, status: 'queued' as const, createdAt: at, updatedAt: at, messages: [{ at, from: 'owner' as const, text: `do ${id}` }] })
+      await tasks.create(t('w1', 'm1', '2026-11-07T10:00:00.000Z')); await tasks.create(t('w2', 'm2', '2026-11-07T10:00:00.000Z'))
+      await tasks.create(t('q1', 'm1', '2026-11-07T10:01:00.000Z')) // stays queued: nobody claimed it, so nobody abandoned it
+      await tasks.claimNext('m1', '2026-11-07T10:00:00.000Z'); await tasks.claimNext('m2', '2026-11-07T10:00:00.000Z')
+      expect(await tasks.touch('w1', 'm2', '2026-11-07T10:02:00.000Z')).toBe(false) // another mandate cannot keep it alive
+      expect(await tasks.touch('q1', 'm1', '2026-11-07T10:02:00.000Z')).toBe(false) // only a working task has a lease
+      expect(await tasks.touch('w1', 'm1', '2026-11-07T10:02:00.000Z')).toBe(true)
+      const note = { at: '2026-11-07T10:03:00.000Z', from: 'agent' as const, text: 'stopped' }
+      const closed = await tasks.closeAbandoned('2026-11-07T10:01:30.000Z', note)
+      expect(closed.map(x => x.id)).toEqual(['w2']) // w1 was renewed at 10:02, q1 is queued
+      expect(await tasks.get('w2')).toMatchObject({ status: 'failed', updatedAt: note.at, messages: [{ text: 'do w2' }, note] })
+      expect((await tasks.get('w1'))?.status).toBe('working')
+      expect((await tasks.get('q1'))?.status).toBe('queued')
+      expect(await tasks.closeAbandoned('2026-11-07T10:01:30.000Z', note)).toEqual([]) // closing twice changes nothing
+      expect(await tasks.touch('w2', 'm2', '2026-11-07T10:04:00.000Z')).toBe(false) // and a closed task stays closed
+    }))
+
+    it('acceptance specs round-trip and can be replaced',() => using(async ({ acceptance }) => {
       await acceptance.put('w1', { requiredFields: ['title', 'body'], minSources: 2 })
       expect(await acceptance.get('w1')).toEqual({ requiredFields: ['title', 'body'], minSources: 2 })
       await acceptance.put('w1', { requiredFields: ['x'] })

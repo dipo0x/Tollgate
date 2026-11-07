@@ -17,7 +17,8 @@ const need = (k: string) => { const v = process.env[k]; if (!v) { console.error(
 const KEY = need('NEAR_1CLICK_API_KEY'), PAYEE = need('MERCHANT_NEAR_ACCOUNT'), DEAL = need('WORKERS_DEAL_SECRET')
 const REC = ownerRecord(), DB = REC.db, MANDATE = `mnd_near_${REC.run}`
 const NEAR_KEY = `${ROOT}.signer-near-key`, EVM_KEY = `${ROOT}.signer-key`
-const RPC = process.env['NEAR_RPC_URL'] ?? 'https://rpc.mainnet.near.org'
+// FastNEAR: the same chain, answered in ~0.3 s. rpc.mainnet.near.org is throttled (3.5-19 s a call, measured 8 Nov). NEAR_RPC_URL overrides.
+const RPC = process.env['NEAR_RPC_URL'] ?? 'https://free.rpc.fastnear.com'
 const CONFIRM_FILE = process.env['CONFIRM_FILE'] ?? `${ROOT}.near-pay-confirm`
 const PRICE = process.env['LIVE_PRICE'] ?? '0.20'
 if (!existsSync(NEAR_KEY)) { console.error('No .signer-near-key: run `pnpm --filter @tollgate/signer keygen-near` first.'); process.exit(2) }

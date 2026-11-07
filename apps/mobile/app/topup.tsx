@@ -5,6 +5,7 @@ import { Share, View } from 'react-native'
 import QRCode from 'react-native-qrcode-svg'
 import { useGateway } from '../src/state/session'
 import { usePoll } from '../src/state/usePoll'
+import { loaders } from '../src/state/loaders'
 import { Circle, ErrorNote, Icon, Loading, Pill, Screen, T, TopBar } from '../src/ui/kit'
 import { C } from '../src/ui/theme'
 
@@ -14,7 +15,7 @@ import { C } from '../src/ui/theme'
  */
 export default function TopUp() {
   const gw = useGateway()
-  const load = useCallback(() => gw.status(), [gw])
+  const load = useCallback(() => loaders.topup(gw), [gw])
   const { data, error, loading, refresh } = usePoll(load, 15_000, 'topup')
   const [copied, setCopied] = useState(false)
   const addr = data?.signerAddress

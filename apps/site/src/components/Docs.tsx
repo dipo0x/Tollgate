@@ -68,7 +68,15 @@ const INDEX: [string, string, string][] = [
   ['Spend, negotiate, hire, earn', 'How an agent does each, with the exact calls.', '#agent-economy'],
   ['Threat model and benchmark', 'The sixteen attacks, the five benign controls, and the measured result.', '/#bench'],
   ['Dashboard', 'The owner’s screen, served by your own gateway.', '#dashboard'],
+  ['Phone app', 'Pairing, approving with Face ID, and what the app will not do.', '#phone-app'],
 ]
+
+const PHONE_CODE = `pnpm all          # gateway on your Wi-Fi, signer, dashboard, the app
+# or, to test with real money and one live agent:
+pnpm live:app     # prints a pairing QR; every payment waits for you
+
+# then in the app: Get started -> scan the QR -> turn on Face ID
+pnpm mobile       # iOS simulator instead of a phone`
 
 type Verb = { id: string; title: string; words: string; on: string; code: string; lang: string; rules: string[] }
 const VERBS: Verb[] = [
@@ -213,9 +221,18 @@ export default function Docs() {
 
             <div className="dx-card" id="dashboard">
               <p className="dx-k mono">Dashboard <i className="dx-pill mono">Runs locally</i></p>
-              <p className="dx-t">Your gateway serves the owner’s screen at <code>/dashboard</code>: a live decision feed with every check’s evidence, the approval queue, each mandate’s money, the service list, one-click audit verification, and the kill switch.</p>
-              <p className="dx-t dx-dim">There is no hosted version, so there is no link to one here. Paste your gateway’s operator token to sign in; it stays in that browser tab. Not built yet: a jobs screen and a live push feed.</p>
+              <p className="dx-t">Your gateway serves the owner’s screen at <code>/dashboard</code>: a live decision feed with every check’s evidence, the approval queue, each mandate’s money, the service list, the jobs your agents were hired for, one-click audit verification, and the kill switch.</p>
+              <p className="dx-t dx-dim">There is no hosted version, so there is no link to one here. Paste your gateway’s operator token to sign in; it stays in that browser tab. Not built yet: a live push feed.</p>
               <pre className="dx-code mono" data-lang="shell"><code>pnpm demo --serve</code></pre>
+            </div>
+
+            <div className="dx-card" id="phone-app">
+              <p className="dx-k mono">Phone app <i className="dx-pill mono">Expo, not in the App Store</i></p>
+              <p className="dx-t">The owner’s phone: approve or reject a payment (a full hold, then Face ID), the kill switch, every decision, agents to add or stop, a chat with an agent, jobs, shops and the top-up address. It reads the same gateway as the dashboard and holds no wallet key.</p>
+              <p className="dx-t">Start everything on your computer, then open the app and scan the QR code the gateway prints (or the one on your dashboard). The phone and the gateway must be on the same Wi-Fi, or https in front of the gateway.</p>
+              <pre className="dx-code mono" data-lang="shell"><code>{PHONE_CODE}</code></pre>
+              <p className="dx-t dx-dim">Alerts are raised by the app itself while it runs, not push. Face ID needs a development build; in Expo Go the phone asks for your passcode. Until the gateway has approver-only keys the phone stores the operator key, so pair only your own phone.</p>
+              <RollButton href="/#phone" label="See the app" />
             </div>
 
             <div className="dx-card">

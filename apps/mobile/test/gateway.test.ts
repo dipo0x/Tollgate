@@ -198,3 +198,28 @@ describe('the conversation follows the agent name', () => {
     expect(url).toBe('https://g/v1/conversations/spend-agent?limit=100')
   })
 })
+
+describe('alternatesFrom: other addresses of the same gateway, to switch without unpairing', () => {
+  const info = (over: Record<string, unknown> = {}) => ({ listen: '0.0.0.0', port: 8787, openToNetwork: true, addresses: ['192.168.8.199', '10.0.0.5'], localName: 'Oladipos-Macbook-Pro.local', ...over })
+  it('puts the computer\'s .local name first, then its Wi-Fi numbers, on the port the phone already uses', async () => {
+    const { alternatesFrom } = await import('../src/api/gateway')
+    expect(alternatesFrom('http://192.168.8.192:8787', info())).toEqual(['http://oladipos-macbook-pro.local:8787', 'http://192.168.8.199:8787', 'http://10.0.0.5:8787'])
+  })
+  it('never offers loopback, public internet over plain http, or junk', async () => {
+    const { alternatesFrom } = await import('../src/api/gateway')
+    expect(alternatesFrom('http://192.168.8.192:8787', info({ localName: undefined, addresses: ['127.0.0.1', '8.8.8.8', 'not a host!'] }))).toEqual([])
+    expect(alternatesFrom('not a url', info())).toEqual([])
+  })
+})
+
+describe('safeExplorer: the phone opens only known blockchain explorers', () => {
+  it('opens NearBlocks and the listed explorers over https', async () => {
+    const { safeExplorer } = await import('../src/api/gateway')
+    expect(safeExplorer('https://nearblocks.io/txns/FB7G9hUq3o3sKjTyxH1Q2NC5YxdtL1ApMEnK8BVSmUSa')).toBe('https://nearblocks.io/txns/FB7G9hUq3o3sKjTyxH1Q2NC5YxdtL1ApMEnK8BVSmUSa')
+    expect(safeExplorer('https://arbiscan.io/tx/0xab')).toBeDefined()
+  })
+  it('refuses anything else: other hosts, look-alikes, http, credentials, junk', async () => {
+    const { safeExplorer } = await import('../src/api/gateway')
+    for (const bad of ['https://evil.example/tx/1', 'https://nearblocks.io.evil.com/x', 'http://nearblocks.io/txns/x', 'https://user:pw@nearblocks.io/x', 'javascript:alert(1)', 'nope', undefined]) expect(safeExplorer(bad), String(bad)).toBeUndefined()
+  })
+})

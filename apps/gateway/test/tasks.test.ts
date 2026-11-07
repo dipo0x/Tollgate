@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { ABANDONED_TEXT } from '../src/gateway.ts'
 import { boot, mandateBody, OPERATOR, T0 } from './helpers.ts'
 
 /** The owner tells an agent what to do (phone or dashboard); the agent collects it with its own key and replies. No money moves here. */
@@ -79,5 +80,32 @@ describe('tasks: the owner talks to an agent', () => {
     c = await g.op('GET', '/v1/conversations/spend-agent')
     expect(c.json.tasks.map((t: { messages: { text: string }[] }) => t.messages[0]!.text)).toEqual(['second run', 'first run'])
     expect((await g.op('GET', '/v1/conversations/nobody')).status).toBe(404)
+  })
+  it('a task its agent went silent on is closed as failed, so the phone never shows "typing" forever', async () => {
+    const g = boot(); const { token, mandateId } = await g.setup()
+    const t = (await g.op('POST', `/v1/agents/${mandateId}/tasks`, { text: 'hj' })).json.task
+    await g.call('POST', '/v1/tasks/next', token) // claimed: working
+    const at = (ms: number) => g.setNow(new Date(T0.getTime() + ms))
+    at(60_000) // a heartbeat inside the 90 s lease keeps it open
+    expect((await g.call('POST', `/v1/tasks/${t.id}/alive`, token)).status).toBe(200)
+    at(140_000) // 80 s after that heartbeat: still inside the lease
+    expect((await g.op('GET', `/v1/agents/${mandateId}/tasks`)).json.tasks[0].status).toBe('working')
+    at(151_000) // 91 s of silence: the agent has stopped
+    const c = await g.op('GET', '/v1/conversations/agent-1')
+    expect(c.json.tasks[0]).toMatchObject({ status: 'failed' })
+    expect(c.json.tasks[0].messages.at(-1)).toMatchObject({ from: 'agent', text: ABANDONED_TEXT })
+    expect((await g.call('POST', `/v1/tasks/${t.id}/alive`, token)).status).toBe(404) // a closed task cannot be revived by a heartbeat
+    expect(JSON.stringify((await g.op('GET', '/v1/audit?limit=50')).json)).toContain('task.abandoned')
+  })
+
+  it('a queued task is never closed as abandoned (nobody claimed it), and only an agent may send a heartbeat for its own task', async () => {
+    const g = boot(); const a = await g.setup()
+    const b = await g.op('POST', '/v1/mandates', mandateBody({ id: 'mnd_2', agentId: 'agent-2' }))
+    const t = (await g.op('POST', `/v1/agents/${a.mandateId}/tasks`, { text: 'later' })).json.task
+    g.setNow(new Date(T0.getTime() + 3_600_000))
+    expect((await g.op('GET', `/v1/agents/${a.mandateId}/tasks`)).json.tasks[0].status).toBe('queued')
+    await g.call('POST', '/v1/tasks/next', a.token)
+    expect((await g.call('POST', `/v1/tasks/${t.id}/alive`, b.json.agentToken as string)).status).toBe(404)
+    expect((await g.call('POST', `/v1/tasks/${t.id}/alive`, OPERATOR)).status).toBe(403)
   })
 })

@@ -6,6 +6,7 @@ import type { MandateRow } from '../../src/api/gateway'
 import { agentState, groupAgents, money } from '../../src/lib/format'
 import { useGateway } from '../../src/state/session'
 import { usePoll } from '../../src/state/usePoll'
+import { loaders } from '../../src/state/loaders'
 import { Card, Dot, ErrorNote, Glyph, Icon, Loading, Screen, T } from '../../src/ui/kit'
 import { C, R } from '../../src/ui/theme'
 
@@ -15,7 +16,7 @@ import { C, R } from '../../src/ui/theme'
  */
 export default function Agents() {
   const gw = useGateway()
-  const load = useCallback(async () => { const [mandates, approvals] = await Promise.all([gw.mandates(), gw.approvals()]); return { mandates, approvals } }, [gw])
+  const load = useCallback(() => loaders.agents(gw), [gw])
   const { data, error, loading, refresh } = usePoll(load, 6000, 'agents')
   const { running, ended } = groupAgents(data?.mandates ?? [])
 

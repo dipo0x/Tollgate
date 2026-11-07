@@ -25,6 +25,13 @@ describe('signing through the gateway: the whole path', () => {
     expect((await g.op('GET', '/v1/audit/verify')).json).toMatchObject({ ok: true })
   })
 
+  it('once signed, the payment shows its transaction and a link to it on the chain\'s explorer; before, it has none', async () => {
+    const g = bootWithSigner(); const { token, id } = await allowed(g)
+    expect((await g.op('GET', `/v1/decisions/${id}`)).json.onchain).toBeUndefined()
+    const r = await sign(g, token, id)
+    expect((await g.op('GET', `/v1/decisions/${id}`)).json.onchain).toEqual({ network: 'Arbitrum', txHash: r.json.txHash, from: g.backend.address, explorer: `https://arbiscan.io/tx/${r.json.txHash}` })
+  })
+
   it('what the signer was sent came from the gateway\'s RECORD: the agent supplied only gas and the nonce', async () => {
     const g = bootWithSigner(); const { token, id } = await allowed(g)
     await sign(g, token, id)

@@ -4,6 +4,7 @@ import { Linking, Pressable, View } from 'react-native'
 import { money, shortId } from '../src/lib/format'
 import { useGateway } from '../src/state/session'
 import { usePoll } from '../src/state/usePoll'
+import { loaders } from '../src/state/loaders'
 import { Card, Circle, ErrorNote, Icon, Label, Loading, Screen, T, Tile, TopBar } from '../src/ui/kit'
 import { C } from '../src/ui/theme'
 
@@ -13,7 +14,7 @@ import { C } from '../src/ui/theme'
  */
 export default function Jobs() {
   const gw = useGateway()
-  const load = useCallback(async () => ({ jobs: await gw.jobs(), past: await gw.history() }), [gw])
+  const load = useCallback(() => loaders.jobs(gw), [gw])
   const { data, error, loading, refresh } = usePoll(load, 15_000, 'jobs')
   const empty = data && data.jobs.length === 0 && data.past.length === 0
   return (

@@ -5,6 +5,7 @@ import { GatewayError, type MandateRow } from '../../src/api/gateway'
 import { agentState, kindOf, KIND_LABEL, money, when } from '../../src/lib/format'
 import { useGateway } from '../../src/state/session'
 import { peekScreen, useNow, usePoll } from '../../src/state/usePoll'
+import { loaders } from '../../src/state/loaders'
 import { Amount, Card, Circle, Dot, ErrorNote, Glyph, Icon, KindIcon, Label, Loading, Row, Screen, T, TopBar } from '../../src/ui/kit'
 import { C } from '../../src/ui/theme'
 
@@ -14,10 +15,7 @@ export default function AgentDetail() {
   const gw = useGateway()
   const now = useNow()
   const [problem, setProblem] = useState<string | null>(null)
-  const load = useCallback(async () => {
-    const [m, decisions] = await Promise.all([gw.mandate(id), gw.decisionsFor(id, 8)])
-    return { ...m, decisions }
-  }, [gw, id])
+  const load = useCallback(() => loaders.agent(gw, id), [gw, id])
   const { data, error, loading, refresh } = usePoll(load, 6000, `agent:${id}`)
   const m = data?.mandate
   // Drawn at once from the Agents list's row while the full rules load, so tapping an agent never shows a blank screen.

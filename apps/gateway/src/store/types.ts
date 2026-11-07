@@ -127,6 +127,10 @@ export interface TaskStore {
   claimNext(mandateId: string, at: string): Promise<AgentTask | undefined>
   /** Adds a message (and maybe a new status) to a task of THIS mandate. False if there is no such task for it. */
   reply(id: string, mandateId: string, msg: TaskMessage, status: TaskStatus | undefined, at: string): Promise<boolean>
+  /** The agent says it is still on a working task of THIS mandate: renews its lease. False if there is no such working task. */
+  touch(id: string, mandateId: string, at: string): Promise<boolean>
+  /** Every working task not renewed since `before` gets `msg` and becomes failed. Returns the tasks it closed. */
+  closeAbandoned(before: string, msg: TaskMessage): Promise<AgentTask[]>
 }
 
 export type GatewayStore = {

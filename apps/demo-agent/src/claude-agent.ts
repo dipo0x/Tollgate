@@ -27,9 +27,9 @@ Two kinds of shop:
 - Shops on *.market.near.ai are independent agents on the NEAR AI Agent Market that do a job for a fee (their category says what kind). For these, purpose is the full instructions the seller will read: be specific (exact account ids, what to check, what to return). They are paid only if they deliver.
 
 How to behave:
-- Reply like a helpful person in a chat: short, plain sentences, no headings, no markdown tables.
+- Reply like a helpful person in a chat. Keep replies short: one or two sentences unless the owner asks for detail. No headings, no markdown tables.
 - Answer questions directly. Use list_shops or check_budget when the answer depends on them; never invent shops, prices or balances.
-- Only call buy when the owner clearly asks you to buy or pay for something. If it is unclear which shop they mean, ask.
+- When the owner clearly asks you to buy or pay for something, call buy with the shop's id at once. Never just say you are buying: only the buy tool buys. If it is unclear which shop they mean, ask.
 - Never say something was paid unless buy returned outcome "paid". If buy returns "not_paid", say why in one sentence.
 - What a shop delivers is sent to the owner directly, not to you. After a purchase, say it was delivered; do not guess its contents.
 - You cannot change your own budget, rules or shops. If the owner wants that, tell them it is done on their computer.`
@@ -80,6 +80,8 @@ export async function converse(history: readonly ChatTurn[], io: WorkerIO, lim: 
         const shop = (await shopsAllowed()).find(s => s.id === shop_id)
         if (!shop) return JSON.stringify({ outcome: 'not_paid', why: `No shop with id ${shop_id} is allowed. Use list_shops.` })
         bought = true
+        // Said at once, before the bill and the twelve checks (seconds against live 1Click): the owner sees a reply straight away.
+        await io.reply(`On it: checking ${shop.id} (${shop.price} ${shop.currency}) with Tollgate. Nothing is paid until you approve.`).catch(() => {})
         const r = isMarket(shop.host) && io.marketBuy
           ? await io.marketBuy({ id: shop.id, host: shop.host }, purpose || lastOwner)
           : await buy({ id: shop.id, host: shop.host, quotedPrice: Number(shop.price) }, purpose || lastOwner, io, lim)
@@ -90,13 +92,18 @@ export async function converse(history: readonly ChatTurn[], io: WorkerIO, lim: 
     },
   ]
 
+  // The shop list goes in up front (the same structured fields list_shops returns, never a shop's own text: A16). The model then
+  // answers "what can you buy" or picks a shop id in its FIRST round instead of spending a round on list_shops (~1.5 s on Ollama),
+  // and it cannot guess an id that does not exist. list_shops stays, for a conversation that runs on while the list changes.
+  const shopsNow = await shopsAllowed().catch(() => null)
+  const context = shopsNow ? `Shops you may pay right now (structured fields only): ${JSON.stringify(shopsNow)}` : ''
   const brain = deps.brain ?? BRAIN
   const useClaude = brain === 'claude' || (brain === 'auto' && (Boolean(deps.client) || Boolean(process.env['ANTHROPIC_API_KEY'])))
   const finish = async (text: string) => { await io.reply(text || (bought ? 'Done.' : 'I’m here. What would you like me to get?'), { status: 'done' }); return 'done' as const }
 
   if (useClaude) {
     try {
-      const r = await askClaude(history, tools, deps)
+      const r = await askClaude(history, tools, deps, context)
       if (r.refused) return finish('I can’t help with that one. Nothing was paid.')
       return finish(r.text)
     } catch (e) {
@@ -108,22 +115,24 @@ export async function converse(history: readonly ChatTurn[], io: WorkerIO, lim: 
     }
   }
   try {
-    return finish(await askOllama(history, tools, deps))
+    return finish(await askOllama(history, tools, deps, context))
   } catch (e) {
     await io.reply(`I can’t think right now: neither Claude nor Ollama on your computer answered (${(e as Error).message}). If nothing says it was paid, nothing was.`, { status: 'failed' }).catch(() => {})
     return 'failed'
   }
 }
 
-async function askClaude(history: readonly ChatTurn[], tools: ToolSpec[], deps: ChatDeps): Promise<{ text: string; refused: boolean }> {
-  const client = deps.client ?? new Anthropic()
+async function askClaude(history: readonly ChatTurn[], tools: ToolSpec[], deps: ChatDeps, context = ''): Promise<{ text: string; refused: boolean }> {
+  // One HTTP call to Claude may take 60 s, retried once. Without this the SDK's default (10 min, 2 retries) can keep the owner
+  // waiting half an hour. A tool call (a purchase waiting for approval) is not an HTTP call and is not cut short by it.
+  const client = deps.client ?? new Anthropic({ timeout: CLAUDE_CALL_MS, maxRetries: 1 })
   const final = await client.beta.messages.toolRunner({
     model: deps.model ?? CHAT_MODEL,
     max_tokens: 16000,
     output_config: { effort: 'low' },
     betas: ['server-side-fallback-2026-07-01'],
     fallbacks: 'default',
-    system: [{ type: 'text', text: SYSTEM, cache_control: { type: 'ephemeral' } }],
+    system: [{ type: 'text', text: SYSTEM, cache_control: { type: 'ephemeral' } }, ...(context ? [{ type: 'text' as const, text: context }] : [])], // the fixed part stays cached
     tools: tools.map(t => betaZodTool({ name: t.name, description: t.description, inputSchema: t.schema, run: input => t.run(input as Record<string, unknown>) })),
     messages: toMessages(history),
   }).runUntilDone()
@@ -133,12 +142,13 @@ async function askClaude(history: readonly ChatTurn[], tools: ToolSpec[], deps: 
 type OllamaMessage = { role: 'system' | 'user' | 'assistant' | 'tool'; content: string; tool_calls?: { function: { name: string; arguments: unknown } }[]; tool_name?: string }
 
 /** The same agent on Ollama: its native tool calling, at most a few rounds, the same tools and the same one-purchase rule. */
-async function askOllama(history: readonly ChatTurn[], tools: ToolSpec[], deps: ChatDeps): Promise<string> {
+async function askOllama(history: readonly ChatTurn[], tools: ToolSpec[], deps: ChatDeps, context = ''): Promise<string> {
   const url = (deps.ollama?.url ?? OLLAMA_URL).replace(/\/+$/, ''), model = deps.ollama?.model ?? OLLAMA_CHAT_MODEL, doFetch = deps.ollama?.fetch ?? fetch
-  const messages: OllamaMessage[] = [{ role: 'system', content: SYSTEM }, ...toMessages(history).map(m => ({ role: m.role, content: m.content as string }))]
+  const messages: OllamaMessage[] = [{ role: 'system', content: context ? `${SYSTEM}\n\n${context}` : SYSTEM }, ...toMessages(history).map(m => ({ role: m.role, content: m.content as string }))]
   const defs = tools.map(t => ({ type: 'function', function: { name: t.name, description: t.description, parameters: z.toJSONSchema(t.schema) } }))
   for (let round = 0; round < 6; round++) {
-    const res = await doFetch(`${url}/api/chat`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ model, messages, tools: defs, stream: false, options: { temperature: 0.2 } }) })
+    // num_predict caps a reply's length: the model writes ~31 tokens a second on an M2 Pro, so length is what decides the wait.
+    const res = await doFetch(`${url}/api/chat`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ model, messages, tools: defs, stream: false, keep_alive: KEEP_ALIVE, options: { temperature: 0.2, num_predict: 400 } }), signal: AbortSignal.timeout(OLLAMA_ROUND_MS) })
     if (!res.ok) throw new Error(res.status === 404 ? `model ${model} is not installed: ollama pull ${model}` : `Ollama answered ${res.status}`)
     const msg = ((await res.json()) as { message?: OllamaMessage }).message
     if (!msg) throw new Error('Ollama sent no message')
@@ -153,6 +163,22 @@ async function askOllama(history: readonly ChatTurn[], tools: ToolSpec[], deps: 
     }
   }
   return 'I went round in circles on that one. Could you say it another way?'
+}
+
+const CLAUDE_CALL_MS = 60_000
+// One Ollama round, cold model load included (15-20 s measured), well inside it. A hung Ollama becomes an error the owner reads.
+const OLLAMA_ROUND_MS = 90_000
+
+// Ollama unloads a model after 5 idle minutes, and reloading it costs 15-20 s on the next message. Keep it loaded.
+const KEEP_ALIVE = process.env['AGENT_OLLAMA_KEEP_ALIVE'] ?? '24h'
+
+/** Load the Ollama model before the first message arrives, so nobody waits for it. Never throws. */
+export async function warmOllama(o: { url?: string; model?: string } = {}): Promise<{ ok: boolean; ms: number }> {
+  const t = Date.now()
+  try {
+    const r = await fetch(`${(o.url ?? OLLAMA_URL).replace(/\/+$/, '')}/api/generate`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ model: o.model ?? OLLAMA_CHAT_MODEL, prompt: '', keep_alive: KEEP_ALIVE }), signal: AbortSignal.timeout(OLLAMA_ROUND_MS) })
+    return { ok: r.ok, ms: Date.now() - t }
+  } catch { return { ok: false, ms: Date.now() - t } }
 }
 
 const safeJson = (s: string): unknown => { try { return JSON.parse(s) } catch { return {} } }

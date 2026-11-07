@@ -7,6 +7,8 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { GatewayError, type Decision, type TaskT } from '../../src/api/gateway'
 import { useGateway } from '../../src/state/session'
 import { useNow, usePoll } from '../../src/state/usePoll'
+import { loaders } from '../../src/state/loaders'
+import { presenceOf } from '../../src/lib/presence'
 import { Glass } from '../../src/ui/Glass'
 import { Circle, Dot, ErrorNote, Glyph, Icon, T } from '../../src/ui/kit'
 import { C, F, R } from '../../src/ui/theme'
@@ -20,8 +22,6 @@ import { C, F, R } from '../../src/ui/theme'
  */
 type Line = { key: string; from: 'owner' | 'agent'; text: string; at: string; decisionId?: string; sending?: boolean }
 
-// A message nobody has collected for this long means the agent is not running.
-const UNANSWERED_MS = 20_000
 const SUGGESTIONS = ['What can you buy for me?', 'How much budget is left?', 'Buy the bridge cost brief']
 
 export default function Chat() {
@@ -29,29 +29,28 @@ export default function Chat() {
   const gw = useGateway()
   const now = useNow()
   const [draft, setDraft] = useState('')
+  // While the owner is typing (the box is active, keyboard up) the suggestions get out of the way; they return when it closes.
+  const [typing, setTyping] = useState(false)
   const [outbox, setOutbox] = useState<Line[]>([])
   const [problem, setProblem] = useState<GatewayError | undefined>(undefined)
   const scroll = useRef<{ scrollToEnd: (o?: { animated?: boolean }) => void } | null>(null)
 
-  const load = useCallback(async () => {
-    const [c, approvals, decisions] = await Promise.all([gw.conversation(id), gw.approvals().catch(() => []), gw.decisions(100).catch(() => [])])
-    return {
-      tasks: c.tasks, agent: c.agentId, sendTo: c.runningMandateId, active: !!c.runningMandateId,
-      pending: new Set(approvals.filter(a => a.status === 'pending').map(a => a.decisionId)),
-      rejected: new Set(approvals.filter(a => a.status === 'rejected').map(a => a.decisionId)),
-      decisions: new Map<string, Decision>([...decisions.map(d => [d.decisionId, d] as const), ...approvals.map(a => [a.decisionId, a.decision] as const)]),
-    }
-  }, [gw, id])
-  const { data, error, refresh } = usePoll(load, 2500, `chat:${id}`)
+  const load = useCallback(() => loaders.chat(gw, id), [gw, id])
+  // While a reply is on its way, look every 0.6 s; otherwise every 2.5 s.
+  const [expecting, setExpecting] = useState(false)
+  const { data, error, refresh } = usePoll(load, expecting ? 600 : 2500, `chat:${id}`)
 
   const saved = threadOf(data?.tasks ?? [])
   // A sent message shows at once; it disappears from the outbox when the gateway's copy arrives.
   const lines = [...saved, ...outbox.filter(o => !saved.some(s => s.from === 'owner' && s.text === o.text && s.at >= o.at.slice(0, 16)))]
-  const waiting = (data?.tasks ?? []).find(t => t.status === 'queued' || t.status === 'working')
-  const notListening = waiting?.status === 'queued' && now - Date.parse(waiting.createdAt) > UNANSWERED_MS
-  const presence = !data ? '' : !data.active ? 'Not running' : notListening ? 'Offline' : waiting ? 'Thinking…' : 'Online'
+  // Typing dots only while an answer is plausibly on its way; a message nobody collected, or one the agent went silent on, says so.
+  const { presence: state } = presenceOf(data?.tasks ?? [], now)
+  const thinking = state === 'thinking'
+  useEffect(() => { setExpecting(thinking || outbox.length > 0) }, [thinking, outbox.length])
+  const notListening = state === 'offline' || state === 'stalled'
+  const presence = !data ? '' : !data.active ? 'Not running' : state === 'offline' ? 'Offline' : state === 'stalled' ? 'Not answering' : thinking ? 'Thinking…' : 'Online'
 
-  useEffect(() => { setTimeout(() => scroll.current?.scrollToEnd({ animated: true }), 60) }, [lines.length, Boolean(waiting)])
+  useEffect(() => { setTimeout(() => scroll.current?.scrollToEnd({ animated: true }), 60) }, [lines.length, thinking])
 
   async function send(raw: string) {
     const text = raw.trim()
@@ -88,7 +87,7 @@ export default function Chat() {
               <T v="bodyStrong" lines={1} style={{ fontSize: 17 }}>{data?.agent ?? 'Agent'}</T>
               {presence ? (
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <Dot color={live ? C.green : presence === 'Offline' ? C.red : C.text3} />
+                  <Dot color={live ? C.green : notListening ? C.red : C.text3} />
                   <T v="small" style={{ fontSize: 13 }}>{presence}</T>
                 </View>
               ) : null}
@@ -108,19 +107,30 @@ export default function Chat() {
                 </View>
               )
             })}
-            {waiting && !notListening && data?.active ? <Typing /> : null}
-            {notListening ? (
+            {thinking && data?.active ? <Typing /> : null}
+            {state === 'offline' ? (
               <Animated.View entering={FadeIn} style={{ marginTop: 14, padding: 14, borderRadius: R.card, backgroundColor: C.card, gap: 6 }}>
                 <T v="bodyStrong" style={{ fontSize: 15 }}>{data?.agent ?? 'Your agent'} is offline</T>
                 <T v="sub">Your message is saved and gets an answer as soon as the agent runs. On your computer: pnpm live:app</T>
               </Animated.View>
             ) : null}
+            {state === 'stalled' ? (
+              <Animated.View entering={FadeIn} style={{ marginTop: 14, padding: 14, borderRadius: R.card, backgroundColor: C.card, gap: 6 }}>
+                <T v="bodyStrong" style={{ fontSize: 15 }}>{data?.agent ?? 'Your agent'} stopped answering</T>
+                <T v="sub">Nothing is paid without your yes. Send your message again once the agent is running: pnpm live:app</T>
+              </Animated.View>
+            ) : null}
           </ScrollView>
 
-          {data?.active && lines.length > 0 && !waiting && !draft ? (
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingHorizontal: 16, paddingBottom: 8 }} style={{ flexGrow: 0 }}>
-              {SUGGESTIONS.map(s => <Chip key={s} text={s} onPress={() => void send(s)} />)}
-            </ScrollView>
+          {/* Hidden while the agent is actually answering, but shown again once it has clearly stopped listening: a message
+              stuck in the queue would otherwise hide the suggestions for as long as the agent stays offline. */}
+          {data?.active && lines.length > 0 && !thinking && !draft && !typing ? (
+            // A sideways row gets no height of its own in this column, and iOS clipped the chips' tops and bottoms: give it one.
+            <View style={{ height: 52 }}>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingHorizontal: 16, alignItems: 'center' }}>
+                {SUGGESTIONS.map(s => <Chip key={s} text={s} onPress={() => void send(s)} />)}
+              </ScrollView>
+            </View>
           ) : null}
 
           <View style={{ paddingHorizontal: 12, paddingTop: 6, paddingBottom: 6, gap: 6 }}>
@@ -129,7 +139,7 @@ export default function Chat() {
               <T v="sub" style={{ textAlign: 'center', paddingVertical: 12 }}>{data.agent} isn’t running right now. Your conversation is kept, and it carries on here when {data.agent} runs again.</T>
             ) : (
               <Glass radius={26} style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 8, padding: 4 }}>
-                <TextInput value={draft} onChangeText={setDraft} placeholder={`Message ${data?.agent ?? 'your agent'}`} placeholderTextColor={C.text3} multiline maxLength={500}
+                <TextInput value={draft} onChangeText={setDraft} onFocus={() => setTyping(true)} onBlur={() => setTyping(false)} placeholder={`Message ${data?.agent ?? 'your agent'}`} placeholderTextColor={C.text3} multiline maxLength={500}
                   style={{ flex: 1, minHeight: 40, maxHeight: 120, backgroundColor: 'transparent', color: C.text, fontFamily: F.regular, fontSize: 16, paddingHorizontal: 14, paddingTop: 10, paddingBottom: 10 }} />
                 <Pressable onPress={() => void send(draft)} disabled={!draft.trim()} accessibilityLabel="Send"
                   style={({ pressed }) => ({ width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: draft.trim() ? C.button : C.card2, transform: [{ scale: pressed ? 0.92 : 1 }] })}>
@@ -161,8 +171,8 @@ function Welcome({ agent, active, onPick }: { agent: string; active: boolean; on
 
 function Chip({ text, onPress, wide }: { text: string; onPress: () => void; wide?: boolean }) {
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => ({ paddingVertical: 10, paddingHorizontal: 14, borderRadius: R.pill, borderWidth: 1, borderColor: C.card3, backgroundColor: pressed ? C.card2 : 'transparent', alignItems: wide ? 'center' : undefined })}>
-      <T v="sub" style={{ color: C.text, fontSize: 15 }}>{text}</T>
+    <Pressable onPress={onPress} accessibilityRole="button" style={({ pressed }) => ({ height: 40, justifyContent: 'center', paddingHorizontal: 16, borderRadius: R.pill, borderWidth: 1, borderColor: C.card3, backgroundColor: pressed ? C.card2 : 'transparent', alignItems: wide ? 'center' : undefined })}>
+      <T v="sub" lines={1} style={{ color: C.text, fontSize: 15, lineHeight: 20 }}>{text}</T>
     </Pressable>
   )
 }

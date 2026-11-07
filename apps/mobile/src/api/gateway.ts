@@ -1,3 +1,4 @@
+import { lanes, Yielded } from './lanes'
 import { z } from 'zod'
 
 /**
@@ -38,8 +39,17 @@ export const Decision = z.object({
   checks: z.array(Check),
   state: z.string(),
   createdAt: z.string(),
+  /** The payment's transaction on the blockchain, once signed (GET /v1/decisions/:id only). */
+  onchain: z.object({ network: z.string(), txHash: z.string(), from: z.string(), explorer: z.string().optional() }).optional(),
 })
 export type Decision = z.infer<typeof Decision>
+
+/** Explorers the phone will open. A link from anywhere else is not opened, even from the owner's own gateway. */
+const EXPLORERS = new Set(['nearblocks.io', 'etherscan.io', 'optimistic.etherscan.io', 'polygonscan.com', 'basescan.org', 'arbiscan.io'])
+export function safeExplorer(url: string | undefined): string | undefined {
+  if (!url) return undefined
+  try { const u = new URL(url); return u.protocol === 'https:' && EXPLORERS.has(u.hostname) && !u.username && !u.password ? u.toString() : undefined } catch { return undefined }
+}
 
 const Approval = z.object({
   decisionId: z.string(),
@@ -168,7 +178,7 @@ export function unreachableHelp(baseUrl: string): string[] {
     'Put this phone on the same Wi-Fi as your computer. Not mobile data, not a guest network, and with any VPN off.',
     'Allow local network access: Settings → Privacy & Security → Local Network → turn on Expo Go (or Tollgate).',
     'On your computer, keep the gateway running, started with GATEWAY_HOST=0.0.0.0 in .env.',
-    'If it worked before, your computer may have a new Wi-Fi address. Scan a fresh code: on your computer, dashboard → Pair a phone (it uses the computer’s name, which does not change).',
+    'If it worked before, your computer may have a new Wi-Fi address. Tap Change address: pick another address of your gateway, or scan a fresh code. Nothing is lost.',
     `To test the network on its own, open http://${host}/healthz in Safari on this phone. If it shows "ok", the network is fine and step 2 is the cause.`,
   ]
 }
@@ -192,13 +202,45 @@ export function mandateForNewAgent(a: NewAgent) {
   }
 }
 
-export function createGateway(o: { baseUrl: string; token: string; fetchImpl?: typeof fetch; timeoutMs?: number }) {
+/** What the gateway says about where it can be reached (GET /v1/pairing). */
+const PairingInfo = z.object({ listen: z.string(), port: z.number(), openToNetwork: z.boolean(), addresses: z.array(z.string()), localName: z.string().optional() })
+export type PairingInfoT = z.infer<typeof PairingInfo>
+
+/**
+ * Other addresses the SAME gateway can be reached at, to switch to when the network changes: the computer's .local name first (it
+ * survives a new Wi-Fi number), then its Wi-Fi numbers, all on the port the phone already uses. Each one must pass checkGatewayUrl
+ * (plain http only on a private network or .local) and is never loopback. Learned only from this gateway's own signed-in answer.
+ */
+export function alternatesFrom(currentUrl: string, info: PairingInfoT): string[] {
+  let cur: URL
+  try { cur = new URL(currentUrl) } catch { return [] }
+  const port = cur.port ? `:${cur.port}` : ''
+  const hosts = [...(info.localName ? [info.localName] : []), ...info.addresses]
+  const out: string[] = []
+  for (const h of hosts) {
+    const c = checkGatewayUrl(`${cur.protocol}//${h}${port}`)
+    if (c.ok && !isLoopback(new URL(c.url).hostname) && !out.includes(c.url)) out.push(c.url)
+  }
+  return out
+}
+
+export function createGateway(o: { baseUrl: string; token: string; fetchImpl?: typeof fetch; timeoutMs?: number; lane?: 'user' | 'background' }) {
   const doFetch = o.fetchImpl ?? fetch
   const timeoutMs = o.timeoutMs ?? 15_000 // a gateway on a hosted database can take several seconds; 8 s gave false "not connected"
+  const bg = o.lane === 'background'
 
+  /** Every request goes through its lane (lanes.ts): user requests start at once and cancel background ones; background ones wait. */
   async function call<T>(schema: z.ZodType<T>, method: 'GET' | 'POST', path: string, body?: unknown, auth = true): Promise<T> {
+    if (bg) await lanes.quiet()
+    else lanes.userStart()
+    try { return await send(schema, method, path, body, auth) } finally { if (!bg) lanes.userEnd() }
+  }
+
+  async function send<T>(schema: z.ZodType<T>, method: 'GET' | 'POST', path: string, body?: unknown, auth = true): Promise<T> {
     const ctl = new AbortController()
+    let yielded = false
     const timer = setTimeout(() => ctl.abort(), timeoutMs)
+    if (bg) { ctl.signal.addEventListener('abort', () => { if (ctl.signal.reason instanceof Yielded) yielded = true }); lanes.track(ctl) }
     let res: Response
     try {
       res = await doFetch(`${o.baseUrl}${path}`, {
@@ -208,13 +250,16 @@ export function createGateway(o: { baseUrl: string; token: string; fetchImpl?: t
         ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
       })
     } catch (e) {
+      if (yielded) throw new GatewayError('Paused for something you opened.', 0, 'yielded') // prefetch retries it; never shown
       // A timeout and a refusal both mean the phone never reached the gateway: the same checklist applies to both.
       throw new GatewayError(unreachableMessage(o.baseUrl), 0, ctl.signal.aborted ? 'timeout' : 'unreachable', unreachableHelp(o.baseUrl))
     } finally {
       clearTimeout(timer)
+      if (bg) lanes.untrack(ctl)
     }
     let json: unknown
     try { json = await res.json() } catch { json = undefined }
+    if (yielded) throw new GatewayError('Paused for something you opened.', 0, 'yielded') // cancelled while the body was arriving
     if (!res.ok) {
       const err = (json as { error?: { code?: string; message?: string } } | undefined)?.error
       if (res.status === 401) throw new GatewayError('This key is not accepted. Pair the phone again.', 401, 'unauthorized')
@@ -238,6 +283,8 @@ export function createGateway(o: { baseUrl: string; token: string; fetchImpl?: t
     jobs: () => call(z.object({ jobs: z.array(JobRow) }), 'GET', '/v1/jobs?limit=200').then(r => r.jobs),
     history: () => call(z.object({ history: z.array(HistoryRow) }), 'GET', '/v1/history?limit=200').then(r => r.history),
     services: () => call(z.object({ services: z.array(Service) }), 'GET', '/v1/services').then(r => r.services),
+    /** Where this gateway can be reached (its .local name and Wi-Fi numbers), so the phone can switch address without unpairing. */
+    pairing: () => call(PairingInfo, 'GET', '/v1/pairing'),
     /** The chat with an agent by NAME, across all its runs: an ended run never loses the conversation. */
     conversation: (agentId: string) => call(Conversation, 'GET', `/v1/conversations/${encodeURIComponent(agentId)}?limit=100`),
     /** The chat with one agent, newest task first. */

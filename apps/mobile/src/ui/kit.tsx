@@ -1,4 +1,5 @@
 import * as Haptics from 'expo-haptics'
+import { router } from 'expo-router'
 import { LinearGradient } from 'expo-linear-gradient'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View, type StyleProp, type TextStyle, type ViewStyle } from 'react-native'
@@ -217,8 +218,8 @@ export function ErrorNote({ error, onRetry, compact }: { error: GatewayError | u
           ))}
         </View>
       ) : null}
-      {help.length > 0 || onRetry ? (
-        <View style={{ flexDirection: 'row', gap: 10, paddingLeft: 28 }}>
+      {help.length > 0 || onRetry || offline ? (
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, paddingLeft: 28 }}>
           {help.length > 0 ? (
             <Pressable onPress={() => setOpen(v => !v)} style={{ paddingVertical: 8, paddingHorizontal: 14, borderRadius: R.pill, backgroundColor: C.card2 }}>
               <T v="sub" style={{ color: C.text }}>{open ? 'Hide steps' : 'How to fix'}</T>
@@ -227,6 +228,12 @@ export function ErrorNote({ error, onRetry, compact }: { error: GatewayError | u
           {onRetry ? (
             <Pressable onPress={onRetry} style={{ paddingVertical: 8, paddingHorizontal: 14, borderRadius: R.pill, backgroundColor: C.button }}>
               <T v="sub" style={{ color: '#000' }}>Try again</T>
+            </Pressable>
+          ) : null}
+          {/* The network changed? Switch to another address of the same gateway, keeping the key. No unpairing. */}
+          {offline ? (
+            <Pressable onPress={() => router.push('/switch')} accessibilityRole="button" style={{ paddingVertical: 8, paddingHorizontal: 14, borderRadius: R.pill, backgroundColor: C.card2 }}>
+              <T v="sub" style={{ color: C.text }}>Change address</T>
             </Pressable>
           ) : null}
         </View>

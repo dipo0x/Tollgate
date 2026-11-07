@@ -39,6 +39,9 @@ console.log(JSON.stringify({
   storage: 'postgres', auditEntries: head.length, frozen: await gateway.isFrozen(), recoveredInterrupted: recovered,
 }))
 // Money held for payments that were allowed but never made is returned when its challenge expires, even if no request ever comes in.
-const sweep = setInterval(() => { gateway.releaseStaleAllowed().catch(e => console.error('sweep failed:', e instanceof Error ? e.message : e)) }, 30_000)
+const sweep = setInterval(() => {
+  gateway.releaseStaleAllowed().catch(e => console.error('sweep failed:', e instanceof Error ? e.message : e))
+  gateway.closeAbandonedTasks().catch(e => console.error('task sweep failed:', e instanceof Error ? e.message : e))
+}, 30_000)
 sweep.unref()
 for (const sig of ['SIGINT', 'SIGTERM'] as const) process.on(sig, () => { server.close(); void close().finally(() => process.exit(0)) })

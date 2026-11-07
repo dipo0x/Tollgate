@@ -4,13 +4,14 @@ import { View } from 'react-native'
 import { money } from '../src/lib/format'
 import { useGateway } from '../src/state/session'
 import { usePoll } from '../src/state/usePoll'
+import { loaders } from '../src/state/loaders'
 import { Card, Circle, ErrorNote, Icon, Loading, Screen, T, Tile, TopBar } from '../src/ui/kit'
 import { C } from '../src/ui/theme'
 
 /** The shops your gateway knows, read-only. Enabling one is done on the computer. */
 export default function Shops() {
   const gw = useGateway()
-  const load = useCallback(() => gw.services(), [gw])
+  const load = useCallback(() => loaders.shops(gw), [gw])
   const { data, error, loading, refresh } = usePoll(load, 15_000, 'shops')
   return (
     <Screen>

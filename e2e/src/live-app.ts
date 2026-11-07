@@ -7,7 +7,7 @@ import { HttpMarket } from '@tollgate/core/market'
 import { NEAR_USDC_CONTRACT } from '@tollgate/core'
 import { plannerReady } from '@tollgate/demo-agent/src/planner.ts'
 import { runTask, type BuyOutcome, type Challenge, type Decision, type WorkerIO } from '@tollgate/demo-agent/src/worker.ts'
-import { BRAIN, CHAT_MODEL, converse, OLLAMA_CHAT_MODEL, type ChatTurn } from '@tollgate/demo-agent/src/claude-agent.ts'
+import { BRAIN, CHAT_MODEL, converse, OLLAMA_CHAT_MODEL, warmOllama, type ChatTurn } from '@tollgate/demo-agent/src/claude-agent.ts'
 import type { PlannerService } from '@tollgate/demo-agent/src/spend.ts'
 import { lanAddress, makeTmp, nearFunds, ownerRecord, pairingQr, removeTmp, ROOT, start, waitFor, type Proc, phoneHost } from './harness.ts'
 
@@ -37,7 +37,8 @@ if (!LAN) { console.error('No Wi-Fi or network address found. Connect this compu
 const KEY = need('NEAR_1CLICK_API_KEY'), PAYEE = need('MERCHANT_NEAR_ACCOUNT'), DEAL = need('WORKERS_DEAL_SECRET'), OP = need('GATEWAY_OPERATOR_TOKEN')
 const REC = ownerRecord(), DB = REC.db
 const NEAR_KEY = `${ROOT}.signer-near-key`, EVM_KEY = `${ROOT}.signer-key`, AGENT_FILE = `${ROOT}.live-agent.json`
-const RPC = process.env['NEAR_RPC_URL'] ?? 'https://rpc.mainnet.near.org'
+// FastNEAR: the same chain, answered in ~0.3 s. rpc.mainnet.near.org is throttled (3.5-19 s a call, measured 8 Nov). NEAR_RPC_URL overrides.
+const RPC = process.env['NEAR_RPC_URL'] ?? 'https://free.rpc.fastnear.com'
 // NEAR AI Agent Market sellers this agent may hire. The owner's choice: each becomes a shop in the registry.
 const MARKET_SELLERS = (process.env['LIVE_MARKET_SELLERS'] ?? 'contract-health-auditor').split(',').map(x => x.trim()).filter(Boolean)
 const HOSTS = ['127.0.0.1', '*.market.near.ai']
@@ -220,19 +221,37 @@ Ctrl+C stops everything.`)
     const tasks = (r.json?.tasks ?? []) as { messages: { at: string; from: 'owner' | 'agent'; text: string }[] }[]
     return tasks.flatMap(t => t.messages).sort((a, b) => a.at.localeCompare(b.at)).slice(-40).map(m => ({ from: m.from, text: m.text }))
   }
+  // The message just claimed is always in the history, even if a read lags behind the write.
+  const withTask = (h: ChatTurn[], msgs: { at: string; from: 'owner' | 'agent'; text: string }[]): ChatTurn[] =>
+    msgs.every(m => h.some(t => t.from === m.from && t.text === m.text)) ? h : [...h, ...msgs.map(m => ({ from: m.from, text: m.text }))]
+  if (!SCRIPTED && (BRAIN === 'ollama' || !HAS_CLAUDE || BRAIN === 'auto')) {
+    const w = await warmOllama()
+    console.log(w.ok ? `  Ollama ${OLLAMA_CHAT_MODEL} loaded and kept in memory (${(w.ms / 1000).toFixed(1)} s)` : `  Ollama ${OLLAMA_CHAT_MODEL} could not be loaded: is Ollama running?`)
+  }
   const limits = { allowedHosts: HOSTS, perPayment: Number(SIGNER_CAP), reserve: 0, useLlm: LLM, approvalWaitMs: 8 * 60_000, settleTries: 60 }
 
   // The agent's loop: collect the next task for its own mandate, work it, repeat. One task at a time.
   while (!stopping) {
     const next = await call('POST', `${GW}/v1/tasks/next`, A.token).catch(() => undefined)
-    const task = next?.status === 200 ? next.json.task as { id: string; messages: { text: string }[] } | null : null
-    if (!task) { await sleep(2000); continue }
+    const task = next?.status === 200 ? next.json.task as { id: string; messages: { at: string; from: 'owner' | 'agent'; text: string }[] } | null : null
+    if (!task) { await sleep(300); continue }
     current = task
     console.log(`task ${task.id}: working`)
-    const status = !SCRIPTED
-      ? await converse(await conversation(), ioFor(task.id), limits)
-      : await runTask(task.messages[0]?.text ?? '', ioFor(task.id), limits)
-    console.log(`task ${task.id}: ${status}`)
+    // The lease: while this task is open, tell the gateway every 20 s that the agent is still on it. If this process dies, the
+    // heartbeats stop and the gateway closes the task after 90 s (TASK_LEASE_MS), so the phone never shows "typing" forever.
+    const beat = setInterval(() => { void call('POST', `${GW}/v1/tasks/${task.id}/alive`, A.token).catch(() => {}) }, 20_000)
+    try {
+      const status = !SCRIPTED
+        ? await converse(withTask(await conversation(), task.messages), ioFor(task.id), limits)
+        : await runTask(task.messages[0]?.text ?? '', ioFor(task.id), limits)
+      console.log(`task ${task.id}: ${status}`)
+    } catch (e) {
+      // A throw here used to end the whole loop with the task still open. Close it and keep collecting messages.
+      console.error(`task ${task.id}: failed (${(e as Error).message})`)
+      await call('POST', `${GW}/v1/tasks/${task.id}/reply`, A.token, { text: 'I stopped part-way on this one. If nothing says it was paid, nothing was. Send it again.', status: 'failed' }).catch(() => {})
+    } finally {
+      clearInterval(beat)
+    }
     current = null
   }
 } catch (e) {

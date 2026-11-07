@@ -1,13 +1,14 @@
 import * as Haptics from 'expo-haptics'
 import { router, useLocalSearchParams } from 'expo-router'
 import { useCallback, useState } from 'react'
-import { Alert, Pressable, View } from 'react-native'
+import { Alert, Linking, Pressable, View } from 'react-native'
 import Animated, { FadeIn, ZoomIn } from 'react-native-reanimated'
-import { GatewayError } from '../../src/api/gateway'
+import { GatewayError, safeExplorer } from '../../src/api/gateway'
 import { CHECK_NAME, checkSummary, shortId, timeLeft } from '../../src/lib/format'
 import { confirmWithFace, useGateway } from '../../src/state/session'
 import { useNow, usePoll } from '../../src/state/usePoll'
 import { Amount, Card, Circle, Dot, ErrorNote, HoldButton, Icon, Loading, Pill, Row, Screen, T, TopBar } from '../../src/ui/kit'
+import { TxLink } from '../../src/ui/TxLink'
 import { C, R } from '../../src/ui/theme'
 
 /**
@@ -65,6 +66,10 @@ export default function Approval() {
 
   const settled = data?.d?.state === 'settled'
   const notPaid = data?.d && ['released', 'expired', 'rejected'].includes(data.d.state)
+  // The transaction appears here as soon as the signer has signed it: the screen keeps polling the decision after you approve,
+  // so you can open it on a public explorer without leaving for the Activity tab.
+  const onchain = data?.d?.onchain
+  const link = safeExplorer(onchain?.explorer)
 
   return (
     <Screen>
@@ -119,6 +124,22 @@ export default function Approval() {
                 {phase === 'rejected' ? 'Rejected. Nothing was paid.' : settled ? 'Paid and settled' : notPaid ? 'Approved, but not paid' : 'Approved. The agent can pay now.'}
               </T>
             </View>
+            {phase === 'approved' && onchain ? (
+              <View style={{ alignSelf: 'stretch', gap: 10 }}>
+                <Card>
+                  <Row first title="Network" right={<T>{onchain.network}</T>} />
+                  <Row title="Transaction" sub={settled ? 'Confirmed paid by 1Click' : 'Signed and sent. It shows on the chain once confirmed.'}
+                    right={<TxLink hash={onchain.txHash} explorer={onchain.explorer} />} />
+                </Card>
+                {link ? (
+                  <Pressable onPress={() => void Linking.openURL(link)} accessibilityRole="link" accessibilityLabel={`View on ${new URL(link).hostname}`}
+                    style={({ pressed }) => ({ height: 52, borderRadius: 26, backgroundColor: C.card, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, opacity: pressed ? 0.7 : 1 })}>
+                    <Icon name="globe" size={18} color={C.text} width={2.2} />
+                    <T v="bodyStrong" style={{ fontSize: 17 }}>View on {new URL(link).hostname}</T>
+                  </Pressable>
+                ) : null}
+              </View>
+            ) : null}
             <Pill title="Done" onPress={() => router.back()} style={{ alignSelf: 'stretch' }} />
           </Animated.View>
         ) : a?.status === 'pending' ? (

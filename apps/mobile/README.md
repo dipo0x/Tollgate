@@ -56,7 +56,10 @@ error on screen, never a guess.
   but the key itself can do more. Approver keys are the next gateway change.
 - The gateway listens on `127.0.0.1` by default. `GATEWAY_HOST=0.0.0.0` (or `pnpm sandbox:phone`) lets a phone on the same
   Wi-Fi reach it over plain http; anything beyond a home network needs https in front (a reverse proxy) on your own server.
-- Not built yet: chat with an agent, push notifications, pausing (as opposed to stopping) one agent.
+- Alerts are local notifications raised by the app while it runs, not push: real push needs the paid Apple Developer Program.
+  See `src/state/alerts.ts`. The badge always shows how many payments are waiting, so nothing is missed.
+- Face ID needs a development build. In Expo Go `expo-local-authentication` falls back to the device passcode.
+- Not built yet: push notifications, pausing (as opposed to stopping) one agent.
 - Font: Satoshi (Fontshare, ITF Free Font License). The licence allows embedding it in the app but not redistributing the
   files from a repository, so they are git-ignored and `scripts/get-fonts.mjs` fetches them before `start` / `ios` (about 2 MB, once).
 
@@ -75,4 +78,5 @@ Both read the same gateway, so data is always in step. Features:
 | Add an agent | ✓ (always needs approval) | not yet |
 | Stop an agent | ✓ | not yet |
 | Message an agent (task inbox) | ✓ chat | ✓ on each agent card |
+| Jobs and imported runs | ✓ read-only | ✓ |
 | Audit log | not yet | ✓ |

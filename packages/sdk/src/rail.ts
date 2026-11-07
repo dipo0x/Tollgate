@@ -54,7 +54,8 @@ export function httpRpcRail(urls: Readonly<Record<string, string>>, doFetch: typ
 /**
  * A Rail for paying FROM NEAR, over plain NEAR JSON-RPC. `publicKey` is the signer's PUBLIC key (from the signer's /healthz), used
  * to read that key's nonce. The signed bytes come from the gateway; this only reads chain state and broadcasts. Mainnet RPC:
- * https://rpc.mainnet.near.org (or any provider listed at https://docs.near.org/api/rpc/providers).
+ * https://free.rpc.fastnear.com (or any provider listed at https://docs.near.org/api/rpc/providers). Avoid rpc.mainnet.near.org:
+ * it is throttled, and a payment's nonce and broadcast can take 3-19 s there.
  */
 export function nearRpcRail(o: { rpcUrl: string; publicKey: string }, doFetch: typeof fetch = fetch): Rail {
   async function rpc<T>(method: string, params: unknown): Promise<T> {

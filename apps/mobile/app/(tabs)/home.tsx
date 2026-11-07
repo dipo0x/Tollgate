@@ -4,6 +4,7 @@ import { Pressable, View } from 'react-native'
 import Animated, { FadeIn } from 'react-native-reanimated'
 import { useGateway } from '../../src/state/session'
 import { useNow, usePoll } from '../../src/state/usePoll'
+import { loaders } from '../../src/state/loaders'
 import { kindOf, KIND_LABEL, money, timeLeft, when } from '../../src/lib/format'
 import { Card, Circle, Dot, ErrorNote, Glyph, Icon, KindIcon, Loading, Screen, T } from '../../src/ui/kit'
 import { C, F, R } from '../../src/ui/theme'
@@ -15,10 +16,7 @@ import { C, F, R } from '../../src/ui/theme'
 export default function Home() {
   const gw = useGateway()
   const now = useNow()
-  const load = useCallback(async () => {
-    const [status, mandates, approvals, decisions] = await Promise.all([gw.status(), gw.mandates(), gw.approvals(), gw.decisions(20)])
-    return { status, mandates, approvals, decisions }
-  }, [gw])
+  const load = useCallback(() => loaders.home(gw), [gw])
   const { data, error, loading, refresh } = usePoll(load, 4000, 'home')
 
   const active = (data?.mandates ?? []).filter(m => m.status === 'active' && !m.parentId)

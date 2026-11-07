@@ -4,6 +4,7 @@ import { Pressable, View } from 'react-native'
 import { kindOf, KIND_LABEL, when, type Kind } from '../../src/lib/format'
 import { useGateway } from '../../src/state/session'
 import { useNow, usePoll } from '../../src/state/usePoll'
+import { loaders } from '../../src/state/loaders'
 import { Chips, ErrorNote, KindIcon, Loading, Screen, T } from '../../src/ui/kit'
 import { C } from '../../src/ui/theme'
 
@@ -17,7 +18,7 @@ export default function Activity() {
   const gw = useGateway()
   const now = useNow()
   const [f, setF] = useState<Filter>('all')
-  const load = useCallback(() => gw.decisions(100), [gw])
+  const load = useCallback(() => loaders.activity(gw), [gw])
   const { data, error, loading, refresh } = usePoll(load, 6000, 'activity')
   const rows = (data ?? []).filter(d => MATCH[f](kindOf(d)))
 
