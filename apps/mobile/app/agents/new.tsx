@@ -5,13 +5,14 @@ import { useCallback, useEffect, useState } from 'react'
 import { Pressable, TextInput, View } from 'react-native'
 import Animated, { FadeIn, ZoomIn } from 'react-native-reanimated'
 import { GatewayError } from '../../src/api/gateway'
+import { parseUsd } from '../../src/lib/format'
 import { confirmWithFace, useGateway } from '../../src/state/session'
 import { usePoll } from '../../src/state/usePoll'
 import { Card, Circle, ErrorNote, Icon, Label, Pill, Row, Screen, T, TopBar } from '../../src/ui/kit'
 import { C, F } from '../../src/ui/theme'
 
-const STEP = 0.05
-const round = (n: number) => Math.round(n * 100) / 100
+const BUDGET_PICKS = [5, 10, 25, 50, 100]
+const PER_PICKS = [1, 2, 5, 10]
 
 /**
  * Add an agent from the phone. The one rule: it always starts with every payment needing the owner's yes (approval.above 0.00,
@@ -24,8 +25,9 @@ export default function NewAgent() {
   const { data: services, error } = usePoll(load, 30_000)
   const shops = (services ?? []).filter(s => s.enabled)
   const [name, setName] = useState('')
-  const [budget, setBudget] = useState(0.5)
-  const [per, setPer] = useState(0.25)
+  // Typed as text so the owner can write any amount; parsed (parseUsd, tested) before anything is sent.
+  const [budgetText, setBudgetText] = useState('10')
+  const [perText, setPerText] = useState('2')
   const [hosts, setHosts] = useState<string[]>([])
   const [busy, setBusy] = useState(false)
   const [problem, setProblem] = useState<string | null>(null)
@@ -33,7 +35,10 @@ export default function NewAgent() {
   const [copied, setCopied] = useState(false)
 
   useEffect(() => { if (hosts.length === 0 && shops.length > 0) setHosts([shops[0]!.host]) }, [shops.length]) // eslint-disable-line react-hooks/exhaustive-deps
-  const ok = /^[a-z0-9][a-z0-9-]{1,23}$/.test(name) && hosts.length > 0 && per <= budget
+  const b = parseUsd(budgetText), p = parseUsd(perText)
+  const budget = b.ok ? b.value : 0, per = p.ok ? p.value : 0
+  const perTooBig = b.ok && p.ok && per > budget
+  const ok = /^[a-z0-9][a-z0-9-]{1,23}$/.test(name) && hosts.length > 0 && b.ok && p.ok && !perTooBig
 
   async function create() {
     setProblem(null)
@@ -56,7 +61,7 @@ export default function NewAgent() {
         <Animated.View entering={FadeIn} style={{ marginTop: 30, alignItems: 'center', gap: 10 }}>
           <Animated.View entering={ZoomIn.springify()} style={{ width: 72, height: 72, borderRadius: 36, backgroundColor: C.greenBg, alignItems: 'center', justifyContent: 'center' }}><Icon name="check" size={32} color={C.green} width={2.6} /></Animated.View>
           <T v="h1">{name} is ready</T>
-          <T v="sub" style={{ fontSize: 15 }}>{budget.toFixed(2)} USDC budget · {per.toFixed(2)} max a payment</T>
+          <T v="sub" style={{ fontSize: 15 }}>${budget.toFixed(2)} budget · ${per.toFixed(2)} max a payment</T>
         </Animated.View>
         <Card style={{ marginTop: 26 }}>
           <Row first title="Agent key" sub="Shown once. Put it in your agent’s Tollgate settings." right={
@@ -69,14 +74,35 @@ export default function NewAgent() {
     )
   }
 
-  const stepper = (label: string, hint: string, v: number, set: (n: number) => void, min: number, max: number, first?: boolean) => (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 12, borderTopWidth: first ? 0 : 1, borderTopColor: C.sep }}>
-      <View style={{ flex: 1, gap: 2 }}><T>{label}</T><T v="small">{hint}</T></View>
-      <Pressable accessibilityLabel={`Less ${label}`} onPress={() => set(Math.max(min, round(v - STEP)))} style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: C.card2, alignItems: 'center', justifyContent: 'center' }}><Icon name="minus" size={16} width={2.4} /></Pressable>
-      <T v="bodyStrong" style={{ minWidth: 48, textAlign: 'center', fontSize: 17, fontVariant: ['tabular-nums'] }}>{v.toFixed(2)}</T>
-      <Pressable accessibilityLabel={`More ${label}`} onPress={() => set(Math.min(max, round(v + STEP)))} style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: C.card2, alignItems: 'center', justifyContent: 'center' }}><Icon name="plus" size={16} width={2.4} /></Pressable>
-    </View>
-  )
+  /** A typed dollar amount with quick picks underneath. The pick matching the current amount is highlighted. */
+  const amountField = (label: string, hint: string, text: string, set: (t: string) => void, picks: number[], problemText: string | null, first?: boolean) => {
+    const cur = parseUsd(text)
+    return (
+      <View style={{ paddingHorizontal: 16, paddingVertical: 12, gap: 10, borderTopWidth: first ? 0 : 1, borderTopColor: C.sep }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+          <View style={{ flex: 1, gap: 2 }}><T>{label}</T><T v="small">{hint}</T></View>
+          <View style={{ flexDirection: 'row', alignItems: 'center', height: 44, paddingHorizontal: 12, borderRadius: 12, backgroundColor: C.card2, minWidth: 116 }}>
+            <T v="bodyStrong" style={{ fontSize: 18, color: C.text2 }}>$</T>
+            <TextInput value={text} onChangeText={t => set(t.replace(/[^0-9.]/g, '').slice(0, 10))} keyboardType="decimal-pad" inputMode="decimal" selectTextOnFocus
+              accessibilityLabel={`${label} in dollars`} placeholder="0" placeholderTextColor={C.text3}
+              style={{ flex: 1, marginLeft: 4, color: C.text, fontFamily: F.semibold, fontSize: 18, textAlign: 'right', fontVariant: ['tabular-nums'], paddingVertical: 0 }} />
+          </View>
+        </View>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+          {picks.map(v => {
+            const on = cur.ok && cur.value === v
+            return (
+              <Pressable key={v} onPress={() => set(String(v))} accessibilityRole="button" accessibilityLabel={`${label} $${v}`}
+                style={{ height: 32, paddingHorizontal: 14, borderRadius: 16, backgroundColor: on ? C.button : C.card2, justifyContent: 'center' }}>
+                <T v="bodyStrong" style={{ fontSize: 14, color: on ? '#000' : C.text }}>${v}</T>
+              </Pressable>
+            )
+          })}
+        </View>
+        {problemText ? <T v="small" style={{ color: C.red }}>{problemText}</T> : null}
+      </View>
+    )
+  }
 
   return (
     <Screen>
@@ -89,8 +115,9 @@ export default function NewAgent() {
         </View>
       </Card>
       <Card style={{ marginTop: 12 }}>
-        {stepper('Budget', 'Total it can ever spend', budget, n => { setBudget(n); setPer(p => Math.min(p, n)) }, STEP, 5, true)}
-        {stepper('Max per payment', 'No single payment above this', per, n => setPer(Math.min(n, budget)), STEP, budget)}
+        {amountField('Budget', 'Total it can ever spend', budgetText, setBudgetText, BUDGET_PICKS, budgetText && !b.ok ? b.why : null, true)}
+        {amountField('Max per payment', 'No single payment above this', perText, setPerText, PER_PICKS,
+          perText && !p.ok ? p.why : perTooBig ? 'Can’t be more than the budget.' : null)}
       </Card>
       <Label>Shops it may pay</Label>
       <ErrorNote error={error} />
@@ -100,8 +127,9 @@ export default function NewAgent() {
           const on = hosts.includes(s.host)
           return (
             <Pressable key={s.id} onPress={() => setHosts(h => on ? h.filter(x => x !== s.host) : [...h, s.host])} accessibilityRole="checkbox" accessibilityState={{ checked: on }}
-              style={{ height: 36, paddingHorizontal: 14, borderRadius: 18, backgroundColor: on ? C.button : C.card, justifyContent: 'center' }}>
+              style={{ paddingVertical: 8, paddingHorizontal: 14, borderRadius: 18, backgroundColor: on ? C.button : C.card, justifyContent: 'center' }}>
               <T v="bodyStrong" style={{ fontSize: 15, color: on ? '#000' : C.text }}>{s.name}</T>
+              <T v="small" style={{ fontSize: 12, color: on ? '#3A3A3C' : C.text2 }}>{s.host}</T>
             </Pressable>
           )
         })}

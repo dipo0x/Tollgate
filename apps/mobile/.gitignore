@@ -1,0 +1,4 @@
+# Native projects are generated from app.json by `expo prebuild`; never edit or commit them.
+/ios
+/android
+.expo/

@@ -12,9 +12,12 @@ import { z } from 'zod'
  */
 
 export class GatewayError extends Error {
-  constructor(message: string, readonly status: number, readonly code?: string) {
+  /** Steps the owner can take, shown behind "How to fix" so the message itself stays one short line. */
+  readonly help: readonly string[]
+  constructor(message: string, readonly status: number, readonly code?: string, help: readonly string[] = []) {
     super(message)
     this.name = 'GatewayError'
+    this.help = help
   }
 }
 
@@ -139,14 +142,28 @@ const isLoopback = (host: string) => /^(localhost|127\.\d+\.\d+\.\d+|\[::1\])$/i
 export const LOOPBACK_CODE = 'This code points at 127.0.0.1, which on a phone means the phone itself, so it can never reach your computer. On your computer, update Tollgate and press Pair a phone again: the new code uses your computer’s Wi-Fi address.'
 
 /**
- * Why a phone could not reach the gateway, as steps a person can act on. The network gives no reason (a refused connection and a
- * blocked one look the same from here), so the message lists the causes that actually happen, most likely first.
+ * The phone never reached the gateway. The network gives no reason (refused, blocked and timed out look the same from here),
+ * so the message stays short and names the address; the steps list the causes that actually happen, most likely first.
  */
 export function unreachableMessage(baseUrl: string): string {
-  let host = baseUrl
-  try { host = new URL(baseUrl).host } catch { /* show it as given */ }
+  const host = hostOf(baseUrl)
   if (isLoopback(host.replace(/:\d+$/, ''))) return LOOPBACK_CODE
-  return `Your phone could not reach your gateway at ${host}. Check that:\n• this phone is on the same Wi-Fi as your computer (not mobile data, not a guest network)\n• the gateway is running on your computer\n• the gateway was started with GATEWAY_HOST=0.0.0.0 in .env, so it accepts connections from your Wi-Fi\n• your computer's firewall allows incoming connections for it.`
+  return `Can’t reach your computer at ${host}.`
+}
+
+export function unreachableHelp(baseUrl: string): string[] {
+  const host = hostOf(baseUrl)
+  if (isLoopback(host.replace(/:\d+$/, ''))) return []
+  return [
+    'Put this phone on the same Wi-Fi as your computer. Not mobile data, not a guest network, and with any VPN off.',
+    'Allow local network access: Settings → Privacy & Security → Local Network → turn on Expo Go (or Tollgate).',
+    'On your computer, keep the gateway running, started with GATEWAY_HOST=0.0.0.0 in .env.',
+    `To test the network on its own, open http://${host}/healthz in Safari on this phone. If it shows "ok", the network is fine and step 2 is the cause.`,
+  ]
+}
+
+function hostOf(baseUrl: string): string {
+  try { return new URL(baseUrl).host } catch { return baseUrl }
 }
 
 /** A mandate an agent added from the phone may hold. Every payment needs the owner: approval.above is 0.00, always. */
@@ -181,7 +198,7 @@ export function createGateway(o: { baseUrl: string; token: string; fetchImpl?: t
       })
     } catch (e) {
       // A timeout and a refusal both mean the phone never reached the gateway: the same checklist applies to both.
-      throw new GatewayError(unreachableMessage(o.baseUrl), 0, ctl.signal.aborted ? 'timeout' : 'unreachable')
+      throw new GatewayError(unreachableMessage(o.baseUrl), 0, ctl.signal.aborted ? 'timeout' : 'unreachable', unreachableHelp(o.baseUrl))
     } finally {
       clearTimeout(timer)
     }

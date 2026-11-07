@@ -180,13 +180,44 @@ export function Dot({ color }: { color: string }) {
 
 /** The gateway is not answering, or refused: say so plainly. The screen keeps showing the last good data underneath. */
 export function ErrorNote({ error, onRetry }: { error: GatewayError | undefined; onRetry?: () => void }) {
+  const [open, setOpen] = useState(false)
   if (!error) return null
+  const offline = error.code === 'unreachable' || error.code === 'timeout'
+  const help = error.help ?? []
   return (
-    <Pressable onPress={onRetry} disabled={!onRetry} style={{ marginTop: 14, padding: 14, borderRadius: R.card, backgroundColor: C.redBg, flexDirection: 'row', gap: 10, alignItems: 'center' }}>
-      <Icon name="info" size={18} color={C.red} />
-      <T v="sub" style={{ flex: 1, color: C.text }}>{error.message}</T>
-      {onRetry ? <T v="bodyStrong" style={{ fontSize: 14 }}>Retry</T> : null}
-    </Pressable>
+    <View style={{ marginTop: 14, padding: 16, borderRadius: R.card, backgroundColor: C.redBg, gap: 12 }}>
+      <View style={{ flexDirection: 'row', gap: 10, alignItems: 'flex-start' }}>
+        <View style={{ paddingTop: 2 }}><Icon name="info" size={18} color={C.red} /></View>
+        <View style={{ flex: 1, gap: 4 }}>
+          <T v="bodyStrong" style={{ fontSize: 15 }}>{offline ? 'Not connected' : 'Something went wrong'}</T>
+          <T v="sub" style={{ color: C.text2 }}>{error.message}</T>
+        </View>
+      </View>
+      {open && help.length > 0 ? (
+        <View style={{ gap: 10, paddingLeft: 28 }}>
+          {help.map((step, i) => (
+            <View key={i} style={{ flexDirection: 'row', gap: 10 }}>
+              <T v="sub" style={{ color: C.text3, width: 14 }}>{i + 1}</T>
+              <T v="sub" style={{ flex: 1, color: C.text }}>{step}</T>
+            </View>
+          ))}
+        </View>
+      ) : null}
+      {help.length > 0 || onRetry ? (
+        <View style={{ flexDirection: 'row', gap: 10, paddingLeft: 28 }}>
+          {help.length > 0 ? (
+            <Pressable onPress={() => setOpen(v => !v)} style={{ paddingVertical: 8, paddingHorizontal: 14, borderRadius: R.pill, backgroundColor: C.card2 }}>
+              <T v="sub" style={{ color: C.text }}>{open ? 'Hide steps' : 'How to fix'}</T>
+            </Pressable>
+          ) : null}
+          {onRetry ? (
+            <Pressable onPress={onRetry} style={{ paddingVertical: 8, paddingHorizontal: 14, borderRadius: R.pill, backgroundColor: C.button }}>
+              <T v="sub" style={{ color: '#000' }}>Try again</T>
+            </Pressable>
+          ) : null}
+        </View>
+      ) : null}
+    </View>
   )
 }
 

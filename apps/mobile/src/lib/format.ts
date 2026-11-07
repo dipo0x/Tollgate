@@ -16,6 +16,20 @@ export function money(v: string | undefined): string {
   return `${whole}.${frac.padEnd(2, '0').slice(0, 2)}`
 }
 
+/**
+ * A dollar amount typed by the owner ("10", "12.5", "$1,000.00") → a number with at most 2 decimals, or a reason it is not one.
+ * USDC is dollars, so cents is the finest step a person types; the gateway still stores it exactly as a decimal string.
+ */
+export function parseUsd(text: string, max = 1_000_000): { ok: true; value: number } | { ok: false; why: string } {
+  const t = text.replace(/[$,\s]/g, '')
+  if (t === '') return { ok: false, why: 'Enter an amount.' }
+  if (!/^\d+(\.\d{0,2})?$/.test(t)) return { ok: false, why: 'Use a dollar amount like 10 or 12.50.' }
+  const value = Number(t)
+  if (!(value > 0)) return { ok: false, why: 'The amount must be more than $0.' }
+  if (value > max) return { ok: false, why: `Keep it at or under $${max.toLocaleString('en-US')}.` }
+  return { ok: true, value }
+}
+
 export function shortId(s: string | undefined, head = 6, tail = 4): string {
   if (!s) return '—'
   return s.length <= head + tail + 1 ? s : `${s.slice(0, head)}…${s.slice(-tail)}`

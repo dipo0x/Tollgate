@@ -12,7 +12,11 @@
       "bundleIdentifier": "xyz.trytollgate.app",
       "supportsTablet": false,
       "infoPlist": {
-        "NSFaceIDUsageDescription": "Tollgate uses Face ID so that only you can approve a payment or unfreeze your agents."
+        "NSFaceIDUsageDescription": "Tollgate uses Face ID so that only you can approve a payment or unfreeze your agents.",
+        "NSLocalNetworkUsageDescription": "Tollgate connects to the gateway on your own computer over your Wi-Fi.",
+        "NSAppTransportSecurity": {
+          "NSAllowsLocalNetworking": true
+        }
       }
     },
     "android": {

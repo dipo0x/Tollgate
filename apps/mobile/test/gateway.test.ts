@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { checkGatewayUrl, createGateway, GatewayError, LOOPBACK_CODE, mandateForNewAgent, parsePairingCode, unreachableMessage } from '../src/api/gateway'
-import { kindOf, money, splitAmount, timeLeft } from '../src/lib/format'
+import { checkGatewayUrl, createGateway, GatewayError, LOOPBACK_CODE, mandateForNewAgent, parsePairingCode, unreachableHelp, unreachableMessage } from '../src/api/gateway'
+import { kindOf, money, parseUsd, splitAmount, timeLeft } from '../src/lib/format'
 
 const reply = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
 
@@ -40,12 +40,16 @@ describe('parsePairingCode: only a Tollgate code pairs the phone', () => {
 })
 
 describe('when the phone cannot reach the gateway, the message says what to check', () => {
-  it('names the address it tried and every common cause, Wi-Fi and GATEWAY_HOST included', () => {
+  it('keeps the message to one short line that names the address it tried', () => {
     const m = unreachableMessage('http://192.168.1.20:8787')
-    expect(m).toContain('192.168.1.20:8787')
-    expect(m).toMatch(/same Wi-Fi/)
-    expect(m).toMatch(/GATEWAY_HOST=0\.0\.0\.0/)
-    expect(m).toMatch(/firewall/)
+    expect(m).toBe('Can’t reach your computer at 192.168.1.20:8787.')
+  })
+  it('puts the causes in the steps: Wi-Fi, iOS local network access, GATEWAY_HOST, and a Safari test', () => {
+    const steps = unreachableHelp('http://192.168.1.20:8787').join('\n')
+    expect(steps).toMatch(/same Wi-Fi/)
+    expect(steps).toMatch(/Local Network/)
+    expect(steps).toMatch(/GATEWAY_HOST=0\.0\.0\.0/)
+    expect(steps).toContain('http://192.168.1.20:8787/healthz')
   })
   it('a typed 127.0.0.1 gets the phone-itself explanation, not the checklist', () => {
     expect(unreachableMessage('http://127.0.0.1:8787')).toBe(LOOPBACK_CODE)
@@ -55,6 +59,7 @@ describe('when the phone cannot reach the gateway, the message says what to chec
     const e = await gw.status().catch(x => x)
     expect(e).toMatchObject({ code: 'unreachable' })
     expect(e.message).toContain('192.168.1.20:8787')
+    expect(e.help).toHaveLength(4)
     expect(e.message).not.toMatch(/^Your gateway cannot be reached\.$/)
   })
 })
@@ -94,6 +99,18 @@ describe('mandateForNewAgent: a phone-created agent can never pay without the ow
     expect(m.approval.firstPayeeRequiresApproval).toBe(true)
     expect(m.refund.mustBePayerOrPinned).toBe(true)
     expect(m.validFrom).toBe('2026-11-07T10:00:00Z')
+  })
+})
+
+describe('parseUsd: what the owner types for a budget or a limit', () => {
+  it('reads plain and formatted dollar amounts', () => {
+    expect(parseUsd('10')).toEqual({ ok: true, value: 10 })
+    expect(parseUsd('$1,250.5')).toEqual({ ok: true, value: 1250.5 })
+    expect(parseUsd('12.')).toEqual({ ok: true, value: 12 })
+  })
+  it('refuses nothing, zero, negatives, sub-cent and junk, with a reason', () => {
+    for (const bad of ['', '0', '0.00', '-5', '1.005', 'ten', '1e3']) expect(parseUsd(bad).ok, bad).toBe(false)
+    expect(parseUsd('2000000')).toMatchObject({ ok: false })
   })
 })
 
