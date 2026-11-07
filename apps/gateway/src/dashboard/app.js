@@ -233,7 +233,8 @@ const PAGE_LOADERS = {
     ])
   },
   mandates() {
-    return api('/v1/mandates').then(r => {
+    return api('/v1/mandates').then(r => Promise.all(r.mandates.map(m => m.status === 'active' ? api('/v1/agents/' + encodeURIComponent(m.id) + '/tasks?limit=5').then(t => t.tasks, () => []) : Promise.resolve([])))
+      .then(threads => { r.mandates.forEach((m, i) => { m.tasks = threads[i] }); return r })).then(r => {
       if (!r.mandates.length) return el('div', { class: 'card' }, el('p', { class: 'empty' }, 'No mandates yet. Create one with POST /v1/mandates.'))
       const ordered = r.mandates.slice().sort((a, b) => (a.parentId ? 1 : 0) - (b.parentId ? 1 : 0))
       return el('div', { class: 'grid g2' }, ordered.map(m => {
@@ -243,7 +244,8 @@ const PAGE_LOADERS = {
           b ? [el('div', { class: 'row wrap' }, el('span', { class: 'bignum' }, money(b.remaining)), el('span', { class: 'muted' }, 'of ' + money(b.total) + ' ' + m.currency + ' remaining')),
             el('div', { class: 'meter' }, el('i', { class: 's', width: pct(b.settled) }), el('i', { class: 'h', width: pct(b.committed) })),
             legend([{ label: 'Spent', c: 'var(--ok)', value: money(b.settled) }, { label: 'Held', c: 'var(--ac)', value: money(b.committed) }, { label: 'Waiting for approval', c: 'var(--ap)', value: money(b.proposed) }])] : [],
-          el('dl', { class: 'kv' }, el('dt', null, 'Per payment'), el('dd', null, m.perPayment + ' ' + m.currency), el('dt', null, 'Valid until'), el('dd', { class: 'mono' }, when(m.validUntil))))
+          el('dl', { class: 'kv' }, el('dt', null, 'Per payment'), el('dd', null, m.perPayment + ' ' + m.currency), el('dt', null, 'Valid until'), el('dd', { class: 'mono' }, when(m.validUntil))),
+          m.status === 'active' ? thread(m) : [])
       }))
     })
   },
@@ -297,6 +299,27 @@ const PAGE_LOADERS = {
           el('tbody', null, r.entries.slice().reverse().map(e => el('tr', null, el('td', { class: 'mono' }, e.seq), el('td', { class: 'mono muted' }, when(e.ts)), el('td', null, el('span', { class: 'chip bl plain' }, e.type)), el('td', null, el('pre', null, JSON.stringify(e.payload))))))))]
     })
   },
+}
+
+/**
+ * Messages with one agent: the same inbox the phone app's chat uses (POST/GET /v1/agents/:id/tasks). Words only; a payment the agent
+ * asks for still lands in Approvals. Agent text is put in as text nodes by el(), never as HTML.
+ */
+function thread(m) {
+  const lines = (m.tasks || []).flatMap(t => t.messages.map(x => Object.assign({ status: t.status }, x))).sort((a, b) => a.at < b.at ? -1 : 1).slice(-6)
+  const waiting = (m.tasks || []).find(t => t.status === 'queued' || t.status === 'working')
+  const input = el('input', { class: 'msgin', maxlength: 500, placeholder: 'Message ' + m.agentId, 'aria-label': 'Message ' + m.agentId })
+  const send = e => {
+    e.preventDefault()
+    const text = input.value.trim(); if (!text) return
+    input.disabled = true
+    api('/v1/agents/' + encodeURIComponent(m.id) + '/tasks', { method: 'POST', body: { text } }).then(() => { input.value = ''; input.blur(); toast('Sent'); load() }, err => toast(err.message)).finally(() => { input.disabled = false })
+  }
+  return el('div', { class: 'thread' }, el('h3', { class: 'sect' }, 'Messages'),
+    lines.length ? lines.map(x => el('div', { class: 'msg ' + x.from }, el('small', null, (x.from === 'owner' ? 'You' : m.agentId) + ' · ' + when(x.at)), x.text,
+      x.decisionId ? el('button', { type: 'button', class: 'linkish', onclick: () => { KEYS.current = 'approvals'; load() } }, 'See the payment') : [])) : el('p', { class: 'muted' }, 'No messages yet. Tell this agent what to buy; it asks you before paying.'),
+    waiting ? el('p', { class: 'muted' }, waiting.status === 'working' ? m.agentId + ' is working…' : 'Waiting for the agent to pick this up.') : [],
+    el('form', { class: 'msgform', onsubmit: send }, input, el('button', { type: 'submit', class: 'ghost' }, 'Send')))
 }
 
 function approvalCard(a) {
@@ -414,9 +437,11 @@ function openPairing() {
   document.body.append(overlay)
   box.replaceChildren(el('p', { class: 'muted' }, 'Finding this computer’s Wi-Fi address…'))
   api('/v1/pairing').then(j => { info = j }, () => { info = null }).then(() => {
-    // Opened on a Wi-Fi address already: the phone can use the same one. Opened as 127.0.0.1: use this computer's Wi-Fi address.
-    const lan = info && info.addresses.length ? 'http://' + info.addresses[0] + ':' + (location.port || info.port) : ''
-    address.value = isLoopback(location.hostname) ? lan : location.origin
+    // Prefer this computer's .local NAME: the router may give it a new number later, which would break a phone paired to the old one.
+    // Opened on a Wi-Fi address already: the phone can use the same one. Opened as 127.0.0.1: use the name, else the Wi-Fi number.
+    const port = location.port || info.port
+    const lan = info && info.localName ? 'http://' + info.localName + ':' + port : info && info.addresses.length ? 'http://' + info.addresses[0] + ':' + port : ''
+    address.value = isLoopback(location.hostname) || /^\d+\.\d+\.\d+\.\d+$/.test(location.hostname) ? (lan || location.origin) : location.origin
     paint()
   })
 }

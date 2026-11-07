@@ -7,12 +7,17 @@ import type { Services } from './services.ts'
 import type { SignerClient, TxParams } from './signer.ts'
 import type { TokenRegistry } from './auth.ts'
 import type { Approval, Bind, DecisionRecord, Job } from './state.ts'
-import type { GatewayStore, HistoryRecord } from './store/types.ts'
+import type { GatewayStore, HistoryRecord, TaskStatus } from './store/types.ts'
 import { randomUUID as uuid } from 'node:crypto'
 import { listensOnNetwork } from './network.ts'
+import { ReadCache } from './read-cache.ts'
 import { z } from 'zod'
 
 export type GatewayDeps = {
+  /** This computer's .local name for pairing codes (network.ts). Absent: pairing uses the Wi-Fi number. */
+  localName?: () => string | undefined
+  /** How long the owner's read pages are kept (src/read-cache.ts). 0 or absent: no cache. Never applies to deciding or paying. */
+  readCacheMs?: number
   /** Mandates. Separate from `store` because core defines this interface and a Postgres version of it. */
   mandates: MandateStore
   /** Everything else the gateway remembers: decisions, approvals, jobs, negotiations, tokens, services, the freeze flag. */
@@ -62,7 +67,9 @@ type Agent = { mandateId: string; agentId: string }
 export class Gateway {
   private readonly d: GatewayDeps
 
-  constructor(deps: GatewayDeps) { this.d = deps }
+  /** The owner's read pages (read-cache.ts). Emptied by every write request (app.ts) and by every job here that changes money. */
+  readonly reads: ReadCache
+  constructor(deps: GatewayDeps) { this.d = deps; this.reads = new ReadCache({ ttlMs: deps.readCacheMs ?? 0, now: () => deps.clock().getTime() }) }
 
   private get delegation(): DelegationDeps { return { store: this.d.mandates, ledger: this.d.ledger, clock: this.d.clock } }
 
@@ -83,6 +90,7 @@ export class Gateway {
       recovered++
     }
     await this.releaseStaleAllowed()
+    this.reads.invalidate()
     return { recovered }
   }
 
@@ -104,7 +112,8 @@ export class Gateway {
     const net = this.d.info?.network
     const host = net?.host ?? '127.0.0.1'
     const addresses = this.d.lanAddresses?.() ?? []
-    return { listen: host, port: net?.port ?? 8787, openToNetwork: listensOnNetwork(host), addresses }
+    const name = this.d.localName?.()
+    return { listen: host, port: net?.port ?? 8787, openToNetwork: listensOnNetwork(host), addresses, ...(name ? { localName: name } : {}) }
   }
 
   // ---- mandates --------------------------------------------------------------------------
@@ -123,20 +132,24 @@ export class Gateway {
   }
 
   /** For the owner's dashboard: every mandate with its money, children included. */
+  /** A mandate past its end date is reported as expired: nothing can pay under it, so it must not look like a running agent. */
+  private shownStatus(m: { status: string; spec: { validUntil: string } }): string {
+    return m.status === 'active' && Date.parse(m.spec.validUntil) <= this.d.clock().getTime() ? 'expired' : m.status
+  }
+
   async listMandates(): Promise<Out> {
-    const rows = []
-    for (const m of await this.d.mandates.all()) {
+    // Balances are read together, not one after another: on a hosted database each read is a 200-500 ms round trip.
+    const rows = await Promise.all((await this.d.mandates.all()).map(async m => {
       const b = await this.d.ledger.balance(m.spec.id)
-      rows.push({ id: m.spec.id, agentId: m.spec.agentId, status: m.status, ...(m.spec.parentId ? { parentId: m.spec.parentId } : {}), validUntil: m.spec.validUntil, currency: m.spec.budget.currency, perPayment: m.spec.budget.perPayment, balance: b ? this.money(b) : null })
-    }
+      return { id: m.spec.id, agentId: m.spec.agentId, status: this.shownStatus(m), ...(m.spec.parentId ? { parentId: m.spec.parentId } : {}), validUntil: m.spec.validUntil, currency: m.spec.budget.currency, perPayment: m.spec.budget.perPayment, balance: b ? this.money(b) : null }
+    }))
     return ok({ mandates: rows })
   }
 
   async getMandate(id: string): Promise<Out> {
-    const m = await this.d.mandates.get(id)
+    const [m, b] = await Promise.all([this.d.mandates.get(id), this.d.ledger.balance(id)]) // together: one round trip of waiting, not two
     if (!m) return fail(404, 'not_found', `no mandate ${id}`)
-    const b = await this.d.ledger.balance(id)
-    return ok({ mandate: m.spec, status: m.status, balance: b ? this.money(b) : null })
+    return ok({ mandate: m.spec, status: this.shownStatus(m), balance: b ? this.money(b) : null })
   }
 
   async revokeMandate(id: string): Promise<Out> {
@@ -330,6 +343,7 @@ export class Gateway {
         return 1
       })
     }
+    if (released) this.reads.invalidate()
     return released
   }
 
@@ -337,7 +351,9 @@ export class Gateway {
 
   private async sweepApprovals(): Promise<void> {
     const now = this.d.clock()
-    for (const a of await this.d.store.decisions.dueApprovals(now)) {
+    const due = await this.d.store.decisions.dueApprovals(now)
+    if (due.length) this.reads.invalidate()
+    for (const a of due) {
       // Under the decision's lock, so an approve or reject cannot interleave. Release first: if we stop between the two steps, the
       // next sweep finishes the job (releasing twice is harmless).
       await this.d.store.locks.run(`decision:${a.decisionId}`, async () => {
@@ -551,6 +567,52 @@ export class Gateway {
     if (!(await this.d.store.history.create(r))) return fail(409, 'history_exists', `${r.id} is already recorded`)
     await this.audit('history.imported', { id: r.id, kind: r.kind, amount: r.amount, currency: r.currency, ...(r.txHash ? { txHash: r.txHash } : {}) })
     return ok({ history: r }, 201)
+  }
+
+  // ---- tasks: the owner tells an agent what to do, from the phone or the dashboard -----------------
+  // A task is words, not money. Whatever the agent decides to buy still goes through /v1/authorize, the twelve checks and the owner's
+  // approval. The agent only ever sees its own mandate's tasks: the mandate comes from its token, never from the request.
+
+  async createTask(mandateId: string, text: string): Promise<Out> {
+    const m = await this.d.mandates.get(mandateId)
+    if (!m) return fail(404, 'not_found', `no mandate ${mandateId}`)
+    if (this.shownStatus(m) !== 'active') return fail(409, 'agent_ended', 'This agent has ended and cannot take messages. Message an active agent.')
+    const at = this.d.clock().toISOString()
+    const task = { id: `task_${uuid()}`, mandateId, status: 'queued' as const, createdAt: at, updatedAt: at, messages: [{ at, from: 'owner' as const, text }] }
+    if (!(await this.d.store.tasks.create(task))) return fail(409, 'task_exists', 'try again')
+    await this.audit('task.created', { taskId: task.id, mandateId, chars: text.length }) // the words stay out of the audit chain
+    return ok({ task }, 201)
+  }
+
+  async listTasks(mandateId: string, limit: number): Promise<Out> { return ok({ tasks: await this.d.store.tasks.list(mandateId, limit) }) }
+
+  /**
+   * One conversation per agent NAME, across all its runs (mandates). A run ends (expires, or is stopped) and a new one with the same
+   * name starts: the owner's chat carries on with its history. New messages go to the newest running run; none running means the
+   * history is still shown and the app says why it cannot send.
+   */
+  async conversation(agentId: string, limit: number): Promise<Out> {
+    const runs = (await this.d.mandates.all()).filter(m => m.spec.agentId === agentId && !m.spec.parentId)
+    if (runs.length === 0) return fail(404, 'not_found', `no agent named ${agentId}`)
+    const shown = runs.map(m => ({ id: m.spec.id, status: this.shownStatus(m), validFrom: m.spec.validFrom, validUntil: m.spec.validUntil }))
+    const running = shown.filter(r => r.status === 'active').sort((a, b) => b.validFrom.localeCompare(a.validFrom))[0]
+    const tasks = await this.d.store.tasks.listForMandates(shown.map(r => r.id), limit)
+    return ok({ agentId, runningMandateId: running?.id ?? null, runs: shown, tasks })
+  }
+
+  /** The agent asks for work. 200 with { task: null } when there is none, so polling is cheap and never an error. */
+  async nextTask(agent: Agent): Promise<Out> {
+    const task = await this.d.store.tasks.claimNext(agent.mandateId, this.d.clock().toISOString())
+    if (task) await this.audit('task.claimed', { taskId: task.id, mandateId: agent.mandateId })
+    return ok({ task: task ?? null })
+  }
+
+  async replyTask(agent: Agent, id: string, r: { text: string; status?: TaskStatus | undefined; decisionId?: string | undefined }): Promise<Out> {
+    const at = this.d.clock().toISOString()
+    const msg = { at, from: 'agent' as const, text: r.text, ...(r.decisionId ? { decisionId: r.decisionId } : {}) }
+    if (!(await this.d.store.tasks.reply(id, agent.mandateId, msg, r.status, at))) return fail(404, 'not_found', `no task ${id}`) // another mandate's task looks absent
+    if (r.status) await this.audit('task.status', { taskId: id, mandateId: agent.mandateId, status: r.status })
+    return ok({ ok: true })
   }
 
   /** Every job, newest first, each with what it has earned and spent. Read-only. */

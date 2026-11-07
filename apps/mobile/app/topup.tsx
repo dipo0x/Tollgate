@@ -15,7 +15,7 @@ import { C } from '../src/ui/theme'
 export default function TopUp() {
   const gw = useGateway()
   const load = useCallback(() => gw.status(), [gw])
-  const { data, error, loading, refresh } = usePoll(load, 15_000)
+  const { data, error, loading, refresh } = usePoll(load, 15_000, 'topup')
   const [copied, setCopied] = useState(false)
   const addr = data?.signerAddress
   const near = addr ? !addr.startsWith('0x') : false

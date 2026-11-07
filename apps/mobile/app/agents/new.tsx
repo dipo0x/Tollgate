@@ -22,7 +22,7 @@ const PER_PICKS = [1, 2, 5, 10]
 export default function NewAgent() {
   const gw = useGateway()
   const load = useCallback(() => gw.services(), [gw])
-  const { data: services, error } = usePoll(load, 30_000)
+  const { data: services, error } = usePoll(load, 30_000, 'services')
   const shops = (services ?? []).filter(s => s.enabled)
   const [name, setName] = useState('')
   // Typed as text so the owner can write any amount; parsed (parseUsd, tested) before anything is sent.

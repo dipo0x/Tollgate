@@ -19,7 +19,7 @@ export default function Home() {
     const [status, mandates, approvals, decisions] = await Promise.all([gw.status(), gw.mandates(), gw.approvals(), gw.decisions(20)])
     return { status, mandates, approvals, decisions }
   }, [gw])
-  const { data, error, loading, refresh } = usePoll(load, 4000)
+  const { data, error, loading, refresh } = usePoll(load, 4000, 'home')
 
   const active = (data?.mandates ?? []).filter(m => m.status === 'active' && !m.parentId)
   const left = active.reduce((s, m) => s + Number(m.balance?.remaining ?? 0), 0)
@@ -59,8 +59,8 @@ export default function Home() {
             </View>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <Dot color={frozen ? C.red : C.green} /><T v="sub" style={{ fontSize: 15, color: frozen ? C.red : C.text2 }}>{frozen ? 'Frozen' : 'Live'}</T>
-                <T v="sub" style={{ fontSize: 15 }}>· {data.status.mode === 'live' ? 'real money' : 'test mode'}</T>
+                <Dot color={frozen ? C.red : C.green} /><T v="sub" style={{ fontSize: 15, color: frozen ? C.red : C.text2 }}>{frozen ? 'Frozen' : 'Payments on'}</T>
+                <T v="sub" style={{ fontSize: 15 }}>· {data.status.mode === 'live' ? 'Live' : 'Test mode'}</T>
               </View>
               <Pressable onPress={() => router.push('/topup')} style={{ height: 34, paddingHorizontal: 14, borderRadius: 17, backgroundColor: C.card2, justifyContent: 'center' }}><T v="bodyStrong" style={{ fontSize: 15 }}>Top up</T></Pressable>
             </View>

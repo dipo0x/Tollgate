@@ -1,8 +1,9 @@
-import { BlurView } from 'expo-blur'
 import * as Haptics from 'expo-haptics'
 import { Tabs } from 'expo-router'
 import { Pressable, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import { useAlerts } from '../../src/state/alerts'
+import { Glass } from '../../src/ui/Glass'
 import { Icon, T, type IconName } from '../../src/ui/kit'
 import { C } from '../../src/ui/theme'
 
@@ -16,12 +17,12 @@ const TABS: Record<string, { label: string; icon: IconName }> = {
   account: { label: 'Account', icon: 'person' },
 }
 
-/** The floating dock: a frosted pill, the active tab in a lighter pill. */
+/** The floating dock: Liquid Glass on iOS 26 (frosted before that), the active tab in a lighter pill. */
 function Dock({ state, navigateToTab }: DockProps) {
   const insets = useSafeAreaInsets()
   return (
-    <View style={{ position: 'absolute', left: 16, right: 16, bottom: Math.max(insets.bottom, 12) + 4, height: 70, borderRadius: 35, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' }}>
-      <BlurView intensity={40} tint="dark" style={{ flex: 1, flexDirection: 'row', padding: 5, gap: 4, backgroundColor: 'rgba(28,28,30,0.72)' }}>
+    <View style={{ position: 'absolute', left: 16, right: 16, bottom: Math.max(insets.bottom, 12) + 4, height: 70 }}>
+      <Glass radius={35} interactive style={{ flex: 1, flexDirection: 'row', padding: 5, gap: 4 }}>
         {state.routes.map((r, i) => {
           const t = TABS[r.name]
           if (!t) return null
@@ -35,12 +36,13 @@ function Dock({ state, navigateToTab }: DockProps) {
             </Pressable>
           )
         })}
-      </BlurView>
+      </Glass>
     </View>
   )
 }
 
 export default function TabsLayout() {
+  useAlerts()
   return (
     <Tabs tabBar={p => <Dock state={p.state} navigateToTab={p.navigateToTab} />} screenOptions={{ headerShown: false, sceneStyle: { backgroundColor: C.bg } }}>
       <Tabs.Screen name="home" />

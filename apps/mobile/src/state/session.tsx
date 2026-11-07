@@ -1,4 +1,5 @@
 import * as LocalAuthentication from 'expo-local-authentication'
+import { clearScreenCache } from './usePoll'
 import Constants, { ExecutionEnvironment } from 'expo-constants'
 import * as SecureStore from 'expo-secure-store'
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
@@ -45,11 +46,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     const opts = { keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY }
     await SecureStore.setItemAsync(KEY_URL, u, opts)
     await SecureStore.setItemAsync(KEY_TOKEN, t, opts)
+    clearScreenCache() // a new gateway: nothing from the old one may show
     setUrl(u); setToken(t)
   }, [])
 
   const unpair = useCallback(async () => {
     await Promise.all([SecureStore.deleteItemAsync(KEY_URL), SecureStore.deleteItemAsync(KEY_TOKEN), SecureStore.deleteItemAsync(KEY_FACE)])
+    clearScreenCache()
     setUrl(null); setToken(null); setFace(false)
   }, [])
 
@@ -85,7 +88,8 @@ const IN_EXPO_GO = Constants.executionEnvironment === ExecutionEnvironment.Store
 export async function confirmWithFace(prompt: string): Promise<{ ok: true } | { ok: false; why: string }> {
   try {
     if (!(await LocalAuthentication.hasHardwareAsync())) return { ok: false, why: 'This phone has no Face ID or fingerprint reader.' }
-    if (!(await LocalAuthentication.isEnrolledAsync())) return { ok: false, why: 'Set up Face ID in your phone’s settings first.' }
+    // Constants.isDevice is false on the iOS simulator, where Face ID is switched on from the simulator's own menu, not from Settings.
+    if (!(await LocalAuthentication.isEnrolledAsync())) return { ok: false, why: Constants.isDevice === false ? 'This simulator has no Face ID. In the Simulator menu: Features → Face ID → Enrolled, then try again.' : 'Set up Face ID in your phone’s settings first.' }
     const r = await LocalAuthentication.authenticateAsync({ promptMessage: prompt, cancelLabel: 'Cancel', disableDeviceFallback: !IN_EXPO_GO })
     return r.success ? { ok: true } : { ok: false, why: r.error === 'user_cancel' || r.error === 'app_cancel' || r.error === 'system_cancel' ? 'Cancelled.' : 'Face ID did not match.' }
   } catch {

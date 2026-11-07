@@ -25,6 +25,7 @@ export default function Footer({ home = true }: { home?: boolean }) {
             <a href={to('#how')}>How it works</a>
             <a href={to('#mandate')}>Mandate</a>
             <a href={to('#economy')}>Agent economy</a>
+            <a href={to('#phone')}>Phone app</a>
             <a href={to('#setup')}>Setup</a>
             <a href="/docs/">Docs</a>
             <a href="/docs/#dashboard">Dashboard</a>

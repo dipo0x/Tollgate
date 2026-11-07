@@ -48,7 +48,8 @@ export type PostgresHandle = {
 /** Connects once, migrates, and hands back every core store sharing that one connection pool. */
 export async function openPostgres(opts: PostgresOptions): Promise<PostgresHandle> {
   const connection = opts.schema ? { search_path: opts.schema } : {}
-  const sql = postgres(opts.url, { max: opts.max ?? 10, onnotice: () => {}, connection })
+  // keep_alive 15 s (driver default 60): the OS checks a quiet connection sooner, so one a router dropped is noticed before it is used.
+  const sql = postgres(opts.url, { max: opts.max ?? 10, onnotice: () => {}, connection, keep_alive: 15 })
   try {
     if (opts.schema) await sql.unsafe(`CREATE SCHEMA IF NOT EXISTS "${opts.schema.replace(/"/g, '""')}"`)
     await migrate(sql, [...MIGRATIONS, ...(opts.extraMigrations ?? [])])
@@ -57,10 +58,24 @@ export async function openPostgres(opts: PostgresOptions): Promise<PostgresHandl
     throw err
   }
   const db = drizzle(sql)
+  const stopWarm = keepWarm(sql, Math.min(2, opts.max ?? 10))
   return {
     sql, db, ledger: new PostgresLedger(db, opts.clock), mandates: new PostgresMandateStore(db),
-    revenue: new PostgresRevenueStore(db), pins: new PostgresPins(db), audit: new PostgresAuditStore(db, opts.clock), close: () => sql.end({ timeout: 5 }),
+    revenue: new PostgresRevenueStore(db), pins: new PostgresPins(db), audit: new PostgresAuditStore(db, opts.clock),
+    close: () => { stopWarm(); return sql.end({ timeout: 5 }) },
   }
+}
+
+/**
+ * Keep `n` connections open and checked. On a hosted database a new connection costs ~1.3 s (TLS and sign-in), and a connection the
+ * network silently dropped can stall the next query ~20 s before it fails. A tiny query every 20 s on `n` connections at once keeps
+ * them open and finds a dead one in the background, never during an owner's request. Errors are ignored: the driver reconnects.
+ */
+export function keepWarm(sql: { unsafe: (q: string) => PromiseLike<unknown> }, n: number, everyMs = 20_000): () => void {
+  const beat = () => { for (let i = 0; i < n; i++) Promise.resolve(sql.unsafe('select 1')).catch(() => {}) }
+  const t = setInterval(beat, everyMs)
+  t.unref?.() // never keeps a process (or a test run) alive on its own
+  return () => clearInterval(t)
 }
 
 export type PostgresConnection = { ledger: PostgresLedger; close: () => Promise<void> }

@@ -27,7 +27,7 @@ function Root() {
   return (
     <>
       {show ? <AppStack /> : null}
-      {splashDone ? null : <Splash ready={show} onDone={() => setSplashDone(true)} />}
+      {splashDone ? null : <Splash ready={show} fontsReady={fontsLoaded} onDone={() => setSplashDone(true)} />}
     </>
   )
 }
@@ -39,6 +39,7 @@ function AppStack() {
       <Stack.Screen name="onboarding/welcome" options={{ animation: 'fade' }} />
       <Stack.Screen name="(tabs)" options={{ animation: 'fade' }} />
       <Stack.Screen name="approval/[id]" />
+      <Stack.Screen name="chat/[id]" />
       <Stack.Screen name="freeze" options={{ presentation: 'modal' }} />
       <Stack.Screen name="agents/new" options={{ presentation: 'modal' }} />
     </Stack>

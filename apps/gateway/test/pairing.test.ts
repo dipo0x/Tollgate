@@ -23,7 +23,7 @@ describe('lanAddresses: only addresses a phone on the same Wi-Fi can open', () =
 
 describe('GET /v1/pairing', () => {
   it('tells the dashboard where the gateway listens and which Wi-Fi addresses a phone could use', async () => {
-    const g = boot({ info: { mode: 'offline', network: { host: '0.0.0.0', port: 8787 } }, lanAddresses: () => ['192.168.1.20'] })
+    const g = boot({ info: { mode: 'offline', network: { host: '0.0.0.0', port: 8787 } }, lanAddresses: () => ['192.168.1.20'], localName: () => undefined })
     expect((await g.op('GET', '/v1/pairing')).json).toEqual({ listen: '0.0.0.0', port: 8787, openToNetwork: true, addresses: ['192.168.1.20'] })
   })
   it('says plainly when the gateway only accepts this computer (the default)', async () => {
@@ -35,5 +35,19 @@ describe('GET /v1/pairing', () => {
     expect((await g.call('GET', '/v1/pairing', undefined)).status).toBe(401)
     expect((await g.call('GET', '/v1/pairing', token)).status).toBe(403)
     expect((await g.call('GET', '/v1/pairing', OPERATOR)).status).toBe(200)
+  })
+})
+
+describe('localName: the Mac\'s name survives a new Wi-Fi number', () => {
+  it('a Mac gets its .local name; other systems and odd names get none (the number is used)', async () => {
+    const { localName } = await import('../src/network.ts')
+    expect(localName('darwin', 'Oladipos-Macbook-Pro')).toBe('Oladipos-Macbook-Pro.local')
+    expect(localName('darwin', 'Oladipos-Macbook-Pro.local')).toBe('Oladipos-Macbook-Pro.local')
+    expect(localName('linux', 'box')).toBeUndefined()
+    expect(localName('darwin', 'bad name with spaces')).toBeUndefined()
+  })
+  it('GET /v1/pairing includes it when known', async () => {
+    const g = boot({ info: { mode: 'offline', network: { host: '0.0.0.0', port: 8787 } }, lanAddresses: () => ['192.168.1.20'], localName: () => 'Mac.local' })
+    expect((await g.op('GET', '/v1/pairing')).json).toMatchObject({ localName: 'Mac.local', addresses: ['192.168.1.20'] })
   })
 })

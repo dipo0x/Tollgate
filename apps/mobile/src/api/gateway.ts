@@ -94,6 +94,16 @@ const HistoryRow = z.object({
   id: z.string(), kind: z.enum(['payment', 'job']), occurredAt: z.string(), title: z.string(), amount: Amount, currency: z.string(), network: z.string(),
   txHash: z.string().optional(), explorer: z.string().optional(), status: z.string(), note: z.string(),
 })
+/** A task the owner gave an agent, with the conversation so far. Words only: any payment still goes through the checks and approval. */
+const TaskMessage = z.object({ at: z.string(), from: z.enum(['owner', 'agent']), text: z.string(), decisionId: z.string().optional() })
+const Task = z.object({ id: z.string(), mandateId: z.string(), status: z.enum(['queued', 'working', 'done', 'failed']), createdAt: z.string(), updatedAt: z.string(), messages: z.array(TaskMessage) })
+export type TaskT = z.infer<typeof Task>
+/** Every run (mandate) of one agent name, and the one conversation across them. runningMandateId is where new messages go. */
+const Conversation = z.object({
+  agentId: z.string(), runningMandateId: z.string().nullable(),
+  runs: z.array(z.object({ id: z.string(), status: z.string(), validFrom: z.string(), validUntil: z.string() })), tasks: z.array(Task),
+})
+export type ConversationT = z.infer<typeof Conversation>
 export type JobRowT = z.infer<typeof JobRow>
 export type HistoryRowT = z.infer<typeof HistoryRow>
 
@@ -158,6 +168,7 @@ export function unreachableHelp(baseUrl: string): string[] {
     'Put this phone on the same Wi-Fi as your computer. Not mobile data, not a guest network, and with any VPN off.',
     'Allow local network access: Settings → Privacy & Security → Local Network → turn on Expo Go (or Tollgate).',
     'On your computer, keep the gateway running, started with GATEWAY_HOST=0.0.0.0 in .env.',
+    'If it worked before, your computer may have a new Wi-Fi address. Scan a fresh code: on your computer, dashboard → Pair a phone (it uses the computer’s name, which does not change).',
     `To test the network on its own, open http://${host}/healthz in Safari on this phone. If it shows "ok", the network is fine and step 2 is the cause.`,
   ]
 }
@@ -183,7 +194,7 @@ export function mandateForNewAgent(a: NewAgent) {
 
 export function createGateway(o: { baseUrl: string; token: string; fetchImpl?: typeof fetch; timeoutMs?: number }) {
   const doFetch = o.fetchImpl ?? fetch
-  const timeoutMs = o.timeoutMs ?? 8000
+  const timeoutMs = o.timeoutMs ?? 15_000 // a gateway on a hosted database can take several seconds; 8 s gave false "not connected"
 
   async function call<T>(schema: z.ZodType<T>, method: 'GET' | 'POST', path: string, body?: unknown, auth = true): Promise<T> {
     const ctl = new AbortController()
@@ -221,10 +232,18 @@ export function createGateway(o: { baseUrl: string; token: string; fetchImpl?: t
     mandate: (id: string) => call(z.object({ mandate: MandateSpec, status: z.string(), balance: Balance.nullable() }), 'GET', `/v1/mandates/${encodeURIComponent(id)}`),
     approvals: () => call(z.object({ approvals: z.array(Approval) }), 'GET', '/v1/approvals').then(r => r.approvals),
     decisions: (limit = 50) => call(z.object({ decisions: z.array(Decision) }), 'GET', `/v1/decisions?limit=${limit}`).then(r => r.decisions),
+    /** One agent's recent decisions, filtered by the gateway instead of fetching everyone's and filtering here. */
+    decisionsFor: (mandateId: string, limit = 8) => call(z.object({ decisions: z.array(Decision) }), 'GET', `/v1/decisions?mandateId=${encodeURIComponent(mandateId)}&limit=${limit}`).then(r => r.decisions),
     decision: (id: string) => call(Decision, 'GET', `/v1/decisions/${encodeURIComponent(id)}`),
     jobs: () => call(z.object({ jobs: z.array(JobRow) }), 'GET', '/v1/jobs?limit=200').then(r => r.jobs),
     history: () => call(z.object({ history: z.array(HistoryRow) }), 'GET', '/v1/history?limit=200').then(r => r.history),
     services: () => call(z.object({ services: z.array(Service) }), 'GET', '/v1/services').then(r => r.services),
+    /** The chat with an agent by NAME, across all its runs: an ended run never loses the conversation. */
+    conversation: (agentId: string) => call(Conversation, 'GET', `/v1/conversations/${encodeURIComponent(agentId)}?limit=100`),
+    /** The chat with one agent, newest task first. */
+    tasks: (mandateId: string) => call(z.object({ tasks: z.array(Task) }), 'GET', `/v1/agents/${encodeURIComponent(mandateId)}/tasks?limit=50`).then(r => r.tasks),
+    /** Tell an agent what to do. It moves no money by itself: the agent still has to ask, and the owner still has to say yes. */
+    sendTask: (mandateId: string, text: string) => call(z.object({ task: Task }), 'POST', `/v1/agents/${encodeURIComponent(mandateId)}/tasks`, { text }).then(r => r.task),
     approve: (id: string, reason: string) => call(z.unknown(), 'POST', `/v1/approvals/${encodeURIComponent(id)}/approve`, { reason }),
     reject: (id: string, reason: string) => call(z.unknown(), 'POST', `/v1/approvals/${encodeURIComponent(id)}/reject`, { reason }),
     /** Stop one agent for good (the gateway's revoke). Only ever tightens, so the phone may do it without the dashboard. */

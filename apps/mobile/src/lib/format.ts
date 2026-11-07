@@ -81,3 +81,28 @@ export function checkSummary(checks: Decision['checks']): { passed: number; tota
   const failed = checks.find(c => c.result === 'fail')
   return { passed: checks.filter(c => c.result === 'pass').length, total: checks.length, ...(failed ? { failed: failed.id } : {}) }
 }
+
+/**
+ * Why an agent is or is not running, in the owner's words. "expired" ran out of time (every test run lasts an hour; an agent you
+ * add lasts 30 days); "revoked" is one you stopped. Neither can pay again; a new run with the same name continues its conversation.
+ */
+export function agentState(status: string): { label: string; short: string; running: boolean } {
+  if (status === 'active') return { label: 'Running', short: 'Running', running: true }
+  if (status === 'revoked') return { label: 'Stopped by you', short: 'Stopped', running: false }
+  if (status === 'expired') return { label: 'Ended: ran out of time', short: 'Ended', running: false }
+  return { label: status, short: status, running: false }
+}
+
+/** Agents grouped by name: the running runs, and the names with no running run (newest end first), for the Agents tab. */
+export function groupAgents<M extends { id: string; agentId: string; status: string; validUntil: string; parentId?: string | undefined }>(rows: readonly M[]) {
+  const tops = rows.filter(m => !m.parentId)
+  const running = tops.filter(m => m.status === 'active')
+  const runningNames = new Set(running.map(m => m.agentId))
+  const past = new Map<string, M[]>()
+  for (const m of tops) if (m.status !== 'active' && !runningNames.has(m.agentId)) past.set(m.agentId, [...(past.get(m.agentId) ?? []), m])
+  const ended = [...past.entries()].map(([name, runs]) => {
+    const last = [...runs].sort((a, b) => b.validUntil.localeCompare(a.validUntil))[0]!
+    return { name, runs: runs.length, last }
+  }).sort((a, b) => b.last.validUntil.localeCompare(a.last.validUntil))
+  return { running, ended }
+}

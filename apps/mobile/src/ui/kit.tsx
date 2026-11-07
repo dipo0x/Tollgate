@@ -7,6 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import Svg, { Path, Rect } from 'react-native-svg'
 import type { GatewayError } from '../api/gateway'
 import { splitAmount, type Kind } from '../lib/format'
+import { Glass } from './Glass'
 import { C, F, R } from './theme'
 
 // ---- icons: 24px strokes, white by default --------------------------------------------------------------------------------
@@ -21,6 +22,8 @@ const P: Record<string, string> = {
   x: 'M6 6l12 12M18 6L6 18',
   chev: 'M9 6l6 6-6 6',
   plus: 'M12 5v14M5 12h14',
+  send: 'M12 19V5M6 11l6-6 6 6',
+  chat: 'M4 5h16v11H9l-5 4z',
   minus: 'M5 12h14',
   check: 'M5 12.5l4.5 4.5L19 7.5',
   store: 'M4 9l1.5-5h13L20 9M4 9h16v11H4zM9 20v-6h6v6',
@@ -93,9 +96,10 @@ export function TopBar({ left, title, right }: { left?: ReactNode; title?: strin
 
 export function Circle({ icon, onPress, label, tint }: { icon: IconName; onPress: () => void; label: string; tint?: string }) {
   return (
-    <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={label} hitSlop={6}
-      style={({ pressed }) => ({ width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.1)', alignItems: 'center', justifyContent: 'center', opacity: pressed ? 0.6 : 1 })}>
-      <Icon name={icon} size={19} color={tint ?? C.text} />
+    <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={label} hitSlop={6} style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}>
+      <Glass radius={22} interactive style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}>
+        <Icon name={icon} size={19} color={tint ?? C.text} />
+      </Glass>
     </Pressable>
   )
 }
@@ -179,11 +183,21 @@ export function Dot({ color }: { color: string }) {
 }
 
 /** The gateway is not answering, or refused: say so plainly. The screen keeps showing the last good data underneath. */
-export function ErrorNote({ error, onRetry }: { error: GatewayError | undefined; onRetry?: () => void }) {
+export function ErrorNote({ error, onRetry, compact }: { error: GatewayError | undefined; onRetry?: () => void; compact?: boolean }) {
   const [open, setOpen] = useState(false)
   if (!error) return null
   const offline = error.code === 'unreachable' || error.code === 'timeout'
   const help = error.help ?? []
+  // One slim line, for screens where the content matters more than the error (the chat). Tap it for the full note.
+  if (compact && !open) {
+    return (
+      <Pressable onPress={() => { onRetry?.(); if (help.length) setOpen(true) }} accessibilityRole="button" accessibilityLabel={`${offline ? 'Reconnecting' : 'Something went wrong'}. Tap for details.`}
+        style={{ marginTop: 8, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 7, paddingHorizontal: 14, borderRadius: R.pill, backgroundColor: C.redBg }}>
+        <Icon name="info" size={14} color={C.red} />
+        <T v="sub" style={{ color: C.text, fontSize: 13 }}>{offline ? 'Reconnecting to your computer…' : 'Something went wrong'}</T>
+      </Pressable>
+    )
+  }
   return (
     <View style={{ marginTop: 14, padding: 16, borderRadius: R.card, backgroundColor: C.redBg, gap: 12 }}>
       <View style={{ flexDirection: 'row', gap: 10, alignItems: 'flex-start' }}>

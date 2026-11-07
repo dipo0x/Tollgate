@@ -27,6 +27,7 @@
       "output": "single"
     },
     "plugins": [
+      "./plugins/without-push.js",
       "expo-router",
       "expo-secure-store",
       [
@@ -51,7 +52,8 @@
           "recordAudioAndroid": false
         }
       ],
-      "expo-font"
+      "expo-font",
+      "expo-notifications"
     ],
     "experiments": {
       "typedRoutes": false

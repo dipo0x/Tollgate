@@ -1,8 +1,7 @@
 import { randomBytes, randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import postgres from 'postgres'
 import { createTollgate, nearRpcRail, x402NearRow } from 'trytollgate'
-import { preferPort, makeTmp, removeTmp, ROOT, start, waitFor, type Proc } from './harness.ts'
+import { ownerRecord, preferPort, makeTmp, removeTmp, ROOT, start, waitFor, type Proc } from './harness.ts'
 
 /**
  * `pnpm live:market`: ONE REAL PURCHASE ON THE NEAR AI AGENT MARKET (https://market.near.ai), end to end, through Tollgate.
@@ -20,7 +19,7 @@ import { preferPort, makeTmp, removeTmp, ROOT, start, waitFor, type Proc } from 
 try { process.loadEnvFile(`${ROOT}.env`) } catch { /* rely on the environment */ }
 const need = (k: string) => { const v = process.env[k]; if (!v) { console.error(`${k} is not set in .env`); process.exit(2) } return v }
 const KEY = need('NEAR_1CLICK_API_KEY') // the gateway's live mode needs it; this run never calls 1Click
-const DB = process.env['LIVE_DATABASE_URL'] ?? `postgres://tollgate:${need('POSTGRES_PASSWORD')}@127.0.0.1:${process.env['POSTGRES_PORT'] ?? '5433'}/tollgate`
+const REC = ownerRecord(), DB = REC.db, MANDATE = `mnd_market_${REC.run}`
 const NEAR_KEY = `${ROOT}.signer-near-key`, EVM_KEY = `${ROOT}.signer-key`
 const RPC = process.env['NEAR_RPC_URL'] ?? 'https://rpc.mainnet.fastnear.com'
 const CONFIRM_FILE = process.env['CONFIRM_FILE'] ?? `${ROOT}.market-pay-confirm`
@@ -30,13 +29,12 @@ const USDC = '17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1'
 if (!existsSync(NEAR_KEY)) { console.error('No .signer-near-key: run `pnpm --filter @tollgate/signer keygen-near` first.'); process.exit(2) }
 
 const HOST = `${SELLER}.market.near.ai`, A2A = `https://${HOST}/a2a/v1`
-const schema = `livemarket_${randomBytes(4).toString('hex')}`, OP = `op-${randomBytes(12).toString('hex')}`, SVC_TOKEN = `svc-${randomBytes(16).toString('hex')}`
+const OP = `op-${randomBytes(12).toString('hex')}`, SVC_TOKEN = `svc-${randomBytes(16).toString('hex')}`
 const tmp = makeTmp(); const procs: Proc[] = []
 const [GP, KP] = [await preferPort(8791), await preferPort(8792)]
 const GW = `http://127.0.0.1:${GP}`, SIGNER = `http://127.0.0.1:${KP}`
 async function stop() {
   for (const p of procs.reverse()) await p.stop()
-  try { const sql = postgres(DB, { max: 1, onnotice: () => {} }); await sql.unsafe(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`); await sql.end({ timeout: 2 }) } catch { /* best effort */ }
   removeTmp(tmp); rmSync(CONFIRM_FILE, { force: true })
 }
 process.on('SIGINT', () => { void stop().finally(() => process.exit(130)) })
@@ -55,8 +53,8 @@ async function usdcOf(account: string): Promise<string> {
 try {
   rmSync(CONFIRM_FILE, { force: true })
   console.log('Starting a live-mode gateway and the signer (x402 on NEAR, own cap 0.12 USDC)...')
-  procs.push(start('gateway', 'apps/gateway', 'src/server.ts', { PORT: String(GP), DATABASE_URL: DB, DATABASE_SCHEMA: schema, GATEWAY_OPERATOR_TOKEN: OP, TOLLGATE_OFFLINE: 'false', NEAR_1CLICK_API_KEY: KEY, SIGNER_URL: SIGNER, SIGNER_SERVICE_TOKEN: SVC_TOKEN, CHECK_TIMEOUT_MS: '10000', LOG_LEVEL: 'silent' }, tmp)); await waitFor(`${GW}/healthz`, 'the gateway')
-  procs.push(start('signer', 'apps/signer', 'src/server.ts', { SIGNER_PORT: String(KP), SIGNER_SERVICE_TOKEN: SVC_TOKEN, SIGNER_KEY_FILE: EVM_KEY, DATABASE_URL: DB, DATABASE_SCHEMA: schema, SIGNER_CHAINS: 'near:mainnet', SIGNER_NEAR_KEY_FILE: NEAR_KEY, SIGNER_MAX_PER_TX: '0.12', LOG_LEVEL: 'info' }, tmp))
+  procs.push(start('gateway', 'apps/gateway', 'src/server.ts', { PORT: String(GP), DATABASE_URL: DB, ...REC.schemaEnv, GATEWAY_OPERATOR_TOKEN: OP, TOLLGATE_OFFLINE: 'false', NEAR_1CLICK_API_KEY: KEY, SIGNER_URL: SIGNER, SIGNER_SERVICE_TOKEN: SVC_TOKEN, CHECK_TIMEOUT_MS: '10000', LOG_LEVEL: 'silent' }, tmp)); await waitFor(`${GW}/healthz`, 'the gateway')
+  procs.push(start('signer', 'apps/signer', 'src/server.ts', { SIGNER_PORT: String(KP), SIGNER_SERVICE_TOKEN: SVC_TOKEN, SIGNER_KEY_FILE: EVM_KEY, DATABASE_URL: DB, ...REC.schemaEnv, SIGNER_CHAINS: 'near:mainnet', SIGNER_NEAR_KEY_FILE: NEAR_KEY, SIGNER_MAX_PER_TX: '0.12', LOG_LEVEL: 'info' }, tmp))
   await waitFor(`${SIGNER}/healthz`, 'the signer')
   const near = (await call('GET', `${SIGNER}/healthz`)).json.near as { accountId: string; publicKey: string }
   const before = await usdcOf(near.accountId)
@@ -71,7 +69,7 @@ try {
   await call('POST', `${GW}/v1/services/svc_market/probe-result`, OP, { verification: 'endpoint-checked', payee: treasury, health: 'healthy' })
   await call('POST', `${GW}/v1/services/svc_market/enable`, OP)
   const iso = (d: Date) => d.toISOString().replace(/\.\d{3}Z$/, 'Z'), now = new Date()
-  const m = await call('POST', `${GW}/v1/mandates`, OP, { id: 'mnd_market', version: 1, principal: 'owner', agentId: 'research-agent', validFrom: iso(new Date(now.getTime() - 60_000)), validUntil: iso(new Date(now.getTime() + 6 * 3_600_000)),
+  const m = await call('POST', `${GW}/v1/mandates`, OP, { id: MANDATE, version: 1, principal: 'owner', agentId: 'research-agent', validFrom: iso(new Date(now.getTime() - 60_000)), validUntil: iso(new Date(now.getTime() + 6 * 3_600_000)),
     budget: { currency: 'USDC', total: '0.30', perPayment: '0.12' }, allowedHosts: ['*.market.near.ai'], allowedOriginNetworks: ['near:mainnet'], allowedAssets: ['USDC'],
     payee: { mode: 'registry' }, price: { tolerancePct: 3, onExceed: 'deny' }, approval: { above: '0.12', riskAbove: 90, firstPayeeRequiresApproval: false }, refund: { mustBePayerOrPinned: true } })
   if (m.status !== 201) throw new Error(`mandate refused: ${JSON.stringify(m.json)}`)
@@ -87,7 +85,7 @@ try {
   console.log(`\nSELLER ${HOST} answered 402: ${Number(row.amount) / 1e6} USDC to ${row.payTo.slice(0, 8)}… on ${row.network}, window ${row.maxTimeoutSeconds}s`)
 
   // 2. The twelve checks, on live market facts.
-  const d = (await call('POST', `${GW}/v1/authorize`, agent, { mandateId: 'mnd_market', host: HOST, purpose: TASK.split('\n')[0], challenge: { x402: { requestId: messageId, accepted: row } }, payer: near.accountId })).json
+  const d = (await call('POST', `${GW}/v1/authorize`, agent, { mandateId: MANDATE, host: HOST, purpose: TASK.split('\n')[0], challenge: { x402: { requestId: messageId, accepted: row } }, payer: near.accountId })).json
   console.log(`\nDECISION: ${d.decision}${d.failedCheck ? ` (stopped by ${d.failedCheck})` : ''}`)
   for (const c of d.checks ?? []) console.log(`  ${c.id} ${String(c.name).padEnd(24)} ${c.result}${c.result === 'pass' ? '' : '  ' + JSON.stringify(c.evidence)}`)
   if (d.decision !== 'ALLOW') throw new Error('not allowed: nothing will be signed')
@@ -102,7 +100,7 @@ try {
   if (!yes()) throw new Error('no yes within 30 minutes: nothing was signed')
 
   // 4. Pay through the SDK. Same requestId, so the gateway resumes the SAME decision (no second hold, no second approval).
-  const tg = createTollgate({ gatewayUrl: GW, agentToken: agent, mandateId: 'mnd_market', payer: near.accountId, rail: nearRpcRail({ rpcUrl: RPC, publicKey: near.publicKey }), purpose: TASK.split('\n')[0] ?? 'market purchase' })
+  const tg = createTollgate({ gatewayUrl: GW, agentToken: agent, mandateId: MANDATE, payer: near.accountId, rail: nearRpcRail({ rpcUrl: RPC, publicKey: near.publicKey }), purpose: TASK.split('\n')[0] ?? 'market purchase' })
   const res = await tg.fetch(A2A, { method: 'POST', headers: { 'content-type': 'application/json' }, body, tollgate: { requestId: messageId } })
   const paid = await res.json().catch(() => undefined) as any
   console.log(`\nPAID CALL answered ${res.status}: ${JSON.stringify(paid).slice(0, 400)}`)
@@ -126,7 +124,7 @@ try {
   const after = await usdcOf(near.accountId)
   console.log(`\nTASK ${task?.status?.state}\n--- result (first 1500 chars) ---\n${text.slice(0, 1500)}\n---`)
   console.log(`USDC before ${before}, after ${after} (difference ${(Number(before) - Number(after)).toFixed(6)})`)
-  const balance = (await call('GET', `${GW}/v1/mandates/mnd_market`, OP)).json.balance
+  const balance = (await call('GET', `${GW}/v1/mandates/${MANDATE}`, OP)).json.balance
   console.log(`Mandate: ${JSON.stringify(balance)}`)
 
   // A record of exactly what happened, with no secrets: kept so every claim about this run traces to it.

@@ -32,7 +32,10 @@ if (c.SIGNER_CHAINS.split(',').map(s => s.trim()).some(x => x === NEAR_CHAIN || 
   }
 }
 
-const sql = postgres(c.DATABASE_URL, { max: 4, onnotice: () => {}, ...(c.DATABASE_SCHEMA ? { connection: { search_path: c.DATABASE_SCHEMA } } : {}) })
+const sql = postgres(c.DATABASE_URL, { max: 4, keep_alive: 15, onnotice: () => {}, ...(c.DATABASE_SCHEMA ? { connection: { search_path: c.DATABASE_SCHEMA } } : {}) })
+// Keep one connection open and checked: on a hosted database a dropped connection can stall a signature ~20 s, long enough for a
+// payment's deadline to pass. A tiny query every 20 s finds it in the background. (Inline: the signer takes no dependency on core.)
+setInterval(() => { sql`select 1`.catch(() => {}) }, 20_000).unref()
 try { await ensureSignerSchema(sql) } catch (e) { fail(`Could not reach the database: ${e instanceof Error ? e.message : e}\n\nIs it running? For the local database: start Docker Desktop, then run \`pnpm db:up\`. Then check DATABASE_URL in .env, or run \`pnpm preflight\`.`) }
 
 const log = (event: string, fields: Record<string, unknown>) => { if (c.LOG_LEVEL !== 'silent') console.log(JSON.stringify({ ts: new Date().toISOString(), event, ...fields })) }

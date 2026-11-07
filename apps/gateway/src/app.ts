@@ -34,6 +34,8 @@ const HistoryBody = z.strictObject({
   id: z.string().min(1).max(128), kind: z.enum(['payment', 'job']), occurredAt: z.string().datetime(), title: z.string().min(1).max(200), amount, currency: z.string().min(1).max(32),
   network: z.string().min(1).max(32), txHash: z.string().max(128).optional(), explorer: z.string().url().max(300).optional(), status: z.string().min(1).max(64), note: z.string().min(1).max(500),
 })
+const TaskBody = z.strictObject({ text: z.string().trim().min(1, 'say what the agent should do').max(500) })
+const TaskReplyBody = z.strictObject({ text: z.string().trim().min(1).max(1000), status: z.enum(['working', 'done', 'failed']).optional(), decisionId: z.string().min(1).max(128).optional() })
 const JobBody = z.strictObject({ id: z.string().min(1).max(128), mandateId: z.string().min(1).max(128), goal: z.string().max(500), receivingAddress: z.string().min(1).max(256), price: amount, currency: z.string().min(1).max(32) })
 const wholeNumber = z.string().regex(/^\d{1,30}$/, 'must be a whole number written as a string')
 // EVM: nonce, gas and fees. NEAR: the access key's nonce (a string; it can exceed 2^53) and a recent base58 block hash.
@@ -66,6 +68,15 @@ export function createApp(deps: GatewayDeps) {
     // Method, path and status only: never headers, never bodies, so a token or a challenge cannot reach a log.
     deps.log('http', { requestId: c.get('requestId'), method: c.req.method, path: c.req.path, status: c.res.status, ms: Math.round(performance.now() - t) })
   })
+  // Read cache for the owner's screens (see read-cache.ts). Every write empties it before it runs and again after, so a screen
+  // never shows a page from before a change this gateway made.
+  const reads = gw.reads // owned by the Gateway, so its background jobs (recovery, expiry sweeps) can empty it too
+  app.use('*', async (c, next) => {
+    // An agent polling an empty inbox (every 2 s under pnpm live:app) changes nothing; that route empties the cache itself when it claims.
+    if (c.req.method === 'GET' || c.req.method === 'HEAD' || c.req.path === '/v1/tasks/next') return next()
+    reads.invalidate()
+    try { await next() } finally { reads.invalidate() }
+  })
   app.onError((e, c) => {
     deps.log('error', { requestId: c.get('requestId'), message: e instanceof Error ? e.message : 'unknown' })
     return c.json({ error: { code: 'internal', message: 'something went wrong; the payment was not authorized' } }, 500)
@@ -74,6 +85,15 @@ export function createApp(deps: GatewayDeps) {
   // A route only matches when its parameter exists, so this '' fallback exists purely to satisfy the types.
   const P = (c: Context<Env>, k: string): string => c.req.param(k) ?? ''
   const send = (c: Context<Env>, o: Out) => c.json(o.body as never, o.status as ContentfulStatusCode)
+  /** Serve an owner read from the cache. Wrap INSIDE asOperator, so the token is always checked first, cache or not. */
+  const cached = (h: (c: Context<Env>) => Promise<Response> | Response) => async (c: Context<Env>) => {
+    const u = new URL(c.req.url)
+    const r = await reads.get(u.pathname + u.search, async () => {
+      const res = await h(c)
+      return { status: res.status, body: await res.text(), contentType: res.headers.get('content-type') ?? 'application/json' }
+    })
+    return c.body(r.body, r.status as ContentfulStatusCode, { 'content-type': r.contentType })
+  }
 
   // ---- helpers: who is calling, and what did they send -----------------------------------
   const who = (c: Context<Env>) => deps.tokens.resolve(bearer(c.req.header('authorization')))
@@ -121,15 +141,16 @@ export function createApp(deps: GatewayDeps) {
   }
 
   // ---- mandates --------------------------------------------------------------------------
-  app.get('/v1/mandates', asOperator(async c => send(c, await gw.listMandates())))
+  app.get('/v1/mandates', asOperator(cached(async c => send(c, await gw.listMandates()))))
   // What the dashboard's status pills show. Nothing secret: whether it is frozen, where state is kept, and whether a signer is attached.
-  app.get('/v1/status', asOperator(async c => c.json(await gw.status())))
+  app.get('/v1/status', asOperator(cached(async c => c.json(await gw.status()))))
   // Operator only: it reveals this computer's network addresses, which is all the dashboard needs to build a pairing code that works.
   app.get('/v1/pairing', asOperator(async c => c.json(gw.pairing())))
   app.post('/v1/mandates', asOperator(async c => { const raw = await c.req.json().catch(() => undefined); return send(c, await gw.createMandate(raw)) }))
   app.get('/v1/mandates/:id', asEither((c, p) => {
     const id = P(c, 'id')
-    return p.role === 'agent' && p.mandateId !== id ? send(c, err(403, 'forbidden', 'not your mandate')) : gw.getMandate(id).then(o => send(c, o))
+    if (p.role === 'agent') return p.mandateId !== id ? send(c, err(403, 'forbidden', 'not your mandate')) : gw.getMandate(id).then(o => send(c, o)) // agents: never cached
+    return cached(async c2 => send(c2, await gw.getMandate(id)))(c)
   }))
   app.post('/v1/mandates/:id/revoke', asOperator(async c => send(c, await gw.revokeMandate(P(c, 'id')))))
   app.post('/v1/mandates/:id/delegate', asEither(async (c, p) => {
@@ -157,18 +178,18 @@ export function createApp(deps: GatewayDeps) {
     return send(c, await gw.sign(a, P(c, 'decisionId'), b.data.tx))
   }))
 
-  app.get('/v1/decisions', asOperator(async c => {
+  app.get('/v1/decisions', asOperator(cached(async c => {
     const q = c.req.query()
     const limit = Math.min(Number(q['limit'] ?? 100) || 100, 500)
     return c.json({ decisions: await deps.store.decisions.list({ ...(q['mandateId'] ? { mandateId: q['mandateId'] } : {}), ...(q['decision'] ? { decision: q['decision'] } : {}), ...(q['state'] ? { state: q['state'] } : {}), limit }) })
-  }))
-  app.get('/v1/decisions/:id', asOperator(async c => {
+  })))
+  app.get('/v1/decisions/:id', asOperator(cached(async c => {
     const r = await deps.store.decisions.get(P(c, 'id'))
     return r ? c.json(r) : send(c, err(404, 'not_found', 'no such decision'))
-  }))
+  })))
 
   // ---- approvals and the kill switch -----------------------------------------------------
-  app.get('/v1/approvals', asOperator(async c => send(c, await gw.listApprovals())))
+  app.get('/v1/approvals', asOperator(cached(async c => send(c, await gw.listApprovals()))))
   app.post('/v1/approvals/:id/approve', asOperator(async c => { const b = await parse(c, ReasonBody); return b.ok ? send(c, await gw.approve(P(c, 'id'), b.data.reason)) : b.res }))
   app.post('/v1/approvals/:id/reject', asOperator(async c => { const b = await parse(c, ReasonBody); return b.ok ? send(c, await gw.reject(P(c, 'id'), b.data.reason)) : b.res }))
   app.post('/v1/freeze', asOperator(async c => send(c, await gw.freeze(true))))
@@ -180,9 +201,14 @@ export function createApp(deps: GatewayDeps) {
 
   // ---- jobs and earning ------------------------------------------------------------------
   app.post('/v1/jobs', asOperator(async c => { const b = await parse(c, JobBody); return b.ok ? send(c, await gw.createJob(b.data)) : b.res }))
-  app.get('/v1/history', asOperator(async c => send(c, await gw.listHistory(Math.min(Number(c.req.query('limit') ?? 100) || 100, 500)))))
+  app.post('/v1/agents/:mandateId/tasks', asOperator(async c => { const b = await parse(c, TaskBody); return b.ok ? send(c, await gw.createTask(P(c, 'mandateId'), b.data.text)) : b.res }))
+  app.get('/v1/agents/:mandateId/tasks', asOperator(cached(async c => send(c, await gw.listTasks(P(c, 'mandateId'), Math.min(Number(c.req.query('limit') ?? 50) || 50, 200))))))
+  app.get('/v1/conversations/:agentId', asOperator(cached(async c => send(c, await gw.conversation(P(c, 'agentId'), Math.min(Number(c.req.query('limit') ?? 100) || 100, 300))))))
+  app.post('/v1/tasks/next', asAgent(async (c, a) => { const o = await gw.nextTask(a); if ((o.body as { task?: unknown }).task) reads.invalidate(); return send(c, o) }))
+  app.post('/v1/tasks/:id/reply', asAgent(async (c, a) => { const b = await parse(c, TaskReplyBody); return b.ok ? send(c, await gw.replyTask(a, P(c, 'id'), b.data)) : b.res }))
+  app.get('/v1/history', asOperator(cached(async c => send(c, await gw.listHistory(Math.min(Number(c.req.query('limit') ?? 100) || 100, 500))))))
   app.post('/v1/history', asOperator(async c => { const b = await parse(c, HistoryBody); return b.ok ? send(c, await gw.importHistory(b.data)) : b.res }))
-  app.get('/v1/jobs', asOperator(async c => send(c, await gw.listJobs(Math.min(Number(c.req.query('limit') ?? 100) || 100, 500)))))
+  app.get('/v1/jobs', asOperator(cached(async c => send(c, await gw.listJobs(Math.min(Number(c.req.query('limit') ?? 100) || 100, 500))))))
   app.get('/v1/jobs/:id', asEither(async (c, p) => send(c, await gw.getJob(P(c, 'id'), p.role === 'agent' ? { mandateId: p.mandateId } : {}))))
   app.post('/v1/jobs/:id/revenue', asAgent(async (c, a) => { const raw = await c.req.json().catch(() => undefined); return send(c, await gw.reportRevenue(a, P(c, 'id'), raw)) }))
 
@@ -191,7 +217,7 @@ export function createApp(deps: GatewayDeps) {
     const b = await parse(c, ServiceBody); if (!b.ok) return b.res
     try { return c.json(await deps.services.add(b.data as never), 201) } catch (e) { return send(c, err(409, 'service_exists', e instanceof Error ? e.message : 'exists')) }
   }))
-  app.get('/v1/services', asOperator(async c => c.json({ services: await deps.services.list() })))
+  app.get('/v1/services', asOperator(cached(async c => c.json({ services: await deps.services.list() }))))
   // What an agent's planner may see: structured fields only. Third-party listing text never leaves this process toward a model.
   app.get('/v1/services/planner', asAgent(async c => c.json({ services: await deps.services.planner() })))
   app.post('/v1/services/:id/probe-result', asOperator(async c => {

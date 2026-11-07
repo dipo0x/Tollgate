@@ -1,11 +1,11 @@
 import { router, useLocalSearchParams } from 'expo-router'
 import { useCallback, useState } from 'react'
 import { Alert, Pressable, View } from 'react-native'
-import { GatewayError } from '../../src/api/gateway'
-import { kindOf, KIND_LABEL, money, when } from '../../src/lib/format'
+import { GatewayError, type MandateRow } from '../../src/api/gateway'
+import { agentState, kindOf, KIND_LABEL, money, when } from '../../src/lib/format'
 import { useGateway } from '../../src/state/session'
-import { useNow, usePoll } from '../../src/state/usePoll'
-import { Amount, Card, Circle, Dot, ErrorNote, Glyph, KindIcon, Label, Loading, Row, Screen, T, TopBar } from '../../src/ui/kit'
+import { peekScreen, useNow, usePoll } from '../../src/state/usePoll'
+import { Amount, Card, Circle, Dot, ErrorNote, Glyph, Icon, KindIcon, Label, Loading, Row, Screen, T, TopBar } from '../../src/ui/kit'
 import { C } from '../../src/ui/theme'
 
 /** One agent: what it has left, the rules it works under, and what it did. The owner can stop it for good from here. */
@@ -15,12 +15,17 @@ export default function AgentDetail() {
   const now = useNow()
   const [problem, setProblem] = useState<string | null>(null)
   const load = useCallback(async () => {
-    const [m, decisions] = await Promise.all([gw.mandate(id), gw.decisions(100)])
-    return { ...m, decisions: decisions.filter(d => d.mandateId === id).slice(0, 8) }
+    const [m, decisions] = await Promise.all([gw.mandate(id), gw.decisionsFor(id, 8)])
+    return { ...m, decisions }
   }, [gw, id])
-  const { data, error, loading, refresh } = usePoll(load, 6000)
+  const { data, error, loading, refresh } = usePoll(load, 6000, `agent:${id}`)
   const m = data?.mandate
-  const active = data?.status === 'active'
+  // Drawn at once from the Agents list's row while the full rules load, so tapping an agent never shows a blank screen.
+  const row = peekScreen<{ mandates: MandateRow[] }>('agents')?.mandates.find(r => r.id === id)
+  const head = m && data
+    ? { agentId: m.agentId, validUntil: m.validUntil, status: data.status, currency: m.budget.currency, total: m.budget.total, remaining: data.balance?.remaining, settled: data.balance?.settled, committed: data.balance?.committed }
+    : row ? { agentId: row.agentId, validUntil: row.validUntil, status: row.status, currency: row.currency, total: row.balance?.total, remaining: row.balance?.remaining, settled: row.balance?.settled, committed: row.balance?.committed } : undefined
+  const active = head?.status === 'active'
   const askAlways = m ? Number(m.approval.above) === 0 : false
 
   function stop() {
@@ -35,19 +40,29 @@ export default function AgentDetail() {
   return (
     <Screen>
       <TopBar left={<Circle icon="back" label="Agents" onPress={() => router.back()} />}
-        right={data ? <View style={{ height: 36, paddingHorizontal: 14, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.1)', flexDirection: 'row', alignItems: 'center', gap: 8 }}><Dot color={active ? C.green : C.text3} /><T v="bodyStrong" style={{ fontSize: 15 }}>{active ? 'Running' : 'Stopped'}</T></View> : undefined} />
+        right={head ? <View style={{ height: 36, paddingHorizontal: 14, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.1)', flexDirection: 'row', alignItems: 'center', gap: 8 }}><Dot color={active ? C.green : C.text3} /><T v="bodyStrong" style={{ fontSize: 15 }}>{agentState(head.status).short}</T></View> : undefined} />
       <ErrorNote error={error} onRetry={() => void refresh()} />
-      {loading && !data ? <Loading /> : null}
-      {m && data ? (
+      {loading && !head ? <Loading /> : null}
+      {head ? (
         <>
           <View style={{ marginTop: 18, flexDirection: 'row', alignItems: 'center', gap: 16 }}>
             <View style={{ width: 64, height: 64, borderRadius: 20, backgroundColor: C.card, alignItems: 'center', justifyContent: 'center' }}><Glyph size={32} /></View>
-            <View style={{ flex: 1, gap: 3 }}><T v="h1" lines={1}>{m.agentId}</T><T v="sub">Until {new Date(m.validUntil).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}</T></View>
+            <View style={{ flex: 1, gap: 3 }}><T v="h1" lines={1}>{head.agentId}</T><T v="sub">Until {new Date(head.validUntil).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}</T></View>
           </View>
           <View style={{ marginTop: 24, gap: 6 }}>
-            <Amount value={data.balance?.remaining} unit={m.budget.currency} size={48} />
-            <T v="sub" style={{ fontSize: 15 }}>Left of {money(m.budget.total)} · {money(data.balance?.settled)} spent · {money(data.balance?.committed)} held</T>
+            <Amount value={head.remaining} unit={head.currency} size={48} />
+            <T v="sub" style={{ fontSize: 15 }}>Left of {money(head.total)} · {money(head.settled)} spent · {money(head.committed)} held</T>
           </View>
+
+          <Pressable onPress={() => router.push(`/chat/${encodeURIComponent(head.agentId)}`)} accessibilityRole="button"
+            style={{ marginTop: 20, height: 52, borderRadius: 26, backgroundColor: active ? C.button : C.card, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+            <Icon name="chat" size={19} color={active ? '#000' : C.text} width={2.2} /><T v="bodyStrong" style={{ color: active ? '#000' : C.text, fontSize: 17 }}>{active ? `Message ${head.agentId}` : 'See the conversation'}</T>
+          </Pressable>
+        </>
+      ) : null}
+      {head && !(m && data) ? <Loading /> : null}
+      {m && data ? (
+        <>
 
           <Label>Rules</Label>
           <Card>

@@ -4,7 +4,7 @@ import { HttpMarket } from '@tollgate/core/market'
 import { TokenRegistry } from './auth.ts'
 import type { Config } from './config.ts'
 import type { GatewayDeps } from './gateway.ts'
-import { lanAddresses } from './network.ts'
+import { lanAddresses, localName } from './network.ts'
 import { Services } from './services.ts'
 import { HttpSignerClient } from './signer.ts'
 import { memoryStore, postgresStore, type GatewayStore } from './store/index.ts'
@@ -37,9 +37,11 @@ function assemble(cfg: Config, durable: Durable, over: Partial<GatewayDeps>): Ga
     tokens: new TokenRegistry(cfg.GATEWAY_OPERATOR_TOKEN, durable.store.tokens),
     info: { mode: cfg.TOLLGATE_OFFLINE ? 'offline' : 'live', network: { host: cfg.GATEWAY_HOST, port: cfg.PORT } } as const,
     lanAddresses,
+    localName,
     ...(cfg.SIGNER_URL && cfg.SIGNER_SERVICE_TOKEN ? { signer: new HttpSignerClient({ url: cfg.SIGNER_URL, token: cfg.SIGNER_SERVICE_TOKEN }) } : {}),
     clock,
     approvalTtlMs: cfg.APPROVAL_TTL_MINUTES * 60_000,
+    readCacheMs: cfg.GATEWAY_READ_CACHE_MS,
     checkTimeoutMs: cfg.CHECK_TIMEOUT_MS,
     log: makeLogger(cfg.LOG_LEVEL),
     ...over,
@@ -65,6 +67,6 @@ export function buildDeps(cfg: Config, over: Partial<GatewayDeps> = {}): Gateway
  */
 export async function buildPersistentDeps(cfg: Config & { DATABASE_URL: string }, over: Partial<GatewayDeps> = {}): Promise<{ deps: GatewayDeps; close: () => Promise<void> }> {
   const clock = over.clock ?? (() => new Date())
-  const { store, pg, close } = await postgresStore({ url: cfg.DATABASE_URL, clock, ...(cfg.DATABASE_SCHEMA ? { schema: cfg.DATABASE_SCHEMA } : {}) })
+  const { store, pg, close } = await postgresStore({ url: cfg.DATABASE_URL, clock, max: cfg.DATABASE_POOL_MAX, ...(cfg.DATABASE_SCHEMA ? { schema: cfg.DATABASE_SCHEMA } : {}) })
   return { deps: assemble(cfg, { mandates: pg.mandates, ledger: pg.ledger, revenue: pg.revenue, pins: pg.pins, audit: pg.audit, store }, over), close }
 }

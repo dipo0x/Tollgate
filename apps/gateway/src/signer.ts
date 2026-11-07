@@ -25,7 +25,16 @@ export class HttpSignerClient implements SignerClient {
   private readonly doFetch: typeof fetch
   constructor(opts: { url: string; token: string; fetch?: typeof fetch }) { this.url = opts.url.replace(/\/+$/, ''); this.token = opts.token; this.doFetch = opts.fetch ?? fetch }
 
+  // The public address is fixed for a running signer: remember it for 5 minutes instead of calling the signer on every status read.
+  private addr: { value: string; at: number } | undefined
   async address(): Promise<string | undefined> {
+    if (this.addr && Date.now() - this.addr.at < 300_000) return this.addr.value
+    const v = await this.fetchAddress()
+    if (v) this.addr = { value: v, at: Date.now() } // only a good answer is remembered; "unreachable" is asked again next time
+    return v
+  }
+
+  private async fetchAddress(): Promise<string | undefined> {
     try {
       const res = await this.doFetch(`${this.url}/healthz`, { signal: AbortSignal.timeout(3000) })
       const j = await res.json() as { address?: unknown }

@@ -59,7 +59,7 @@ describe('when the phone cannot reach the gateway, the message says what to chec
     const e = await gw.status().catch(x => x)
     expect(e).toMatchObject({ code: 'unreachable' })
     expect(e.message).toContain('192.168.1.20:8787')
-    expect(e.help).toHaveLength(4)
+    expect(e.help).toHaveLength(5)
     expect(e.message).not.toMatch(/^Your gateway cannot be reached\.$/)
   })
 })
@@ -149,5 +149,52 @@ describe('jobs and imported history', () => {
     expect((await ok.history())[0]?.amount).toBe('0.206712')
     const bad = createGateway({ baseUrl: 'https://g', token: 'k', fetchImpl: (async () => reply(200, { history: [{ ...rec, kind: 'gift' }] })) as unknown as typeof fetch })
     await expect(bad.history()).rejects.toBeInstanceOf(Error)
+  })
+})
+
+describe('talking to an agent', () => {
+  const task = { id: 'task_1', mandateId: 'mnd_a', status: 'working', createdAt: '2026-11-07T10:00:00Z', updatedAt: '2026-11-07T10:00:05Z',
+    messages: [{ at: '2026-11-07T10:00:00Z', from: 'owner', text: 'buy the bridge cost brief' }, { at: '2026-11-07T10:00:05Z', from: 'agent', text: 'Approve it in Tollgate.', decisionId: 'dec_1' }] }
+  it('sends the words to the agent\'s own inbox and reads the thread back', async () => {
+    const seen: { url: string; body: string }[] = []
+    const gw = createGateway({ baseUrl: 'https://g', token: 'k', fetchImpl: (async (u: string, init: RequestInit) => { seen.push({ url: u, body: String(init.body ?? '') }); return reply(init.method === 'POST' ? 201 : 200, init.method === 'POST' ? { task } : { tasks: [task] }) }) as unknown as typeof fetch })
+    expect((await gw.sendTask('mnd a', 'buy the bridge cost brief')).id).toBe('task_1')
+    expect(seen[0]).toEqual({ url: 'https://g/v1/agents/mnd%20a/tasks', body: JSON.stringify({ text: 'buy the bridge cost brief' }) })
+    expect((await gw.tasks('mnd_a'))[0]?.messages[1]?.decisionId).toBe('dec_1')
+  })
+  it('refuses a thread with a sender it does not know', async () => {
+    const gw = createGateway({ baseUrl: 'https://g', token: 'k', fetchImpl: (async () => reply(200, { tasks: [{ ...task, messages: [{ at: 'x', from: 'merchant', text: 'pay me' }] }] })) as unknown as typeof fetch })
+    await expect(gw.tasks('mnd_a')).rejects.toMatchObject({ code: 'bad_response' })
+  })
+})
+
+describe('agents grouped by name, and why one ended', () => {
+  const row = (id: string, agentId: string, status: string, validUntil: string) => ({ id, agentId, status, validUntil })
+  it('running agents first; ended runs grouped by name with the newest end and a run count', async () => {
+    const { groupAgents } = await import('../src/lib/format')
+    const g = groupAgents([
+      row('mnd_app', 'spend-agent', 'active', '2026-12-07T00:00:00Z'),
+      row('mnd_near', 'near-agent', 'expired', '2026-11-03T09:47:12Z'), row('mnd_near_2', 'near-agent', 'expired', '2026-11-03T10:00:35Z'),
+      row('mnd_market', 'research-agent', 'expired', '2026-11-07T12:21:36Z'),
+      row('mnd_old_spend', 'spend-agent', 'expired', '2026-11-01T00:00:00Z'), // an ended run of a name that is running again: not "past"
+    ])
+    expect(g.running.map(m => m.id)).toEqual(['mnd_app'])
+    expect(g.ended.map(e => [e.name, e.runs, e.last.id])).toEqual([['research-agent', 1, 'mnd_market'], ['near-agent', 2, 'mnd_near_2']])
+  })
+  it('says why in plain words', async () => {
+    const { agentState } = await import('../src/lib/format')
+    expect(agentState('expired').label).toMatch(/ran out of time/)
+    expect(agentState('revoked').label).toBe('Stopped by you')
+    expect(agentState('active').running).toBe(true)
+  })
+})
+
+describe('the conversation follows the agent name', () => {
+  it('reads every run of one agent as one chat', async () => {
+    let url = ''
+    const body = { agentId: 'spend-agent', runningMandateId: 'mnd_2', runs: [{ id: 'mnd_1', status: 'expired', validFrom: 'a', validUntil: 'b' }, { id: 'mnd_2', status: 'active', validFrom: 'c', validUntil: 'd' }], tasks: [] }
+    const gw = createGateway({ baseUrl: 'https://g', token: 'k', fetchImpl: (async (u: string) => { url = u; return reply(200, body) }) as unknown as typeof fetch })
+    expect((await gw.conversation('spend-agent')).runningMandateId).toBe('mnd_2')
+    expect(url).toBe('https://g/v1/conversations/spend-agent?limit=100')
   })
 })

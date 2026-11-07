@@ -37,6 +37,17 @@ export const ConfigSchema = z.object({
   DATABASE_URL: z.string().optional().transform(v => v || undefined),
   /** Use a separate Postgres schema (for tests and previews). Leave out for the default. */
   DATABASE_SCHEMA: z.string().optional().transform(v => v || undefined).pipe(z.string().regex(/^[a-z_][a-z0-9_]{0,62}$/, 'DATABASE_SCHEMA must be a lowercase identifier').optional()),
+  /**
+   * Most database connections this gateway may hold. Hosted Postgres plans are small (Aiven's allows 17 for all clients), and every
+   * gateway and signer sharing one database takes from that, so a full database makes requests wait until they time out.
+   */
+  /**
+   * How long the owner's read pages (status, agents, decisions, approvals, messages) are kept, in ms, so polling screens do not each
+   * wait on a slow database. Any write through this gateway empties it at once; a change made by ANOTHER gateway on the same database
+   * shows within this time. 0 turns it off. Paying and deciding never use it.
+   */
+  GATEWAY_READ_CACHE_MS: z.coerce.number().int().min(0).max(30_000).default(5000),
+  DATABASE_POOL_MAX: z.coerce.number().int().min(1).max(50).default(10),
   /** How long a payment held for approval waits for a human before it expires, in minutes. */
   APPROVAL_TTL_MINUTES: z.coerce.number().int().min(1).default(24 * 60),
 }).refine(c => !!c.SIGNER_URL === !!c.SIGNER_SERVICE_TOKEN, { message: 'SIGNER_URL and SIGNER_SERVICE_TOKEN go together: set both or neither', path: ['SIGNER_URL'] })

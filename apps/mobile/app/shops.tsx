@@ -11,7 +11,7 @@ import { C } from '../src/ui/theme'
 export default function Shops() {
   const gw = useGateway()
   const load = useCallback(() => gw.services(), [gw])
-  const { data, error, loading, refresh } = usePoll(load, 15_000)
+  const { data, error, loading, refresh } = usePoll(load, 15_000, 'shops')
   return (
     <Screen>
       <TopBar left={<Circle icon="back" label="Back" onPress={() => router.back()} />} title="Shops" />

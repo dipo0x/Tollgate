@@ -1,4 +1,4 @@
-import { networkInterfaces, type NetworkInterfaceInfo } from 'node:os'
+import { hostname, networkInterfaces, type NetworkInterfaceInfo } from 'node:os'
 
 /**
  * Where can a phone reach this gateway? Pairing a phone needs an address the PHONE can open: never 127.0.0.1 (on a phone that is
@@ -22,6 +22,17 @@ export function lanAddresses(ifaces: NodeJS.Dict<NetworkInterfaceInfo[]> = netwo
   }
   rows.sort((a, b) => Number(!PREFERRED.test(a.name)) - Number(!PREFERRED.test(b.name)) || a.name.localeCompare(b.name))
   return [...new Set(rows.map(r => r.address))]
+}
+
+/**
+ * This computer's name on the local network (Bonjour), like Oladipos-Macbook-Pro.local. Routers hand out a new number (192.168.x.y)
+ * from time to time, which breaks a phone paired to the old one; the name stays the same. macOS only: every Mac and iPhone resolves
+ * .local names, while on Linux it depends on avahi, so there the number is used. Only letters, digits and dashes, or nothing.
+ */
+export function localName(platform: string = process.platform, name: string = hostname()): string | undefined {
+  if (platform !== 'darwin') return undefined
+  const base = name.replace(/\.local$/i, '')
+  return /^[a-z0-9][a-z0-9-]{0,62}$/i.test(base) ? `${base}.local` : undefined
 }
 
 /** Does a gateway listening on `host` accept connections from other machines? 127.0.0.1 / localhost / ::1: no. */

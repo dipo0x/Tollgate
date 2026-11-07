@@ -112,4 +112,18 @@ export const GATEWAY_MIGRATIONS: readonly Migration[] = [
       );
     `,
   },
+  {
+    id: 'gateway_0004_tasks',
+    sql: `
+      CREATE TABLE gateway_tasks (
+        id          text PRIMARY KEY,
+        mandate_id  text NOT NULL,
+        status      text NOT NULL,
+        created_at  timestamptz NOT NULL,
+        updated_at  timestamptz NOT NULL,
+        messages    jsonb NOT NULL
+      );
+      CREATE INDEX gateway_tasks_queue ON gateway_tasks (mandate_id, status, created_at);
+    `,
+  },
 ]

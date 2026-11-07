@@ -18,7 +18,7 @@ export default function Activity() {
   const now = useNow()
   const [f, setF] = useState<Filter>('all')
   const load = useCallback(() => gw.decisions(100), [gw])
-  const { data, error, loading, refresh } = usePoll(load, 6000)
+  const { data, error, loading, refresh } = usePoll(load, 6000, 'activity')
   const rows = (data ?? []).filter(d => MATCH[f](kindOf(d)))
 
   return (

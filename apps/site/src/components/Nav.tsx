@@ -7,6 +7,7 @@ const LINKS = [
   ['How it works', '#how'],
   ['Mandate', '#mandate'],
   ['Agent economy', '#economy'],
+  ['Phone', '#phone'],
   ['Setup', '#setup'],
   ['Docs', '/docs/'],
   ['Benchmark', '#bench'],

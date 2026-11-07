@@ -8,6 +8,7 @@ import Statement from './components/Statement'
 import Chapters from './components/Chapters'
 import Mandate from './components/Mandate'
 import Economy from './components/Economy'
+import Phone from './components/Phone'
 import Steps from './components/Steps'
 import Bench from './components/Bench'
 import Faq from './components/Faq'
@@ -55,6 +56,7 @@ export default function App() {
         <Chapters />
         <Mandate />
         <Economy />
+        <Phone />
         <Steps />
         <Bench />
         <Faq />

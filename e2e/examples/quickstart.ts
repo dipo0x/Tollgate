@@ -39,7 +39,7 @@ const now = new Date()
 
 // 1-3. A service is a website the agent may pay. Register it, record the probe result, switch it on.
 await must('register service', call('POST', '/v1/services', op, {
-  id: `svc_${run}`, name: 'Market data', category: 'data', host, providerUrl: `https://${host}`,
+  id: `svc_${run}`, name: 'Quickstart example', category: 'data', host, providerUrl: `https://${host}`,
   pricing: { model: 'per_request', quoted: '0.30', currency: 'USDC' }, paymentRails: [], limits: { maxPerRequest: '1.00', timeoutMs: 8000 },
 }))
 await must('probe', call('POST', `/v1/services/svc_${run}/probe-result`, op, { verification: 'endpoint-checked', payee: 'merchant.near', health: 'healthy' }))

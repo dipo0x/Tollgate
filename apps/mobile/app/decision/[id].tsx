@@ -13,7 +13,7 @@ export default function DecisionDetail() {
   const gw = useGateway()
   const now = useNow()
   const load = useCallback(() => gw.decision(id), [gw, id])
-  const { data: d, error, loading, refresh } = usePoll(load, 8000)
+  const { data: d, error, loading, refresh } = usePoll(load, 8000, `decision:${id}`)
   const k = d ? kindOf(d) : undefined
   const failed = d?.checks.find(c => c.id === d.failedCheck) ?? d?.checks.find(c => c.result === 'fail')
   const reason = failed?.evidence && typeof failed.evidence['reason'] === 'string' ? (failed.evidence['reason'] as string) : d?.reason

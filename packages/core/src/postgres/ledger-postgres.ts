@@ -113,10 +113,14 @@ export class PostgresLedger implements Ledger {
   }
 
   async balance(mandateId: string): Promise<Balance | undefined> {
-    const [b] = await this.db.select().from(budgets).where(eq(budgets.mandateId, mandateId))
+    // Both reads at once: on a hosted database each is a 150-450 ms round trip. Same answer as one after the other (neither depends on the
+    // other, and two separate reads were never one snapshot); the payment path's own budget check runs under its lock, not through here.
+    const [[b], rows] = await Promise.all([
+      this.db.select().from(budgets).where(eq(budgets.mandateId, mandateId)),
+      this.db.select({ state: decisions.state, sum: sql<string>`sum(${decisions.amount})`, part: sql<string>`sum(${decisions.releasedPart})` }).from(decisions)
+        .where(eq(decisions.mandateId, mandateId)).groupBy(decisions.state),
+    ])
     if (!b) return undefined
-    const rows = await this.db.select({ state: decisions.state, sum: sql<string>`sum(${decisions.amount})`, part: sql<string>`sum(${decisions.releasedPart})` }).from(decisions)
-      .where(eq(decisions.mandateId, mandateId)).groupBy(decisions.state)
     const by = (s: DecisionState): Micro => big(rows.find(r => r.state === s)?.sum)
     const total = big(b.total), committed = by('committed'), settled = by('settled')
     const givenBack = big(rows.find(r => r.state === 'settled')?.part)

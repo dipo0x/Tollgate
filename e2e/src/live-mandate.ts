@@ -12,7 +12,8 @@ import { preferPort, makeTmp, removeTmp, ROOT, start, waitFor, type Proc } from 
 try { process.loadEnvFile(`${ROOT}.env`) } catch { /* rely on the environment */ }
 const need = (k: string) => { const v = process.env[k]; if (!v) { console.error(`${k} is not set in .env`); process.exit(2) } return v }
 const KEY = need('NEAR_1CLICK_API_KEY'), PAYEE = need('MERCHANT_NEAR_ACCOUNT'), DEAL = need('WORKERS_DEAL_SECRET')
-const DB = process.env['LIVE_DATABASE_URL'] ?? `postgres://tollgate:${need('POSTGRES_PASSWORD')}@127.0.0.1:${process.env['POSTGRES_PORT'] ?? '5433'}/tollgate`
+const DB = process.env['DATABASE_URL'] ?? ''
+if (!DB) { console.error('DATABASE_URL is not set in .env (the live database).'); process.exit(2) }
 // The paying account: the signer's NEAR account (public). Refunds of a failed payment would go back to it.
 const PAYER = process.env['LIVE_PAYER'] ?? 'a55dcd6b86ca2f4466512b4a002d643408c9b28267b17a3b6487833661d9bc9e'
 

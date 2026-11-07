@@ -3,7 +3,7 @@ import type { PostgresHandle } from '@tollgate/core/postgres'
 import type { Service } from '@tollgate/registry'
 import { toPrior, type Approval, type DecisionRecord, type Job } from '../state.ts'
 import { randomUUID } from 'node:crypto'
-import type { SignatureStore, StoredSignature, AcceptanceStore, ApprovalOutcome, DecisionFilter, DecisionStore, JobStore, HistoryStore, HistoryRecord, LockStore, ServiceStore, SessionStore, SettingsStore, TokenOwner, TokenStore } from './types.ts'
+import type { SignatureStore, StoredSignature, AcceptanceStore, ApprovalOutcome, DecisionFilter, DecisionStore, JobStore, HistoryStore, HistoryRecord, AgentTask, TaskMessage, TaskStatus, TaskStore, LockStore, ServiceStore, SessionStore, SettingsStore, TokenOwner, TokenStore } from './types.ts'
 
 type Sql = PostgresHandle['sql']
 type Row = Record<string, any>
@@ -89,7 +89,7 @@ export class PostgresDecisionStore implements DecisionStore {
         AND (${n(f.decision)}::text IS NULL OR decision = ${n(f.decision)})
         AND (${n(f.state)}::text IS NULL OR state = ${n(f.state)})
         AND (${n(f.challengeId)}::text IS NULL OR challenge_id = ${n(f.challengeId)})
-      ORDER BY seq DESC
+      ORDER BY created_at DESC, seq DESC
       LIMIT ${f.limit ?? null}`
     return rows.map(decisionFromRow)
   }
@@ -173,6 +173,49 @@ export class PostgresJobStore implements JobStore {
   }
 }
 const toJob = (r: Record<string, unknown>) => ({ id: r['id'] as string, mandateId: r['mandate_id'] as string, goal: r['goal'] as string, receivingAddress: r['receiving_address'] as string, price: r['price'] as string, currency: r['currency'] as string })
+
+const taskFromRow = (r: Row): AgentTask => ({
+  id: r['id'], mandateId: r['mandate_id'], status: r['status'], createdAt: ts(r['created_at']), updatedAt: ts(r['updated_at']), messages: r['messages'],
+})
+
+export class PostgresTaskStore implements TaskStore {
+  private readonly sql: Sql
+  constructor(sql: Sql) { this.sql = sql }
+  async create(t: AgentTask) {
+    const rows = await this.sql`
+      INSERT INTO gateway_tasks (id, mandate_id, status, created_at, updated_at, messages)
+      VALUES (${t.id}, ${t.mandateId}, ${t.status}, ${t.createdAt}, ${t.updatedAt}, ${json(t.messages)}::jsonb)
+      ON CONFLICT (id) DO NOTHING RETURNING id`
+    return rows.length > 0
+  }
+  async get(id: string) {
+    const [r] = await this.sql`SELECT * FROM gateway_tasks WHERE id = ${id}`
+    return r ? taskFromRow(r) : undefined
+  }
+  async list(mandateId: string, limit: number) {
+    const rows = await this.sql`SELECT * FROM gateway_tasks WHERE mandate_id = ${mandateId} ORDER BY created_at DESC, id DESC LIMIT ${limit}`
+    return rows.map(taskFromRow)
+  }
+  async listForMandates(mandateIds: readonly string[], limit: number) {
+    if (mandateIds.length === 0) return []
+    const rows = await this.sql`SELECT * FROM gateway_tasks WHERE mandate_id IN ${this.sql([...mandateIds])} ORDER BY created_at DESC, id DESC LIMIT ${limit}`
+    return rows.map(taskFromRow)
+  }
+  async claimNext(mandateId: string, at: string) {
+    // SKIP LOCKED: two agent processes polling at once each get a different task, never the same one twice.
+    const [r] = await this.sql`
+      UPDATE gateway_tasks SET status = 'working', updated_at = ${at}
+      WHERE id = (SELECT id FROM gateway_tasks WHERE mandate_id = ${mandateId} AND status = 'queued' ORDER BY created_at, id FOR UPDATE SKIP LOCKED LIMIT 1)
+      RETURNING *`
+    return r ? taskFromRow(r) : undefined
+  }
+  async reply(id: string, mandateId: string, msg: TaskMessage, status: TaskStatus | undefined, at: string) {
+    const rows = await this.sql`
+      UPDATE gateway_tasks SET messages = messages || ${json([msg])}::jsonb, status = COALESCE(${status ?? null}, status), updated_at = ${at}
+      WHERE id = ${id} AND mandate_id = ${mandateId} RETURNING id`
+    return rows.length > 0
+  }
+}
 
 export class PostgresHistoryStore implements HistoryStore {
   private readonly sql: Sql

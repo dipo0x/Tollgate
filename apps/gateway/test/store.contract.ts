@@ -147,6 +147,36 @@ export function storeContract(label: string, make: () => Promise<Made>) {
       expect(await jobs.get('nope')).toBeUndefined()
     }))
 
+    it('tasks: queued in order, claimed once, replies only within the same mandate', () => using(async ({ tasks }) => {
+      const t = (id: string, mandateId: string, at: string) => ({ id, mandateId, status: 'queued' as const, createdAt: at, updatedAt: at, messages: [{ at, from: 'owner' as const, text: `do ${id}` }] })
+      expect(await tasks.create(t('t1', 'm1', '2026-11-07T10:00:00.000Z'))).toBe(true)
+      expect(await tasks.create(t('t1', 'm1', '2026-11-07T10:00:00.000Z'))).toBe(false)
+      await tasks.create(t('t2', 'm1', '2026-11-07T10:01:00.000Z')); await tasks.create(t('t3', 'm2', '2026-11-07T09:00:00.000Z'))
+      expect((await tasks.list('m1', 10)).map(x => x.id)).toEqual(['t2', 't1'])
+      const first = await tasks.claimNext('m1', '2026-11-07T10:05:00.000Z')
+      expect(first).toMatchObject({ id: 't1', status: 'working', updatedAt: '2026-11-07T10:05:00.000Z' })
+      expect((await tasks.claimNext('m1', '2026-11-07T10:06:00.000Z'))?.id).toBe('t2')
+      expect(await tasks.claimNext('m1', '2026-11-07T10:07:00.000Z')).toBeUndefined()
+      const reply = { at: '2026-11-07T10:08:00.000Z', from: 'agent' as const, text: 'asked to pay', decisionId: 'd1' }
+      expect(await tasks.reply('t1', 'm2', reply, 'done', reply.at)).toBe(false) // another mandate cannot touch it
+      expect(await tasks.reply('t1', 'm1', reply, undefined, reply.at)).toBe(true)
+      expect(await tasks.reply('t1', 'm1', { ...reply, text: 'paid' }, 'done', reply.at)).toBe(true)
+      const got = await tasks.get('t1')
+      expect(got?.status).toBe('done')
+      expect(got?.messages.map(m => m.text)).toEqual(['do t1', 'asked to pay', 'paid'])
+      expect(got?.messages[1]).toEqual(reply)
+      expect((await tasks.listForMandates(['m1', 'm2'], 10)).map(x => x.id)).toEqual(['t2', 't1', 't3'])
+      expect(await tasks.listForMandates([], 10)).toEqual([])
+    }))
+
+    it('tasks: two agents claiming at once never get the same task', () => using(async ({ tasks }) => {
+      for (let i = 0; i < 6; i++) await tasks.create({ id: `c${i}`, mandateId: 'm1', status: 'queued', createdAt: `2026-11-07T10:0${i}:00.000Z`, updatedAt: `2026-11-07T10:0${i}:00.000Z`, messages: [] })
+      const got = await Promise.all(Array.from({ length: 8 }, () => tasks.claimNext('m1', '2026-11-07T11:00:00.000Z')))
+      const ids = got.filter(Boolean).map(t => t!.id)
+      expect(ids).toHaveLength(6)
+      expect(new Set(ids).size).toBe(6)
+    }))
+
     it('acceptance specs round-trip and can be replaced', () => using(async ({ acceptance }) => {
       await acceptance.put('w1', { requiredFields: ['title', 'body'], minSources: 2 })
       expect(await acceptance.get('w1')).toEqual({ requiredFields: ['title', 'body'], minSources: 2 })

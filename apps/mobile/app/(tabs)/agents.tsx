@@ -3,29 +3,48 @@ import { useCallback } from 'react'
 import { Pressable, View } from 'react-native'
 import Animated, { FadeInDown } from 'react-native-reanimated'
 import type { MandateRow } from '../../src/api/gateway'
-import { money } from '../../src/lib/format'
+import { agentState, groupAgents, money } from '../../src/lib/format'
 import { useGateway } from '../../src/state/session'
 import { usePoll } from '../../src/state/usePoll'
 import { Card, Dot, ErrorNote, Glyph, Icon, Loading, Screen, T } from '../../src/ui/kit'
 import { C, R } from '../../src/ui/theme'
 
-/** Every agent the gateway knows: one card per mandate, with hired workers listed under the agent that hired them. */
+/**
+ * Every agent the gateway knows. Running agents get a card each (hired workers under the agent that hired them). Agents that have
+ * ended are grouped by name under Past, with why they ended: one-off test runs expire after an hour, so they would otherwise fill the list.
+ */
 export default function Agents() {
   const gw = useGateway()
   const load = useCallback(async () => { const [mandates, approvals] = await Promise.all([gw.mandates(), gw.approvals()]); return { mandates, approvals } }, [gw])
-  const { data, error, loading, refresh } = usePoll(load, 6000)
-  const tops = (data?.mandates ?? []).filter(m => !m.parentId)
-  const running = tops.filter(m => m.status === 'active').length
+  const { data, error, loading, refresh } = usePoll(load, 6000, 'agents')
+  const { running, ended } = groupAgents(data?.mandates ?? [])
 
   return (
     <Screen bottomSpace={120}>
       <View style={{ marginTop: 18, flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' }}>
-        <View style={{ gap: 4 }}><T v="title">Agents</T><T v="sub" style={{ fontSize: 15 }}>{data ? `${running} running · ${tops.length - running} stopped` : ' '}</T></View>
+        <View style={{ gap: 4 }}><T v="title">Agents</T><T v="sub" style={{ fontSize: 15 }}>{data ? `${running.length} running${ended.length ? ` · ${ended.length} ended` : ''}` : ' '}</T></View>
         <Pressable onPress={() => router.push('/agents/new')} accessibilityRole="button" accessibilityLabel="Add an agent" style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: C.button, alignItems: 'center', justifyContent: 'center' }}><Icon name="plus" color="#000" width={2.4} /></Pressable>
       </View>
       <ErrorNote error={error} onRetry={() => void refresh()} />
       {loading && !data ? <Loading /> : null}
-      {tops.map((m, i) => <AgentCard key={m.id} m={m} i={i} kids={(data?.mandates ?? []).filter(c => c.parentId === m.id)} waiting={(data?.approvals ?? []).filter(a => a.status === 'pending' && a.decision.mandateId === m.id).length} />)}
+      {running.map((m, i) => <AgentCard key={m.id} m={m} i={i} kids={(data?.mandates ?? []).filter(c => c.parentId === m.id)} waiting={(data?.approvals ?? []).filter(a => a.status === 'pending' && a.decision.mandateId === m.id).length} />)}
+      {ended.length ? (
+        <>
+          <T v="sub" style={{ marginTop: 26, marginBottom: 8, marginLeft: 4, fontSize: 14 }}>Past</T>
+          <Card>
+            {ended.map((e, i) => (
+              <Pressable key={e.name} onPress={() => router.push(`/agents/${encodeURIComponent(e.last.id)}`)} style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderTopWidth: i ? 1 : 0, borderTopColor: C.sep, opacity: pressed ? 0.7 : 1 })}>
+                <View style={{ width: 36, height: 36, borderRadius: 12, backgroundColor: C.card2, alignItems: 'center', justifyContent: 'center', opacity: 0.6 }}><Glyph size={20} /></View>
+                <View style={{ flex: 1, gap: 2 }}>
+                  <T lines={1}>{e.name}</T>
+                  <T v="sub" lines={1}>{agentState(e.last.status).label} · {new Date(e.last.validUntil).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}{e.runs > 1 ? ` · ${e.runs} runs` : ''}</T>
+                </View>
+                <Icon name="chev" size={16} color={C.text3} width={2} />
+              </Pressable>
+            ))}
+          </Card>
+        </>
+      ) : null}
       {data ? (
         <Pressable onPress={() => router.push('/agents/new')} style={{ marginTop: 12, height: 64, borderRadius: 24, borderWidth: 1.5, borderStyle: 'dashed', borderColor: C.card3, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
           <Icon name="plus" size={18} color={C.text2} width={2} /><T v="bodyStrong" style={{ color: C.text2 }}>Add an agent</T>
@@ -49,7 +68,7 @@ function AgentCard({ m, i, kids, waiting }: { m: MandateRow; i: number; kids: Ma
             <View style={{ width: 48, height: 48, borderRadius: 15, backgroundColor: C.card2, alignItems: 'center', justifyContent: 'center' }}><Glyph size={26} /></View>
             <View style={{ flex: 1, gap: 3 }}>
               <T v="bodyStrong" style={{ fontSize: 18 }} lines={1}>{m.agentId}</T>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}><Dot color={active ? C.green : C.text3} /><T v="sub">{active ? 'Running' : m.status === 'revoked' ? 'Stopped' : m.status}</T></View>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}><Dot color={active ? C.green : C.text3} /><T v="sub">{agentState(m.status).label}</T></View>
             </View>
             <Icon name="chev" size={16} color={C.text3} width={2} />
           </View>

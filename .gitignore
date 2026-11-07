@@ -53,3 +53,4 @@ payload.json
 # apps/mobile/scripts/get-fonts.mjs fetches it from Fontshare before the app starts.
 apps/mobile/assets/fonts/Satoshi-*.otf
 .market-pay-confirm
+.live-agent.json

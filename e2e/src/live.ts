@@ -11,7 +11,8 @@ try { process.loadEnvFile(`${ROOT}.env`) } catch { /* rely on the environment */
 const need = (k: string) => { const v = process.env[k]; if (!v) { console.error(`${k} is not set in .env. See docs/SERVICES.md.`); process.exit(2) } return v }
 const KEY = need('NEAR_1CLICK_API_KEY'), PAYEE = need('MERCHANT_NEAR_ACCOUNT'), DEAL = need('WORKERS_DEAL_SECRET')
 // The local container, not a hosted database: a slow database makes checks time out, which (correctly) fails closed and hides what we want to see.
-const DB = process.env['LIVE_DATABASE_URL'] ?? (process.env['POSTGRES_PASSWORD'] ? `postgres://tollgate:${process.env['POSTGRES_PASSWORD']}@127.0.0.1:${process.env['POSTGRES_PORT'] ?? '5433'}/tollgate` : need('DATABASE_URL'))
+const DB = process.env['DATABASE_URL'] ?? ''
+if (!DB) { console.error('DATABASE_URL is not set in .env (the live database).'); process.exit(2) }
 const PAYER = '0x1Fac05Bc2a3Ff16d3C5f153454D76406af5ed1Ab' // a public address standing in for the agent's wallet; nothing is sent from it
 
 const schema = `live_${randomBytes(4).toString('hex')}`, OP = `live-owner-${randomBytes(12).toString('hex')}`

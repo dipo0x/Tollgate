@@ -427,6 +427,10 @@ describe('fails closed', () => {
 describe('configuration', () => {
   it('needs a long-enough operator token, and says exactly what is wrong', () => {
     expect(() => loadConfig({})).toThrow(/GATEWAY_OPERATOR_TOKEN/)
+    const tok = { GATEWAY_OPERATOR_TOKEN: 'x'.repeat(20) }
+    expect(loadConfig(tok).DATABASE_POOL_MAX).toBe(10)
+    expect(loadConfig({ ...tok, DATABASE_POOL_MAX: '4' }).DATABASE_POOL_MAX).toBe(4)
+    expect(() => loadConfig({ ...tok, DATABASE_POOL_MAX: '0' })).toThrow()
     expect(() => loadConfig({ GATEWAY_OPERATOR_TOKEN: 'short' })).toThrow(/at least 16/)
   })
   it('going live needs the 1Click key', () => {

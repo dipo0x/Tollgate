@@ -108,11 +108,33 @@ export interface HistoryStore {
   list(limit: number): Promise<HistoryRecord[]>
 }
 
+/**
+ * A task the owner gives an agent from the app ("buy the bridge cost brief"). The agent collects it with its own key, works on it,
+ * and replies. A task never moves money: the agent still asks to pay through the twelve checks and the owner's approval.
+ */
+export type TaskStatus = 'queued' | 'working' | 'done' | 'failed'
+export type TaskMessage = { at: string; from: 'owner' | 'agent'; text: string; decisionId?: string }
+export type AgentTask = { id: string; mandateId: string; status: TaskStatus; createdAt: string; updatedAt: string; messages: TaskMessage[] }
+export interface TaskStore {
+  /** False, saving nothing, if the id is taken. */
+  create(t: AgentTask): Promise<boolean>
+  get(id: string): Promise<AgentTask | undefined>
+  /** One mandate's tasks, newest first. */
+  list(mandateId: string, limit: number): Promise<AgentTask[]>
+  /** The tasks of several mandates (every run of one agent), newest first: one conversation across runs. */
+  listForMandates(mandateIds: readonly string[], limit: number): Promise<AgentTask[]>
+  /** Moves this mandate's oldest queued task to working and returns it; two agents asking at once never get the same task. */
+  claimNext(mandateId: string, at: string): Promise<AgentTask | undefined>
+  /** Adds a message (and maybe a new status) to a task of THIS mandate. False if there is no such task for it. */
+  reply(id: string, mandateId: string, msg: TaskMessage, status: TaskStatus | undefined, at: string): Promise<boolean>
+}
+
 export type GatewayStore = {
   kind: 'memory' | 'postgres'
   decisions: DecisionStore
   jobs: JobStore
   history: HistoryStore
+  tasks: TaskStore
   acceptance: AcceptanceStore
   sessions: SessionStore
   tokens: TokenStore

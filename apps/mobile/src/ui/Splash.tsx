@@ -9,7 +9,7 @@ import { C, F } from './theme'
  * Plays for about 3 s: posts, bar, name, a short hold, then the fade. It fades only after the name has fully appeared, so it
  * never cuts mid-movement, and only once the app is ready underneath.
  */
-export function Splash({ ready, onDone }: { ready: boolean; onDone: () => void }) {
+export function Splash({ ready, fontsReady, onDone }: { ready: boolean; fontsReady: boolean; onDone: () => void }) {
   const post = useSharedValue(0), bar = useSharedValue(0), word = useSharedValue(0), out = useSharedValue(1)
   const landed = useSharedValue(0)
 
@@ -44,7 +44,11 @@ export function Splash({ ready, onDone }: { ready: boolean; onDone: () => void }
         <Animated.View style={[{ position: 'absolute', left: 19.6 * k, top: 4 * k, width: 3.4 * k, height: 18 * k, backgroundColor: C.text, transformOrigin: 'bottom' }, postStyle]} />
         <Animated.View style={[{ position: 'absolute', left: 6.4 * k, top: 9 * k, width: 13.2 * k, height: 3.4 * k, backgroundColor: C.text, transformOrigin: 'left' }, barStyle]} />
       </View>
-      <Animated.Text style={[{ marginTop: 22, color: C.text, fontFamily: F.bold, fontSize: 30, letterSpacing: -0.8 }, wordStyle]}>Tollgate</Animated.Text>
+      {/* Drawn only once Satoshi has loaded: measured in the system font first, iOS kept the narrower box and cut off the last letter.
+          The side padding gives the tight letter spacing room so the final glyph never touches the edge of its box. */}
+      {fontsReady ? (
+        <Animated.Text numberOfLines={1} style={[{ marginTop: 22, paddingHorizontal: 6, color: C.text, fontFamily: F.bold, fontSize: 30, letterSpacing: -0.8 }, wordStyle]}>Tollgate</Animated.Text>
+      ) : <View style={{ marginTop: 22, height: 40 }} />}
     </Animated.View>
   )
 }

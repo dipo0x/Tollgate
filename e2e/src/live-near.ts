@@ -1,9 +1,8 @@
 import { randomBytes } from 'node:crypto'
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import postgres from 'postgres'
 import { HttpOneClick } from '@tollgate/core/oneclick'
 import { nearRpcRail } from 'trytollgate'
-import { preferPort, makeTmp, removeTmp, ROOT, start, waitFor, type Proc } from './harness.ts'
+import { ownerRecord, preferPort, makeTmp, removeTmp, ROOT, start, waitFor, type Proc } from './harness.ts'
 
 /**
  * `pnpm live:near`: ONE REAL PAYMENT FROM NEAR, end to end. The reference merchant asks live 1Click for a deposit address; Tollgate's
@@ -16,20 +15,19 @@ import { preferPort, makeTmp, removeTmp, ROOT, start, waitFor, type Proc } from 
 try { process.loadEnvFile(`${ROOT}.env`) } catch { /* rely on the environment */ }
 const need = (k: string) => { const v = process.env[k]; if (!v) { console.error(`${k} is not set in .env`); process.exit(2) } return v }
 const KEY = need('NEAR_1CLICK_API_KEY'), PAYEE = need('MERCHANT_NEAR_ACCOUNT'), DEAL = need('WORKERS_DEAL_SECRET')
-const DB = process.env['LIVE_DATABASE_URL'] ?? `postgres://tollgate:${need('POSTGRES_PASSWORD')}@127.0.0.1:${process.env['POSTGRES_PORT'] ?? '5433'}/tollgate`
+const REC = ownerRecord(), DB = REC.db, MANDATE = `mnd_near_${REC.run}`
 const NEAR_KEY = `${ROOT}.signer-near-key`, EVM_KEY = `${ROOT}.signer-key`
 const RPC = process.env['NEAR_RPC_URL'] ?? 'https://rpc.mainnet.near.org'
 const CONFIRM_FILE = process.env['CONFIRM_FILE'] ?? `${ROOT}.near-pay-confirm`
 const PRICE = process.env['LIVE_PRICE'] ?? '0.20'
 if (!existsSync(NEAR_KEY)) { console.error('No .signer-near-key: run `pnpm --filter @tollgate/signer keygen-near` first.'); process.exit(2) }
 
-const schema = `livenear_${randomBytes(4).toString('hex')}`, OP = `op-${randomBytes(12).toString('hex')}`, SVC_TOKEN = `svc-${randomBytes(16).toString('hex')}`
+const OP = `op-${randomBytes(12).toString('hex')}`, SVC_TOKEN = `svc-${randomBytes(16).toString('hex')}`
 const tmp = makeTmp(); const procs: Proc[] = []
 const [SP, GP, KP] = [await preferPort(9201), await preferPort(8789), await preferPort(8790)]
 const SVC = `http://127.0.0.1:${SP}`, GW = `http://127.0.0.1:${GP}`, SIGNER = `http://127.0.0.1:${KP}`
 async function stop() {
   for (const p of procs.reverse()) await p.stop()
-  try { const sql = postgres(DB, { max: 1, onnotice: () => {} }); await sql.unsafe(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`); await sql.end({ timeout: 2 }) } catch { /* best effort */ }
   removeTmp(tmp); rmSync(CONFIRM_FILE, { force: true })
 }
 process.on('SIGINT', () => { void stop().finally(() => process.exit(130)) })
@@ -46,8 +44,8 @@ try {
   console.log('Starting the reference merchant, the signer (NEAR, cap 0.25 USDC) and a live-mode gateway...')
   procs.push(start('services', 'apps/workers', 'src/server.ts', { WORKERS_PORT: String(SP), NEAR_1CLICK_API_KEY: KEY, MERCHANT_NEAR_ACCOUNT: PAYEE, WORKERS_DEAL_SECRET: DEAL, WORKERS_PRICE_OPENING: PRICE }, tmp)); await waitFor(`${SVC}/healthz`, 'the merchant')
   // The gateway first: it creates the database schema the signer reads the stored decisions from.
-  procs.push(start('gateway', 'apps/gateway', 'src/server.ts', { PORT: String(GP), DATABASE_URL: DB, DATABASE_SCHEMA: schema, GATEWAY_OPERATOR_TOKEN: OP, TOLLGATE_OFFLINE: 'false', NEAR_1CLICK_API_KEY: KEY, SIGNER_URL: SIGNER, SIGNER_SERVICE_TOKEN: SVC_TOKEN, CHECK_TIMEOUT_MS: '10000', LOG_LEVEL: 'silent' }, tmp)); await waitFor(`${GW}/healthz`, 'the gateway')
-  procs.push(start('signer', 'apps/signer', 'src/server.ts', { SIGNER_PORT: String(KP), SIGNER_SERVICE_TOKEN: SVC_TOKEN, SIGNER_KEY_FILE: EVM_KEY, DATABASE_URL: DB, DATABASE_SCHEMA: schema, SIGNER_CHAINS: 'near', SIGNER_NEAR_KEY_FILE: NEAR_KEY, SIGNER_MAX_PER_TX: '0.25', LOG_LEVEL: 'info' }, tmp))
+  procs.push(start('gateway', 'apps/gateway', 'src/server.ts', { PORT: String(GP), DATABASE_URL: DB, ...REC.schemaEnv, GATEWAY_OPERATOR_TOKEN: OP, TOLLGATE_OFFLINE: 'false', NEAR_1CLICK_API_KEY: KEY, SIGNER_URL: SIGNER, SIGNER_SERVICE_TOKEN: SVC_TOKEN, CHECK_TIMEOUT_MS: '10000', LOG_LEVEL: 'silent' }, tmp)); await waitFor(`${GW}/healthz`, 'the gateway')
+  procs.push(start('signer', 'apps/signer', 'src/server.ts', { SIGNER_PORT: String(KP), SIGNER_SERVICE_TOKEN: SVC_TOKEN, SIGNER_KEY_FILE: EVM_KEY, DATABASE_URL: DB, ...REC.schemaEnv, SIGNER_CHAINS: 'near', SIGNER_NEAR_KEY_FILE: NEAR_KEY, SIGNER_MAX_PER_TX: '0.25', LOG_LEVEL: 'info' }, tmp))
   await waitFor(`${SIGNER}/healthz`, 'the signer')
   const near = (await call('GET', `${SIGNER}/healthz`)).json.near as { accountId: string; publicKey: string }
 
@@ -55,7 +53,7 @@ try {
   await call('POST', `${GW}/v1/services`, OP, { id: 'svc_live', name: 'Reference merchant (ours)', category: 'data', host: '127.0.0.1', providerUrl: SVC, pricing: { model: 'per_request', quoted: PRICE, currency: 'USDC' }, paymentRails: [], limits: { maxPerRequest: '0.25', timeoutMs: 8000 } })
   await call('POST', `${GW}/v1/services/svc_live/probe-result`, OP, { verification: 'endpoint-checked', payee: PAYEE, health: 'healthy' })
   await call('POST', `${GW}/v1/services/svc_live/enable`, OP)
-  const m = await call('POST', `${GW}/v1/mandates`, OP, { id: 'mnd_near', version: 1, principal: 'owner', agentId: 'near-agent', validFrom: iso(now), validUntil: iso(new Date(now.getTime() + 3_600_000)),
+  const m = await call('POST', `${GW}/v1/mandates`, OP, { id: MANDATE, version: 1, principal: 'owner', agentId: 'near-agent', validFrom: iso(now), validUntil: iso(new Date(now.getTime() + 3_600_000)),
     budget: { currency: 'USDC', total: '0.30', perPayment: '0.25' }, allowedHosts: ['127.0.0.1'], allowedOriginNetworks: ['near'], allowedAssets: ['USDC'],
     payee: { mode: 'registry' }, price: { tolerancePct: 3, onExceed: 'deny' }, approval: { above: '0.50', riskAbove: 90, firstPayeeRequiresApproval: false }, refund: { mustBePayerOrPinned: true } })
   const agent = m.json.agentToken as string
@@ -68,7 +66,7 @@ try {
     const first = await call('GET', `${SVC}/data`, undefined, undefined, { 'x-payer': near.accountId })
     if (first.status !== 402) throw new Error(`merchant answered ${first.status}: ${JSON.stringify(first.json)}`)
     ch = first.json.challenge
-    d = (await call('POST', `${GW}/v1/authorize`, agent, { mandateId: 'mnd_near', host: '127.0.0.1', purpose: 'buy the bridge cost brief', challenge: ch, payer: near.accountId })).json
+    d = (await call('POST', `${GW}/v1/authorize`, agent, { mandateId: MANDATE, host: '127.0.0.1', purpose: 'buy the bridge cost brief', challenge: ch, payer: near.accountId })).json
     console.log(`\nDECISION (attempt ${attempt}): ${d.decision}${d.failedCheck ? ` (stopped by ${d.failedCheck})` : ''}`)
     for (const c of d.checks ?? []) console.log(`  ${c.id} ${String(c.name).padEnd(24)} ${c.result}${c.result === 'pass' ? '' : '  ' + JSON.stringify(c.evidence)}`)
     const timedOut = (d.checks ?? []).some((c: any) => /timed out/.test(JSON.stringify(c.evidence ?? {})))
@@ -111,7 +109,7 @@ try {
   const rec = await call('POST', `${GW}/v1/payments/${d.decisionId}/reconcile`, agent)
   console.log(`gateway reconcile: ${JSON.stringify(rec.json)}`)
   writeFileSync(`${ROOT}.near-pay-result.json`, JSON.stringify({ at: new Date().toISOString(), txHash, explorer: `https://nearblocks.io/txns/${txHash}`, depositAddress: d.bind.to, amount: d.bind.amount, from: near.accountId, finalRecipient: payee, oneClickStatus: status, merchantStatus: got.status, decisionId: d.decisionId }, null, 1))
-  // Keep the gateway up so the owner can see this payment on the dashboard (it lives only in this run's throwaway schema).
+  // Keep the gateway up so the owner can see this payment on the dashboard (it is recorded in your own gateway database, so it stays on your dashboard and phone).
   const keepMin = Number(process.env['KEEP_MINUTES'] ?? '20')
   console.log(`\nDASHBOARD  ${GW}/dashboard\nTOKEN      ${OP}   (this run only; it stops in ${keepMin} minutes or on Ctrl+C)`)
   await sleep(keepMin * 60_000)

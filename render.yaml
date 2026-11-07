@@ -1,0 +1,62 @@
+# Tollgate on Render, FREE plan only (no payment method). Create it once: Dashboard → New → Blueprint → pick this repository.
+# Render asks for each value marked "sync: false"; secrets are never written in this file.
+#
+#   tollgate-gateway   public   the owner's dashboard + the API the phone app and agents call.
+#                               The SIGNER runs inside this same service on 127.0.0.1 (scripts/start-hosted.mjs): a free host has no
+#                               private network, and a separate public signer would put the only key on the internet.
+#   tollgate-workers   public   reference merchant, seller and worker (they call LIVE 1Click)
+#   tollgate-site      public   the marketing site (static)
+#
+# Free-plan limits, stated: a free web service sleeps after ~15 minutes without traffic and takes about a minute to wake, so the phone app's
+# first request after a quiet spell is slow. Safe default: the gateway starts OFFLINE (TOLLGATE_OFFLINE=true: recorded answers, no funds).
+projects:
+  - name: tollgate
+    environments:
+      - name: production
+        services:
+          - type: web
+            name: tollgate-gateway
+            runtime: node
+            plan: free
+            buildCommand: corepack enable && pnpm install --frozen-lockfile
+            # Render's secret files are read-only for everyone; the signer refuses a key others can read, so copy it to a private file first.
+            startCommand: install -m 600 /etc/secrets/signer-key /tmp/signer-key && node scripts/start-hosted.mjs
+            healthCheckPath: /healthz
+            envVars:
+              - { key: NODE_VERSION, value: "22" }
+              - { key: GATEWAY_HOST, value: "0.0.0.0" }
+              - { key: TOLLGATE_OFFLINE, value: "true" }
+              - { key: SIGNER_URL, value: "http://127.0.0.1:8788" }
+              - { key: SIGNER_PORT, value: "8788" }
+              - { key: SIGNER_KEY_FILE, value: "/tmp/signer-key" }
+              - { key: SIGNER_CHAINS, value: "eip155:42161" }
+              - { key: SIGNER_MAX_PER_TX, value: "1.00" }
+              - { key: SIGNER_SERVICE_TOKEN, generateValue: true }   # shared by the two programs inside this service; nobody types it
+              - { key: GATEWAY_OPERATOR_TOKEN, generateValue: true } # read it in the Render dashboard: it is the sign-in token
+              - { key: DATABASE_URL, sync: false }                   # your hosted Postgres address (a secret); the signer uses it too
+              - { key: NEAR_1CLICK_API_KEY, sync: false }            # only used when TOLLGATE_OFFLINE=false; may be left empty
+            # Upload the signing key as a Secret File named signer-key (Dashboard → tollgate-gateway → Environment → Secret Files).
+
+          - type: web
+            name: tollgate-workers
+            runtime: node
+            plan: free
+            buildCommand: corepack enable && pnpm install --frozen-lockfile
+            startCommand: pnpm --filter @tollgate/workers start
+            healthCheckPath: /healthz
+            envVars:
+              - { key: NODE_VERSION, value: "22" }
+              - { key: PORT, value: "10000" }
+              - { key: WORKERS_HOST, value: "0.0.0.0" }
+              - { key: WORKERS_PORT, value: "10000" }
+              - { key: WORKERS_DEAL_SECRET, generateValue: true }
+              - { key: MERCHANT_NEAR_ACCOUNT, sync: false }          # the account that RECEIVES payment: yours to enter
+              - { key: NEAR_1CLICK_API_KEY, sync: false }            # required: these call live 1Click
+
+          - type: web
+            name: tollgate-site
+            runtime: static
+            buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm --filter @tollgate/site build
+            staticPublishPath: apps/site/dist
+            envVars:
+              - { key: NODE_VERSION, value: "22" }

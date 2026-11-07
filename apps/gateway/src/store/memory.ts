@@ -1,7 +1,7 @@
 import type { AcceptanceSpec, NegotiationSnapshot, Prior } from '@tollgate/core'
 import type { Service } from '@tollgate/registry'
 import { isPrior, toPrior, type Approval, type DecisionRecord, type Job } from '../state.ts'
-import type { SignatureStore, StoredSignature, AcceptanceStore, ApprovalOutcome, DecisionFilter, DecisionStore, GatewayStore, JobStore, HistoryStore, HistoryRecord, LockStore, ServiceStore, SessionStore, SettingsStore, TokenOwner, TokenStore } from './types.ts'
+import type { SignatureStore, StoredSignature, AcceptanceStore, ApprovalOutcome, DecisionFilter, DecisionStore, GatewayStore, JobStore, HistoryStore, HistoryRecord, LockStore, ServiceStore, SessionStore, SettingsStore, TokenOwner, TokenStore, AgentTask, TaskMessage, TaskStatus, TaskStore } from './types.ts'
 
 export class MemoryDecisionStore implements DecisionStore {
   private rows = new Map<string, DecisionRecord>()
@@ -22,7 +22,9 @@ export class MemoryDecisionStore implements DecisionStore {
   async list(f: DecisionFilter = {}) {
     const all = [...this.rows.values()].filter(r =>
       (!f.mandateId || r.mandateId === f.mandateId) && (!f.decision || r.decision === f.decision) && (!f.state || r.state === f.state) && (!f.challengeId || r.challengeId === f.challengeId))
-    return all.reverse().slice(0, f.limit ?? all.length)
+    // Newest first by when it happened; rows with the same time keep newest-inserted first, as the database does.
+    const newest = all.reverse().sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    return newest.slice(0, f.limit ?? newest.length)
   }
   async blockedCount(mandateId: string) { return (await this.list({ mandateId, decision: 'DENY' })).length }
 
@@ -59,6 +61,32 @@ export class MemoryHistoryStore implements HistoryStore {
   private rows = new Map<string, HistoryRecord>()
   async create(r: HistoryRecord) { if (this.rows.has(r.id)) return false; this.rows.set(r.id, r); return true }
   async list(limit: number) { return [...this.rows.values()].sort((a, b) => b.occurredAt.localeCompare(a.occurredAt)).slice(0, limit) }
+}
+
+export class MemoryTaskStore implements TaskStore {
+  private rows = new Map<string, AgentTask>()
+  private copy = (t: AgentTask): AgentTask => ({ ...t, messages: t.messages.map(m => ({ ...m })) })
+  async create(t: AgentTask) { if (this.rows.has(t.id)) return false; this.rows.set(t.id, this.copy(t)); return true }
+  async get(id: string) { const t = this.rows.get(id); return t ? this.copy(t) : undefined }
+  async list(mandateId: string, limit: number) {
+    return [...this.rows.values()].filter(t => t.mandateId === mandateId).sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id)).slice(0, limit).map(this.copy)
+  }
+  async listForMandates(mandateIds: readonly string[], limit: number) {
+    const ids = new Set(mandateIds)
+    return [...this.rows.values()].filter(t => ids.has(t.mandateId)).sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id)).slice(0, limit).map(this.copy)
+  }
+  async claimNext(mandateId: string, at: string) {
+    const next = [...this.rows.values()].filter(t => t.mandateId === mandateId && t.status === 'queued').sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))[0]
+    if (!next) return undefined
+    next.status = 'working'; next.updatedAt = at
+    return this.copy(next)
+  }
+  async reply(id: string, mandateId: string, msg: TaskMessage, status: TaskStatus | undefined, at: string) {
+    const t = this.rows.get(id)
+    if (!t || t.mandateId !== mandateId) return false
+    t.messages.push({ ...msg }); if (status) t.status = status; t.updatedAt = at
+    return true
+  }
 }
 
 export class MemoryAcceptanceStore implements AcceptanceStore {
@@ -120,7 +148,7 @@ export class MemoryLockStore implements LockStore {
 
 export function memoryStore(): GatewayStore {
   return {
-    kind: 'memory', decisions: new MemoryDecisionStore(), jobs: new MemoryJobStore(), history: new MemoryHistoryStore(), acceptance: new MemoryAcceptanceStore(),
+    kind: 'memory', decisions: new MemoryDecisionStore(), jobs: new MemoryJobStore(), history: new MemoryHistoryStore(), tasks: new MemoryTaskStore(), acceptance: new MemoryAcceptanceStore(),
     sessions: new MemorySessionStore(), tokens: new MemoryTokenStore(), services: new MemoryServiceStore(), settings: new MemorySettingsStore(), locks: new MemoryLockStore(), signatures: new MemorySignatureStore(),
   }
 }

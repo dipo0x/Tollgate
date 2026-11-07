@@ -14,7 +14,7 @@ export default function Account() {
   const { url, unpair } = useSession()
   const [copied, setCopied] = useState(false)
   const load = useCallback(() => gw.status(), [gw])
-  const { data, error, refresh } = usePoll(load, 8000)
+  const { data, error, refresh } = usePoll(load, 8000, 'account')
   const host = url ? new URL(url).host : ''
 
   function confirmUnpair() {
@@ -32,7 +32,7 @@ export default function Account() {
         <View style={{ flex: 1, gap: 3 }}>
           <T v="label" style={{ fontSize: 12 }}>CONNECTED GATEWAY</T>
           <T v="bodyStrong" lines={1} style={{ fontSize: 17 }}>{host}</T>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}><Dot color={data?.frozen ? C.red : C.green} /><T v="sub">{data ? `${data.frozen ? 'Frozen' : 'Live'} · ${data.mode === 'live' ? 'real money' : 'test mode'}` : 'Checking…'}</T></View>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}><Dot color={data?.frozen ? C.red : C.green} /><T v="sub">{data ? `${data.frozen ? 'Frozen' : 'Payments on'} · ${data.mode === 'live' ? 'Live' : 'Test mode'}` : 'Checking…'}</T></View>
         </View>
         <Circle icon={copied ? 'check' : 'copy'} label="Copy gateway address" tint={copied ? C.green : C.text2} onPress={() => { if (url) void Clipboard.setStringAsync(url).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1400) }) }} />
       </Card>

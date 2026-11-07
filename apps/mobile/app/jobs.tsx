@@ -14,7 +14,7 @@ import { C } from '../src/ui/theme'
 export default function Jobs() {
   const gw = useGateway()
   const load = useCallback(async () => ({ jobs: await gw.jobs(), past: await gw.history() }), [gw])
-  const { data, error, loading, refresh } = usePoll(load, 15_000)
+  const { data, error, loading, refresh } = usePoll(load, 15_000, 'jobs')
   const empty = data && data.jobs.length === 0 && data.past.length === 0
   return (
     <Screen>

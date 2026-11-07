@@ -175,3 +175,8 @@ td.mono{white-space:nowrap}
 .sect{margin:26px 0 10px;font-size:15px;font-weight:600}
 .sect:first-child{margin-top:0}
 .offscreen{position:fixed;left:-9999px;top:0;width:1px;height:1px;opacity:0}
+.thread{margin-top:18px;display:grid;gap:8px}.thread .sect{margin:0 0 4px}
+.msg{max-width:88%;padding:8px 12px;border-radius:12px;background:rgba(255,255,255,.05);white-space:pre-wrap;word-break:break-word}
+.msg small{display:block;color:var(--dm);font-size:11px;margin-bottom:2px}.msg.owner{justify-self:end;background:rgba(255,255,255,.12)}
+.msgform{display:flex;gap:8px;margin-top:4px}.msgin{flex:1;min-width:0;padding:9px 12px;border-radius:10px;border:1px solid rgba(255,255,255,.14);background:transparent;color:inherit;font:inherit}
+.linkish{display:block;margin-top:6px;padding:0;border:0;background:none;color:var(--ap);font:inherit;cursor:pointer;text-decoration:underline}

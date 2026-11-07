@@ -11,7 +11,7 @@ if (!existsSync('.env')) { console.error('No .env yet. Run `pnpm onboard` first.
 
 const wifi = Object.values(networkInterfaces()).flat().find(i => i && i.family === 'IPv4' && !i.internal)?.address
 const procs = [
-  { name: 'gateway', cmd: ['pnpm', '--filter', '@tollgate/gateway', 'dev'], env: { GATEWAY_HOST: process.env.GATEWAY_HOST ?? '0.0.0.0' } },
+  { name: 'gateway', cmd: ['pnpm', '--filter', '@tollgate/gateway', 'dev'], env: { GATEWAY_HOST: process.env.GATEWAY_HOST ?? '0.0.0.0', DATABASE_POOL_MAX: process.env.DATABASE_POOL_MAX ?? '4' } }, // hosted Postgres plans allow ~17 connections in all
   { name: 'signer', cmd: ['pnpm', '--filter', '@tollgate/signer', 'dev'] },
   { name: 'mobile', cmd: ['pnpm', '--filter', '@tollgate/mobile', 'start'] },
   { name: 'site', cmd: ['pnpm', '--filter', '@tollgate/site', 'dev'], needs: 'apps/site/node_modules/vite/bin/vite.js' },

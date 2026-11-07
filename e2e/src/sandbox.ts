@@ -1,11 +1,9 @@
 import { randomBytes } from 'node:crypto'
 import { chmodSync, writeFileSync, rmSync } from 'node:fs'
-import { networkInterfaces } from 'node:os'
 import { join } from 'node:path'
-import qrcode from 'qrcode-generator'
 import postgres from 'postgres'
 import { createKeyFile } from '@tollgate/signer/src/backend.ts'
-import { preferPort, makeTmp, removeTmp, ROOT, start, waitFor, type Proc } from './harness.ts'
+import { lanAddress, pairingQr, preferPort, makeTmp, removeTmp, ROOT, start, waitFor, type Proc, phoneHost } from './harness.ts'
 
 /**
  * `pnpm sandbox`: the real gateway and signer, wired to a SIMULATED outside world (a fake 1Click, a fake chain, and a merchant you can make
@@ -20,7 +18,7 @@ if (!DB) { console.error('DATABASE_URL is required: the gateway keeps all its st
 
 // `pnpm sandbox:phone`: the same sandbox, reachable from a phone on this Wi-Fi, and every purchase waits for the phone's approval.
 const PHONE = process.argv.includes('--phone')
-const lan = Object.values(networkInterfaces()).flat().find(i => i && i.family === 'IPv4' && !i.internal)?.address
+const lan = lanAddress()
 if (PHONE && !lan) { console.error('No Wi-Fi or network address found. Connect this computer to the same Wi-Fi as your phone, then try again.'); process.exit(2) }
 const schema = `sandbox_${randomBytes(4).toString('hex')}`
 const tmp = makeTmp()
@@ -70,16 +68,7 @@ Refresh the dashboard after each one: you will see the payment, the twelve check
 ${d}Stop with Ctrl+C: this removes the sandbox's throwaway database data and key.${x}
 `)
 if (PHONE) {
-  const phoneUrl = `http://${lan}:${G}`
-  const q = qrcode(0, 'M'); q.addData(JSON.stringify({ tollgate: 1, url: phoneUrl, key: OP }), 'Byte'); q.make()
-  const n = q.getModuleCount(), dark = (r: number, c: number) => r >= 0 && c >= 0 && r < n && c < n && q.isDark(r, c)
-  // Two QR rows per text line (▀ ▄ █), dark-on-light with a quiet zone, so a phone camera reads it straight off the terminal.
-  const rows: string[] = []
-  for (let r = -2; r < n + 2; r += 2) {
-    let line = ''
-    for (let c = -2; c < n + 2; c++) { const t = dark(r, c), u = dark(r + 1, c); line += t && u ? ' ' : t ? '▄' : u ? '▀' : '█' }
-    rows.push('  ' + line)
-  }
+  const phoneUrl = `http://${phoneHost()}:${G}`
   console.log(`${b}${g}PHONE MODE${x} ${d}This gateway is reachable from your Wi-Fi at ${phoneUrl}. Every purchase waits for your phone.${x}
 
 ${b}On your phone${x}
@@ -87,7 +76,7 @@ ${b}On your phone${x}
   2. In a second terminal on this computer:  pnpm --filter @tollgate/mobile start   and scan its QR with the Camera app.
   3. In Tollgate: Get started, then scan THIS code:
 
-${rows.join('\n')}
+${pairingQr(phoneUrl, OP)}
 
   Or tap "Enter the address instead":  ${phoneUrl}   key: ${OP}
 
