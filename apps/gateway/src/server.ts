@@ -29,7 +29,10 @@ try { ({ recovered } = await gateway.init()) } catch (e) {
   process.exit(1)
 }
 
-const server = serve({ fetch: app.fetch, port: cfg.PORT, hostname: '127.0.0.1' }) // loopback only: the gateway is not exposed to the network
+const server = serve({ fetch: app.fetch, port: cfg.PORT, hostname: cfg.GATEWAY_HOST }) // 127.0.0.1 by default: this machine only
+if (!['127.0.0.1', 'localhost', '::1'].includes(cfg.GATEWAY_HOST)) {
+  console.log(JSON.stringify({ event: 'gateway.exposed', host: cfg.GATEWAY_HOST, warning: 'reachable from other machines on this network. Every call still needs a token. Use https (a reverse proxy) for anything beyond a home network.' }))
+}
 const head = await deps.audit.head()
 console.log(JSON.stringify({
   event: 'gateway.started', port: cfg.PORT, mode: cfg.TOLLGATE_OFFLINE ? 'offline (replaying recorded 1Click responses)' : 'live (real 1Click)',

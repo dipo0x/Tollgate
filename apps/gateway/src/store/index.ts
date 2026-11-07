@@ -2,7 +2,7 @@ import { openPostgres, type PostgresHandle, type PostgresOptions } from '@tollga
 import { GATEWAY_MIGRATIONS } from './migrations.ts'
 import { memoryStore } from './memory.ts'
 import {
-  PostgresAcceptanceStore, PostgresDecisionStore, PostgresJobStore, PostgresLockStore, PostgresServiceStore, PostgresSignatureStore, PostgresSessionStore, PostgresSettingsStore, PostgresTokenStore,
+  PostgresAcceptanceStore, PostgresDecisionStore, PostgresHistoryStore, PostgresJobStore, PostgresLockStore, PostgresServiceStore, PostgresSignatureStore, PostgresSessionStore, PostgresSettingsStore, PostgresTokenStore,
 } from './postgres.ts'
 import type { GatewayStore } from './types.ts'
 
@@ -16,7 +16,7 @@ export async function postgresStore(opts: Omit<PostgresOptions, 'extraMigrations
   const pg = await openPostgres({ ...opts, extraMigrations: GATEWAY_MIGRATIONS })
   const s = pg.sql
   const store: GatewayStore = {
-    kind: 'postgres', decisions: new PostgresDecisionStore(s), jobs: new PostgresJobStore(s), acceptance: new PostgresAcceptanceStore(s),
+    kind: 'postgres', decisions: new PostgresDecisionStore(s), jobs: new PostgresJobStore(s), history: new PostgresHistoryStore(s), acceptance: new PostgresAcceptanceStore(s),
     sessions: new PostgresSessionStore(s), tokens: new PostgresTokenStore(s), services: new PostgresServiceStore(s), settings: new PostgresSettingsStore(s), locks: new PostgresLockStore(s), signatures: new PostgresSignatureStore(s),
   }
   return { store, pg, close: pg.close }

@@ -10,9 +10,9 @@ const INJECT_IMG = '<img src=x onerror="window.__pwned=1">'
 const INJECT_SCRIPT = '<script>window.__pwned=1</script>'
 
 describe('the dashboard is served safely', () => {
-  it('serves the page and its two assets with a strict policy: no inline code, same-origin only, never cached', async () => {
+  it('serves the page and its assets (including the pairing QR encoder) with a strict policy: no inline code, same-origin only, never cached', async () => {
     const g = boot()
-    for (const [path, type] of [['/dashboard', 'text/html'], ['/dashboard/app.js', 'text/javascript'], ['/dashboard/app.css', 'text/css']] as const) {
+    for (const [path, type] of [['/dashboard', 'text/html'], ['/dashboard/app.js', 'text/javascript'], ['/dashboard/app.css', 'text/css'], ['/dashboard/qr.js', 'text/javascript']] as const) {
       const res = await g.app.request(path)
       expect(res.status).toBe(200)
       expect(res.headers.get('content-type')).toContain(type)
@@ -54,7 +54,7 @@ async function openDashboard(g: ReturnType<typeof boot>) {
   const html = await (await g.app.request('/dashboard')).text()
   const js = await (await g.app.request('/dashboard/app.js')).text()
   const win = new Window({ url: 'http://localhost:8787/dashboard' })
-  win.document.write(html.replace(/<script src="[^"]*"><\/script>/, '').replace(/<link[^>]*>/, ''))
+  win.document.write(html.replace(/<script src="[^"]*"><\/script>/g, '').replace(/<link[^>]*>/, ''))
   ;(win as unknown as { fetch: unknown }).fetch = (u: string, init?: RequestInit) => g.app.request(u, init)
   ;(win as unknown as { confirm: () => boolean }).confirm = () => true
   win.eval(js)

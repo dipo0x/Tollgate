@@ -1,14 +1,15 @@
 import {
   acceptanceCheck, closeMandate, completeWork, creditRevenue, evaluate, hire, jobSummary, MandateSchema, Negotiation, OneClickRecordSchema,
-  parseChallenge, toMicro, type AcceptanceSpec, type Challenge, type CheckResult, type DelegationDeps, type Deal, type Evaluation, type HireRequest,
-  type AuditStore, type Ledger, type MandateStore, type OneClickAdapter, type Offer, type PinStore, type RevenueStore,
+  isX402Input, parseChallenge, toMicro, x402ToChallenge, X402_NEAR_NETWORK, type AcceptanceSpec, type Challenge, type CheckResult, type DelegationDeps, type Deal, type Evaluation, type HireRequest,
+  type AuditStore, type Ledger, type MandateStore, type MarketAdapter, type OneClickAdapter, type Offer, type PinStore, type RevenueStore,
 } from '@tollgate/core'
 import type { Services } from './services.ts'
 import type { SignerClient, TxParams } from './signer.ts'
 import type { TokenRegistry } from './auth.ts'
 import type { Approval, Bind, DecisionRecord, Job } from './state.ts'
-import type { GatewayStore } from './store/types.ts'
+import type { GatewayStore, HistoryRecord } from './store/types.ts'
 import { randomUUID as uuid } from 'node:crypto'
+import { listensOnNetwork } from './network.ts'
 import { z } from 'zod'
 
 export type GatewayDeps = {
@@ -21,12 +22,16 @@ export type GatewayDeps = {
   pins: PinStore & { pinPayee(host: string, address: string): unknown }
   revenue: RevenueStore
   oneClick: OneClickAdapter
+  /** The NEAR AI Agent Market's published facts, for x402 payments. Absent: every market payment fails C06/C07 (fail closed). */
+  market?: MarketAdapter
   audit: AuditStore
   tokens: TokenRegistry
   /** Absent when no signer is configured: payments are authorized but nothing can be signed. */
   signer?: SignerClient
   /** For display only. */
-  info?: { mode: 'offline' | 'live' }
+  info?: { mode: 'offline' | 'live'; network?: { host: string; port: number } }
+  /** This computer's private network addresses (for pairing a phone). Injected so tests do not depend on the machine. */
+  lanAddresses?: () => string[]
   clock: () => Date
   approvalTtlMs: number
   /** How long one check may take before it fails (fail closed). Live 1Click's first lookup of a new deposit address was measured at ~5 s. */
@@ -91,6 +96,17 @@ export class Gateway {
     }
   }
 
+  /**
+   * For "Pair a phone": where this gateway listens, and the addresses on this computer's network a phone could use. A phone can
+   * only pair if the gateway listens on the network (GATEWAY_HOST=0.0.0.0) and there is a private address to point it at.
+   */
+  pairing() {
+    const net = this.d.info?.network
+    const host = net?.host ?? '127.0.0.1'
+    const addresses = this.d.lanAddresses?.() ?? []
+    return { listen: host, port: net?.port ?? 8787, openToNetwork: listensOnNetwork(host), addresses }
+  }
+
   // ---- mandates --------------------------------------------------------------------------
 
   async createMandate(raw: unknown): Promise<Out> {
@@ -140,8 +156,15 @@ export class Gateway {
 
   // ---- authorize -------------------------------------------------------------------------
 
-  async authorize(agent: Agent, req: AuthorizeRequest): Promise<Out> {
-    if (agent.mandateId !== req.mandateId) return fail(403, 'wrong_mandate', 'this token does not belong to that mandate')
+  async authorize(agent: Agent, raw: AuthorizeRequest): Promise<Out> {
+    if (agent.mandateId !== raw.mandateId) return fail(403, 'wrong_mandate', 'this token does not belong to that mandate')
+    // A NEAR AI Agent Market (x402) request is translated into an ordinary challenge HERE, once, by the gateway, so the twelve
+    // checks judge it like any other payment. Untranslatable input is left as it is, and C03 refuses it.
+    let req = raw
+    if (isX402Input(raw.challenge)) {
+      const t = x402ToChallenge(raw.challenge, { host: raw.host, payer: raw.payer, now: this.d.clock() })
+      if (t.ok) req = { ...raw, challenge: t.challenge }
+    }
     const parsed = parseChallenge(req.challenge)
     // Two requests about the same challenge at the same moment would both see "no earlier decision" and both take a hold.
     // So requests for one challenge go one at a time: the second sees the first's decision and is answered from it.
@@ -180,7 +203,7 @@ export class Gateway {
     const evaluation = await evaluate({
       mandate, agentId: agent.agentId, host: req.host, rawChallenge: req.challenge, now,
       registry: await this.d.services.lookupFor(req.host), ledger: this.d.ledger,
-      adapters: { oneClick: this.d.oneClick, pins: this.d.pins, decisions: this.d.store.decisions },
+      adapters: { oneClick: this.d.oneClick, pins: this.d.pins, decisions: this.d.store.decisions, ...(this.d.market ? { market: this.d.market } : {}) },
       ...(req.payer ? { payer: req.payer } : {}), ...(deal ? { deal } : {}),
     }, undefined, this.d.checkTimeoutMs ? { checkTimeoutMs: this.d.checkTimeoutMs } : {})
 
@@ -428,6 +451,9 @@ export class Gateway {
     const rec = await this.d.store.decisions.get(decisionId)
     if (!rec || (scope.mandateId && rec.mandateId !== scope.mandateId)) return fail(404, 'not_found', `no decision ${decisionId}`)
     if (rec.state !== 'allowed' || !rec.depositAddress) return fail(409, 'not_reconcilable', `a decision in state "${rec.state}" has nothing to reconcile`)
+    // A market (x402) payment is settled by the market's relayer when the hired agent delivers. 1Click knows nothing about it, so
+    // asking 1Click would be meaningless. The amount stays HELD, which the budget counts as spent: the safe direction to be wrong in.
+    if (rec.bind?.chain === X402_NEAR_NETWORK) return fail(409, 'reconcile_not_supported', 'market payments settle on delivery; the amount stays held (counted as spent) until chain reconciliation is built')
 
     let res
     try { res = await this.d.oneClick.status(rec.depositAddress) } catch (err) {
@@ -515,6 +541,23 @@ export class Gateway {
     if (!job || (scope.mandateId && job.mandateId !== scope.mandateId)) return fail(404, 'not_found', `no job ${id}`)
     const summary = await jobSummary({ ledger: this.d.ledger, revenue: this.d.revenue }, job, await this.d.store.decisions.blockedCount(job.mandateId))
     return ok({ job, summary })
+  }
+
+  /** Newest first, each marked as imported: these runs did not go through this gateway's decision log. */
+  async listHistory(limit: number): Promise<Out> { return ok({ history: await this.d.store.history.list(limit) }) }
+
+  /** Records a real run from outside the decision log. Idempotent by id. The audit entry says it was imported, so the chain shows it. */
+  async importHistory(r: HistoryRecord): Promise<Out> {
+    if (!(await this.d.store.history.create(r))) return fail(409, 'history_exists', `${r.id} is already recorded`)
+    await this.audit('history.imported', { id: r.id, kind: r.kind, amount: r.amount, currency: r.currency, ...(r.txHash ? { txHash: r.txHash } : {}) })
+    return ok({ history: r }, 201)
+  }
+
+  /** Every job, newest first, each with what it has earned and spent. Read-only. */
+  async listJobs(limit: number): Promise<Out> {
+    const jobs = await this.d.store.jobs.list(limit)
+    const rows = await Promise.all(jobs.map(async job => ({ job, summary: await jobSummary({ ledger: this.d.ledger, revenue: this.d.revenue }, job, await this.d.store.decisions.blockedCount(job.mandateId)) })))
+    return ok({ jobs: rows })
   }
 
   async reportRevenue(agent: Agent, jobId: string, receipt: unknown): Promise<Out> {

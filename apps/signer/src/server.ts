@@ -5,7 +5,7 @@ import postgres from 'postgres'
 import { createSignerApp } from './app.ts'
 import { loadKeyFile, viemBackend } from './backend.ts'
 import { limitsFrom, loadConfig } from './config.ts'
-import { loadNearKeyFile, nearBackend, NEAR_CHAIN } from './near.ts'
+import { loadNearKeyFile, nearBackend, NEAR_CHAIN, X402_CHAIN } from './near.ts'
 import { ensureSignerSchema, PostgresSignerStore } from './store-postgres.ts'
 
 try { process.loadEnvFile(new URL('../../../.env', import.meta.url)) } catch { /* no .env: rely on the environment */ }
@@ -26,7 +26,7 @@ try { backend = viemBackend(loadKeyFile(keyPath)) } catch (e) {
 // The NEAR key, only if this signer pays from NEAR. Same rules as the EVM key: a file only its owner can read, never logged.
 const resolve = (p: string) => isAbsolute(p) ? p : fileURLToPath(new URL(`../../../${p}`, import.meta.url))
 let near
-if (c.SIGNER_CHAINS.split(',').map(s => s.trim()).includes(NEAR_CHAIN)) {
+if (c.SIGNER_CHAINS.split(',').map(s => s.trim()).some(x => x === NEAR_CHAIN || x === X402_CHAIN)) {
   try { near = nearBackend(loadNearKeyFile(resolve(c.SIGNER_NEAR_KEY_FILE)), c.SIGNER_NEAR_ACCOUNT || undefined) } catch (e) {
     fail(`Cannot load the NEAR signing key: ${e instanceof Error ? e.message : e}\nFix: run \`pnpm --filter @tollgate/signer keygen-near\` from the repo root: it makes the key (mode 600) and prints only its public account and key.`)
   }

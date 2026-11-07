@@ -1,5 +1,6 @@
 import { loadPrior, sameAddress } from './facts.ts'
 import type { Check } from './types.ts'
+import { isX402 } from './x402-facts.ts'
 
 /**
  * C10: have we seen this payment before? A new challenge on a fresh deposit address passes. The
@@ -23,7 +24,10 @@ export const c10ReplayDupes: Check = async ctx => {
     }
     return { ...base, result: 'pass', evidence: { resume: true, decisionId: same.decisionId } }
   }
-  const other = seen.byDeposit
+  // A 1Click deposit address is single-use, so a second challenge on it is a duplicate. A market (x402) payee is the market's
+  // shared treasury: every market payment goes there, so it says nothing about duplicates. For those, uniqueness is the
+  // challenge id (one per request), the signer's one-time claim, and the market refusing a replayed payment header.
+  const other = isX402(ctx) ? undefined : seen.byDeposit
   if (other) return { ...base, result: 'fail', evidence: { reason: 'this deposit address was already used by another challenge', decisionId: other.decisionId } }
   return { ...base, result: 'pass', evidence: { unseen: true } }
 }

@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { tokensFor } from './chains.ts'
-import { NEAR_CHAIN, NEAR_USDC } from './near.ts'
+import { NEAR_CHAIN, NEAR_USDC, X402_CHAIN } from './near.ts'
 import { parseAmount, type Limits } from './policy.ts'
 
 export const ConfigSchema = z.object({
@@ -11,7 +11,7 @@ export const ConfigSchema = z.object({
   SIGNER_KEY_FILE: z.string().min(1).default('.signer-key'),
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required: the signer reads the stored decision from the database'),
   DATABASE_SCHEMA: z.string().regex(/^[a-z_][a-z0-9_]{0,62}$/, 'DATABASE_SCHEMA must be a lowercase identifier').optional(),
-  /** Chains it will pay on, comma separated: CAIP-2 EVM ids and/or `near`. Default: Arbitrum only (one path end to end). */
+  /** Chains it will pay on, comma separated: CAIP-2 EVM ids, `near` (1Click from NEAR) and/or `near:mainnet` (x402, NEAR AI Agent Market). Default: Arbitrum only. */
   SIGNER_CHAINS: z.string().default('eip155:42161'),
   /** Its OWN cap per payment, in USDC. Independent of any mandate: a compromised gateway still cannot move more than this. */
   SIGNER_MAX_PER_TX: z.string().default('1.00'),
@@ -42,9 +42,10 @@ export function limitsFrom(c: Config): Limits {
   const maxPerTx = parseAmount(c.SIGNER_MAX_PER_TX, 6)
   if (maxPerTx === undefined) throw new Error('SIGNER_MAX_PER_TX must be a positive decimal with at most 6 places')
   const chains = c.SIGNER_CHAINS.split(',').map(s => s.trim()).filter(Boolean)
-  const near = chains.includes(NEAR_CHAIN)
+  const near = chains.includes(NEAR_CHAIN), x402 = chains.includes(X402_CHAIN)
+  const nearTokens = { ...(near ? { [`${NEAR_CHAIN}:USDC`]: NEAR_USDC } : {}), ...(x402 ? { [`${X402_CHAIN}:USDC`]: NEAR_USDC } : {}) }
   return {
-    tokens: tokensFor(chains.filter(x => x !== NEAR_CHAIN)), maxPerTx, maxGas: c.SIGNER_MAX_GAS, maxFeePerGas: c.SIGNER_MAX_FEE_PER_GAS,
-    ...(near ? { nearTokens: { [`${NEAR_CHAIN}:USDC`]: NEAR_USDC } } : {}),
+    tokens: tokensFor(chains.filter(x => x !== NEAR_CHAIN && x !== X402_CHAIN)), maxPerTx, maxGas: c.SIGNER_MAX_GAS, maxFeePerGas: c.SIGNER_MAX_FEE_PER_GAS,
+    ...(near || x402 ? { nearTokens } : {}),
   }
 }

@@ -16,6 +16,7 @@
     "@tollgate/core": "workspace:*",
     "@tollgate/registry": "workspace:*",
     "hono": "^4.13.16",
+    "qrcode-generator": "^1.5.2",
     "zod": "^4.6.7"
   },
   "main": "src/app.ts",

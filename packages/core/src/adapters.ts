@@ -77,4 +77,29 @@ export interface DecisionIndex {
   byDeposit(depositAddress: string): Promise<Prior | undefined>
 }
 
-export type Adapters = { oneClick: OneClickAdapter; pins: PinStore; decisions?: DecisionIndex }
+/**
+ * The NEAR AI Agent Market's own published facts, read from the market itself and NOT from the 402 the seller answered with:
+ * - `recipients()`: GET https://market.near.ai/.well-known/x402, the accounts the market settles into.
+ * - `defaultPrice(host)`: the seller's published default pricing plan (GET /v1/agents/{handle}/pricing-plans).
+ * A 402 that names a payee the market does not publish, or a price the seller does not publish, is refused. Like 1Click,
+ * the market is PARTIALLY trusted: it is the independent record, and its answers are parsed, never believed blindly.
+ */
+export interface MarketAdapter {
+  recipients(): Promise<unknown>
+  defaultPrice(host: string): Promise<unknown>
+}
+
+export const MarketRecipientsSchema = z.object({
+  x402Version: z.literal(2),
+  recipients: z.array(z.object({ network: z.string().min(1), asset: z.string().min(1), payTo: z.string().min(1) })).min(1).max(32),
+})
+export type MarketRecipients = z.infer<typeof MarketRecipientsSchema>
+
+/** `found: false`: the market has no published, priced agent at that host. */
+export const MarketPriceSchema = z.union([
+  z.object({ found: z.literal(true), price: amount, currency: z.literal('USD') }),
+  z.object({ found: z.literal(false) }),
+])
+export type MarketPrice = z.infer<typeof MarketPriceSchema>
+
+export type Adapters = { oneClick: OneClickAdapter; pins: PinStore; decisions?: DecisionIndex; market?: MarketAdapter }

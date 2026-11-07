@@ -1,6 +1,6 @@
 import type { Backend } from './backend.ts'
-import { buildTransfer, NEAR_CHAIN, type NearBackend } from './near.ts'
-import { check, checkNear, type Limits, type Refusal, type SignRequest } from './policy.ts'
+import { buildPaymentDelegate, buildTransfer, NEAR_CHAIN, X402_CHAIN, type NearBackend } from './near.ts'
+import { check, checkNear, checkNearDelegate, type Limits, type Refusal, type SignRequest } from './policy.ts'
 import type { SignerStore } from './store.ts'
 
 export type Signed = { ok: true; decisionId: string; chainId: number; from: string; txHash: string; signedTx: string }
@@ -19,6 +19,7 @@ export async function signPayment(d: SignerDeps, req: SignRequest): Promise<Sign
   const mandate = stored ? await d.store.mandateState(stored.mandateId) : undefined
   const frozen = await d.store.isFrozen()
   if (req.bind.chain === NEAR_CHAIN) return signNear(d, req, stored, mandate, frozen, now)
+  if (req.bind.chain === X402_CHAIN) return signDelegate(d, req, stored, mandate, frozen, now)
   const c = check(req, stored, mandate, frozen, now, d.limits)
   if (!c.ok) return c
   const { bind } = c
@@ -34,6 +35,28 @@ export async function signPayment(d: SignerDeps, req: SignRequest): Promise<Sign
   }
   await d.store.complete(req.decisionId, { txHash: signed.hash, from: d.backend.address })
   return { ok: true, decisionId: req.decisionId, chainId: c.tx.chainId, from: d.backend.address, txHash: signed.hash, signedTx: signed.raw }
+}
+
+/**
+ * x402 on NEAR (NEAR AI Agent Market): the same order again. Decide, claim once, then touch the key. What comes back is a signed
+ * DELEGATE action, not a transaction: the market's relayer submits it only if the hired agent delivers. It is never broadcast here.
+ */
+async function signDelegate(d: SignerDeps, req: SignRequest, stored: Parameters<typeof checkNearDelegate>[1], mandate: Parameters<typeof checkNearDelegate>[2], frozen: boolean, now: Date): Promise<Signed | Refused> {
+  const c = checkNearDelegate(req, stored, mandate, frozen, now, d.limits)
+  if (!c.ok) return c
+  if (!d.near) return { ok: false, reason: 'unsupported_asset', detail: 'this signer has no NEAR key' }
+  const { bind } = c
+  const won = await d.store.claim({ decisionId: req.decisionId, nonce: bind.nonce, mandateId: c.mandateId, chain: bind.chain, asset: bind.asset, amount: bind.amount, to: bind.to, at: now.toISOString() })
+  if (!won) return { ok: false, reason: 'already_signed', detail: 'this decision, or its nonce, was already used' }
+  let signed
+  try {
+    signed = d.near.signDelegate(buildPaymentDelegate({ senderId: d.near.accountId, publicKey: d.near.publicKey, token: c.token, to: c.to, amount: c.amount, nonce: c.nonce, maxBlockHeight: c.maxBlockHeight }))
+  } catch (err) {
+    await d.store.unclaim(req.decisionId)
+    throw err
+  }
+  await d.store.complete(req.decisionId, { txHash: signed.hash, from: d.near.accountId })
+  return { ok: true, decisionId: req.decisionId, chainId: 0, from: d.near.accountId, txHash: signed.hash, signedTx: signed.raw }
 }
 
 /** The same order on NEAR: decide, claim once, then touch the key. chainId 0 means "not an EVM chain": the bind's chain says which. */

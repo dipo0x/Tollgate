@@ -17,6 +17,8 @@ const Body = z.strictObject({
   tx: z.union([
     z.strictObject({ nonce: z.number().int().min(0).max(0xffffffff), gas: uint, maxFeePerGas: uint, maxPriorityFeePerGas: uint }),
     z.strictObject({ nonce: uint, blockHash: z.string().regex(/^[1-9A-HJ-NP-Za-km-z]{32,44}$/, 'must be a base58 block hash') }),
+    // x402 on NEAR: the access key's next nonce and the current block height (the delegate's validity starts there).
+    z.strictObject({ nonce: uint, blockHeight: uint }),
   ]),
 })
 
@@ -50,7 +52,7 @@ export function createSignerApp(deps: SignerDeps, serviceToken: string, log: (ev
     if (!p.success) return c.json({ error: { code: 'invalid_request', message: `${p.error.issues[0]?.path.join('.') || 'body'}: ${p.error.issues[0]?.message}` } }, 400)
     const b = p.data
     const t = b.tx
-    const req: SignRequest = { decisionId: b.decisionId, bind: b.bind, tx: 'blockHash' in t ? { nonce: BigInt(t.nonce), blockHash: t.blockHash } : { nonce: t.nonce, gas: BigInt(t.gas), maxFeePerGas: BigInt(t.maxFeePerGas), maxPriorityFeePerGas: BigInt(t.maxPriorityFeePerGas) } }
+    const req: SignRequest = { decisionId: b.decisionId, bind: b.bind, tx: 'blockHeight' in t ? { nonce: BigInt(t.nonce), blockHeight: BigInt(t.blockHeight) } : 'blockHash' in t ? { nonce: BigInt(t.nonce), blockHash: t.blockHash } : { nonce: t.nonce, gas: BigInt(t.gas), maxFeePerGas: BigInt(t.maxFeePerGas), maxPriorityFeePerGas: BigInt(t.maxPriorityFeePerGas) } }
     const r = await signPayment(deps, req)
     if (!r.ok) {
       log('refused', { decisionId: req.decisionId, reason: r.reason, ...(r.field ? { field: r.field } : {}) })

@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { chmodSync, existsSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { KeyPair, keyToImplicitAddress, PublicKey, type KeyPairString } from '@near-js/crypto'
-import { actionCreators, createTransaction, encodeTransaction, Signature, SignedTransaction, type Transaction } from '@near-js/transactions'
+import { actionCreators, buildDelegateAction, createTransaction, encodeDelegateAction, encodeSignedDelegate, Signature, SignedDelegate, SignedTransaction, encodeTransaction, type DelegateAction, type Transaction } from '@near-js/transactions'
 import { baseDecode, baseEncode } from '@near-js/utils'
 
 /**
@@ -45,11 +45,36 @@ export function buildTransfer(o: { signerId: string; publicKey: string; token: N
   return createTransaction(o.signerId, PublicKey.from(o.publicKey), o.token.contract, o.tx.nonce, actions, baseDecode(o.tx.blockHash))
 }
 
+/**
+ * x402 on NEAR (the NEAR AI Agent Market). The market does not want a transaction: it wants a NEP-366 SIGNED DELEGATE ACTION,
+ * which its relayer submits (and pays gas for) only when the hired agent delivers. Same rule as above: everything in it comes
+ * from the stored decision and the constants here. The caller supplies only the next access-key nonce and the current block height.
+ */
+export const X402_CHAIN = 'near:mainnet'
+/** The longest a signed payment may stay valid, in blocks (about a day). The signer's own bound, whatever the decision says. */
+export const MAX_DELEGATE_TTL_BLOCKS = 100_000n
+/** The shortest window worth signing: the market refuses a payment that expires before the job's window anyway. */
+export const MIN_DELEGATE_TTL_BLOCKS = 60n
+export type NearDelegateParams = { nonce: bigint; blockHeight: bigint }
+
+/**
+ * Exactly one action: `ft_transfer` of `amount` USDC to `to`, 1 yoctoNEAR, 30 Tgas. No storage_deposit: the market's treasury is
+ * registered with USDC, and the market accepts a payment of exactly this shape only.
+ */
+export function buildPaymentDelegate(o: { senderId: string; publicKey: string; token: NearToken; to: string; amount: bigint; nonce: bigint; maxBlockHeight: bigint }): DelegateAction {
+  return buildDelegateAction({
+    senderId: o.senderId, receiverId: o.token.contract, nonce: o.nonce, maxBlockHeight: o.maxBlockHeight, publicKey: PublicKey.from(o.publicKey),
+    actions: [actionCreators.functionCall('ft_transfer', { receiver_id: o.to, amount: o.amount.toString() }, GAS_PER_CALL, ONE_YOCTO)],
+  })
+}
+
 /** The only thing that touches the NEAR key. Signs what it is handed; it never sends anything over a network. */
 export interface NearBackend {
   readonly accountId: string
   readonly publicKey: string
   sign(tx: Transaction): { raw: string; hash: string }
+  /** NEP-366: signs sha256(NEP-461 prefix ‖ borsh(delegate action)). Returns the borsh SignedDelegate, base64, and the digest. */
+  signDelegate(d: DelegateAction): { raw: string; hash: string }
 }
 
 /** `accountId` is a named account the key belongs to. Without one, the key's own implicit account (64 hex characters) is used. */
@@ -65,6 +90,14 @@ export function nearBackend(secret: string, accountId?: string): NearBackend {
       const { signature } = kp.sign(digest)
       const signed = new SignedTransaction({ transaction: tx, signature: new Signature({ keyType: pub.keyType, data: signature }) })
       return { raw: Buffer.from(signed.encode()).toString('base64'), hash: baseEncode(digest) }
+    },
+    signDelegate(d) {
+      // encodeDelegateAction already puts the NEP-461 prefix (2^30 + 366) in front, so this signature can never be replayed
+      // as an ordinary transaction signature, and vice versa.
+      const digest = new Uint8Array(createHash('sha256').update(encodeDelegateAction(d)).digest())
+      const { signature } = kp.sign(digest)
+      const signed = new SignedDelegate({ delegateAction: d, signature: new Signature({ keyType: pub.keyType, data: signature }) })
+      return { raw: Buffer.from(encodeSignedDelegate(signed)).toString('base64'), hash: baseEncode(digest) }
     },
   }
 }

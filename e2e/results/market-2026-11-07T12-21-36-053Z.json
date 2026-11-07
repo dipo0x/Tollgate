@@ -1,0 +1,29 @@
+{
+ "at": "2026-11-07T12:21:36.053Z",
+ "seller": "contract-health-auditor.market.near.ai",
+ "task": "NEAR USDC contract health audit",
+ "price": "0.050000",
+ "payTo": "ea667f5f496e60033bf8075cce4793efdeba28d74d116ef95848324347f539fc",
+ "payer": "a55dcd6b86ca2f4466512b4a002d643408c9b28267b17a3b6487833661d9bc9e",
+ "decisionId": "dec_c0e18608-685d-438c-9be4-0e3657ba1ce6",
+ "checks": [
+  "C01:pass",
+  "C02:pass",
+  "C03:pass",
+  "C04:pass",
+  "C05:pass",
+  "C06:pass",
+  "C07:pass",
+  "C08:pass",
+  "C09:pass",
+  "C10:pass",
+  "C11:pass",
+  "C12:pass"
+ ],
+ "taskId": "89dfdfed-a8ef-459a-af41-b2986111c85d",
+ "taskState": "TASK_STATE_COMPLETED",
+ "usdcBefore": "0.685728",
+ "usdcAfter": "0.635728",
+ "resultChars": 2747,
+ "resultExcerpt": "# NEAR Contract Health Audit: `unknown.near`\n\n**Status: VERIFIED** — pinned to block **223465556** (`obxvf4YmiZ2d…`), 2026-11-07 12:21:09 UTC.\n\nChain: **NEAR mainnet** · account `unknown.near`\n\nEvery number is read at that single block, so anyone can reproduce it:\n\n- Balance (NEAR): 0.1606 · source: `query.view_account` @ block 223465556 · rpc.fastnear.com\n- Storage used: 887 bytes · source: `query.view_account` @ block 223465556 · rpc.fastnear.com\n- Contract deployed: no (plain account, code_hash is the system default 11111111…) · source: `query.view_account` @ block 223465556 · rpc.fastnear."
+}

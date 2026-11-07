@@ -1,11 +1,16 @@
+@font-face{font-family:Satoshi;font-weight:400;font-display:swap;src:url(/dashboard/fonts/Satoshi-Regular.otf) format("opentype")}
+@font-face{font-family:Satoshi;font-weight:500;font-display:swap;src:url(/dashboard/fonts/Satoshi-Medium.otf) format("opentype")}
+@font-face{font-family:Satoshi;font-weight:700;font-display:swap;src:url(/dashboard/fonts/Satoshi-Bold.otf) format("opentype")}
+@font-face{font-family:Satoshi;font-weight:900;font-display:swap;src:url(/dashboard/fonts/Satoshi-Black.otf) format("opentype")}
 :root{
   --bg:#05060f;--bg2:#0a0c1c;--panel:rgba(255,255,255,.035);--panel2:rgba(255,255,255,.06);--line:rgba(255,255,255,.08);--line2:rgba(255,255,255,.16);
   --tx:#f1f3ff;--mu:#9aa0c3;--dm:#646a90;
   --ac:#6a5cff;--ac2:#22d3ee;--grad:linear-gradient(135deg,#6a5cff 0%,#22d3ee 100%);
   --ok:#2ee6a6;--no:#ff5c7a;--ap:#b794ff;--wn:#ffcf5a;--blue:#5b8cff;
-  --r:16px;--sans:ui-sans-serif,-apple-system,"SF Pro Display","Segoe UI",Roboto,Helvetica,Arial,sans-serif;--mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace
+  --r:16px;--sans:Satoshi,ui-sans-serif,-apple-system,"SF Pro Display","Segoe UI",Roboto,Helvetica,Arial,sans-serif;--mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace
 }
 *{box-sizing:border-box}
+[hidden]{display:none!important} /* .shell and .pair set display, which would otherwise beat the hidden attribute */
 html,body{height:100%}
 body{margin:0;color:var(--tx);font:14px/1.5 var(--sans);background:var(--bg);font-feature-settings:"tnum" 1,"cv11" 1;
   background-image:radial-gradient(900px 500px at 8% -8%,rgba(106,92,255,.22),transparent 60%),radial-gradient(800px 520px at 100% 0%,rgba(34,211,238,.13),transparent 55%),radial-gradient(700px 500px at 50% 115%,rgba(106,92,255,.12),transparent 60%);background-attachment:fixed}
@@ -149,3 +154,24 @@ td pre{margin:0;white-space:pre-wrap;word-break:break-all;color:var(--dm);font-s
 td.mono{white-space:nowrap}
 .card .kv{margin-top:16px}
 .card>.legend+.kv{margin-top:18px}
+/* pair a phone */
+.pair{position:fixed;inset:0;z-index:50;display:grid;place-items:center;background:rgba(0,0,0,.6);backdrop-filter:blur(6px);padding:20px}
+.pairbox{width:min(420px,100%);display:flex;flex-direction:column;gap:14px}
+.pairbox h2{margin:0}
+.pairqr{display:grid;place-items:center;min-height:240px}
+.pairqr svg{border-radius:14px}
+.pairbox label{display:flex;flex-direction:column;gap:6px;color:var(--mu);font-size:13px}
+.pairbox .grow{flex:1}
+.pairhelp{display:grid;gap:6px}
+.pairhelp p{margin:0;font-size:13px;line-height:1.45}
+.pairqr>p{margin:0}
+
+.help{margin-top:18px;padding-top:14px;border-top:1px solid var(--line);color:var(--mu)}
+.help summary{cursor:pointer;color:var(--tx);font-weight:500}
+.help ol{margin:12px 0;padding-left:20px;display:grid;gap:8px}
+.help code{padding:1px 6px;border-radius:6px;background:rgba(255,255,255,.08);color:var(--tx);font-size:12.5px;user-select:all}
+.help p{margin:0;font-size:13px}
+
+.sect{margin:26px 0 10px;font-size:15px;font-weight:600}
+.sect:first-child{margin-top:0}
+.offscreen{position:fixed;left:-9999px;top:0;width:1px;height:1px;opacity:0}

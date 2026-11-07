@@ -1,5 +1,5 @@
 import { encodeFunctionData, erc20Abi, getAddress, isAddress, type Hex } from 'viem'
-import { isNearAccount, validBlockHash, type NearToken, type NearTxParams } from './near.ts'
+import { isNearAccount, MAX_DELEGATE_TTL_BLOCKS, MIN_DELEGATE_TTL_BLOCKS, validBlockHash, type NearDelegateParams, type NearToken, type NearTxParams } from './near.ts'
 
 /**
  * The signer's whole decision, as one pure function. It answers: given the decision the gateway stored and the request
@@ -24,7 +24,7 @@ export type MandateState = { status: 'active' | 'revoked'; validUntil: string }
 /** What the caller may choose: only how the transaction is paid for on chain. All bounded by the signer's own limits. */
 export type TxParams = { nonce: number; gas: bigint; maxFeePerGas: bigint; maxPriorityFeePerGas: bigint }
 
-export type SignRequest = { decisionId: string; bind: Bind; tx: TxParams | NearTxParams }
+export type SignRequest = { decisionId: string; bind: Bind; tx: TxParams | NearTxParams | NearDelegateParams }
 
 export type Token = { chainId: number; contract: Hex; decimals: number }
 
@@ -130,6 +130,37 @@ export function check(req: SignRequest, stored: StoredDecision | undefined, mand
 function sameAmount(a: string, b: string): boolean {
   const x = parseAmount(a, 18), y = parseAmount(b, 18)
   return x !== undefined && y !== undefined && x === y
+}
+
+export type CheckedDelegate =
+  | { ok: true; bind: Bind; mandateId: string; token: NearToken; to: string; amount: bigint; nonce: bigint; maxBlockHeight: bigint }
+  | No
+
+/**
+ * x402 on NEAR (NEAR AI Agent Market): the same common checks and the same token, recipient and cap rules as checkNear. Then the
+ * validity window: from the caller's block height, for as many blocks as the STORED decision has seconds left (a block is about a
+ * second; the decision expires when the market's window does, and the market refuses a payment valid for longer than that window), never more than MAX_DELEGATE_TTL_BLOCKS and never less than MIN_DELEGATE_TTL_BLOCKS. A wrong block height from the caller
+ * can only shorten or lengthen that window within the cap; it can never change who is paid or how much.
+ */
+export function checkNearDelegate(req: SignRequest, stored: StoredDecision | undefined, mandate: MandateState | undefined, frozen: boolean, now: Date, limits: Limits): CheckedDelegate {
+  const common = checkCommon(req, stored, mandate, frozen, now)
+  if (!common.ok) return common
+  const { bind } = common
+  const token = limits.nearTokens?.[tokenKey(bind.chain, bind.asset)]
+  if (!token) return no('unsupported_asset', `${bind.asset} on ${bind.chain} is not something this signer will pay`)
+  if (!isNearAccount(bind.to)) return no('invalid_recipient', 'the recipient is not a NEAR account id')
+  if (bind.to === token.contract) return no('invalid_recipient', 'the recipient is the token contract itself')
+  const amount = parseAmount(bind.amount, token.decimals)
+  if (amount === undefined) return no('invalid_amount', 'the amount is not a positive decimal the token can express')
+  if (amount > limits.maxPerTx) return no('over_signer_cap', "the amount is over this signer's own per-payment cap")
+  const t = req.tx
+  if (!('blockHeight' in t) || typeof t.nonce !== 'bigint' || typeof t.blockHeight !== 'bigint' || t.nonce <= 0n || t.nonce >= 2n ** 64n || t.blockHeight <= 0n || t.blockHeight >= 2n ** 63n) {
+    return no('bad_tx_params', 'an x402 NEAR payment needs a positive access-key nonce and the current block height')
+  }
+  const left = BigInt(Math.floor((Date.parse(bind.expiresAt) - now.getTime()) / 1000))
+  const ttl = left > MAX_DELEGATE_TTL_BLOCKS ? MAX_DELEGATE_TTL_BLOCKS : left
+  if (ttl < MIN_DELEGATE_TTL_BLOCKS) return no('expired', 'too little of the decision\'s window is left to sign a payment')
+  return { ok: true, bind, mandateId: common.mandateId, token, to: bind.to, amount, nonce: t.nonce, maxBlockHeight: t.blockHeight + ttl }
 }
 
 export type CheckedNear =

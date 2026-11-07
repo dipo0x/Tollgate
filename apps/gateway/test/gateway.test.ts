@@ -433,8 +433,12 @@ describe('configuration', () => {
     expect(() => loadConfig({ GATEWAY_OPERATOR_TOKEN: 'x'.repeat(20), TOLLGATE_OFFLINE: 'false' })).toThrow(/NEAR_1CLICK_API_KEY/)
     expect(loadConfig({ GATEWAY_OPERATOR_TOKEN: 'x'.repeat(20), TOLLGATE_OFFLINE: 'false', NEAR_1CLICK_API_KEY: 'k' }).TOLLGATE_OFFLINE).toBe(false)
   })
-  it('defaults to offline, on port 8787', () => {
-    expect(loadConfig({ GATEWAY_OPERATOR_TOKEN: 'x'.repeat(20) })).toMatchObject({ TOLLGATE_OFFLINE: true, PORT: 8787 })
+  it('defaults to offline, on port 8787, reachable from this machine only', () => {
+    expect(loadConfig({ GATEWAY_OPERATOR_TOKEN: 'x'.repeat(20) })).toMatchObject({ TOLLGATE_OFFLINE: true, PORT: 8787, GATEWAY_HOST: '127.0.0.1' })
+  })
+  it('listens on another network address only when told to, and only on an IP address', () => {
+    expect(loadConfig({ GATEWAY_OPERATOR_TOKEN: 'x'.repeat(20), GATEWAY_HOST: '0.0.0.0' }).GATEWAY_HOST).toBe('0.0.0.0')
+    expect(() => loadConfig({ GATEWAY_OPERATOR_TOKEN: 'x'.repeat(20), GATEWAY_HOST: 'evil.example.com' })).toThrow(/GATEWAY_HOST/)
   })
 })
 

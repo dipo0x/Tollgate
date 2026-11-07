@@ -46,8 +46,11 @@
     "viem": "^2.0.0"
   },
   "devDependencies": {
+    "@near-js/crypto": "2.5.1",
+    "@near-js/transactions": "2.5.1",
     "@tollgate/core": "workspace:*",
     "@tollgate/gateway": "workspace:*",
-    "@tollgate/signer": "workspace:*"
+    "@tollgate/signer": "workspace:*",
+    "borsh": "1.0.0"
   }
 }

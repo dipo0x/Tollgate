@@ -1,5 +1,7 @@
+import type { CheckResult } from '../decision.ts'
 import { loadRecord, sameAddress } from './facts.ts'
-import type { Check } from './types.ts'
+import type { Check, CheckContext } from './types.ts'
+import { isX402 } from './x402-facts.ts'
 
 /**
  * C05: the money must go to the payee we already know for this host.
@@ -14,12 +16,22 @@ export const c05PayeeBinding: Check = async ctx => {
   const spec = ctx.mandate?.spec
   if (!spec || !ctx.adapters) return { ...base, result: 'fail', evidence: { reason: 'mandate or adapters missing' } }
 
+  // x402 (market): the payee is named in the challenge itself. It is judged against the registry here, and against the
+  // market's own published payee list in C06, so a 402 naming any other account fails twice over.
+  if (isX402(ctx) && ctx.challenge) return judgePayee(ctx, ctx.challenge.recipient)
+
   const loaded = await loadRecord(ctx)
   // Without 1Click's record there is nothing to compare. Hold rather than guess; C06 is the
   // check that denies in this case, so a missing record can never end in an ALLOW.
   if (!loaded.ok) return { ...base, result: 'warn', evidence: { reason: 'payee not checkable, deferred to C06', cause: loaded.kind } }
+  return judgePayee(ctx, loaded.record.destination)
+}
 
-  const got = loaded.record.destination
+/** The same rule whatever told us the payee: a negotiated deal fixes it, then the pinned or registered payee must match. */
+async function judgePayee(ctx: CheckContext, got: string): Promise<CheckResult> {
+  const base = { id: 'C05', name: 'Payee binding' } as const
+  const spec = ctx.mandate!.spec
+  if (!ctx.adapters) return { ...base, result: 'fail', evidence: { reason: 'adapters missing' } }
   // A negotiated deal names its payee. The seller cannot switch it between agreeing and billing.
   if (ctx.deal && !sameAddress(ctx.deal.payee, got)) {
     return { ...base, result: 'fail', evidence: { reason: 'payee differs from the negotiated payee', expected: ctx.deal.payee, got } }

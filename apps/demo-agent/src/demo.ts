@@ -1,4 +1,4 @@
-import { midpoint, toMicro } from '@tollgate/core'
+import { fromMicro, toMicro, type Deal } from '@tollgate/core'
 import { createApp } from '@tollgate/gateway/src/app.ts'
 import { loadConfig } from '@tollgate/gateway/src/config.ts'
 import { HttpSignerClient } from '@tollgate/gateway/src/signer.ts'
@@ -11,13 +11,34 @@ import { viemBackend } from '@tollgate/signer/src/backend.ts'
 import { tokensFor } from '@tollgate/signer/src/chains.ts'
 import { MemorySignerStore } from '@tollgate/signer/src/store.ts'
 import { generatePrivateKey } from 'viem/accounts'
-import { nextMove, plannerAvailable, PLANNER_MODEL, type Move } from './planner.ts'
+import { buyOrSkip, plannerReady, priceReport } from './planner.ts'
+import { runNegotiation, type Talker } from './negotiate.ts'
 
-// `--llm`: a real model plans the agent's negotiation moves. Only the key is read from .env; everything else stays offline and simulated.
+// `--llm`: a real model plans spend / negotiate / earn moves. Only the key is read from .env; everything else stays offline and simulated.
+// Spending on a task is not here: `pnpm spend "..."` always runs on the real chain and live 1Click (e2e/src/live-spend.ts).
+// `--negotiate [item]`: negotiate-only path — haggle (Ollama with --llm, else scripted), then buy at the agreed price if any.
 const LLM = process.argv.includes('--llm')
+if (process.argv.includes('--task')) {
+  console.error('Spending on a task always uses real money now: pnpm spend "Buy the bridge cost brief" (see e2e/src/live-spend.ts).')
+  process.exit(2)
+}
+const negotiateIdx = process.argv.indexOf('--negotiate')
+const NEGOTIATE = negotiateIdx >= 0
+const NEGOTIATE_ITEM = (() => {
+  if (!NEGOTIATE) return undefined
+  const next = process.argv[negotiateIdx + 1]
+  return next && !next.startsWith('-') ? next : 'the daily market brief'
+})()
+if (NEGOTIATE_ITEM && NEGOTIATE_ITEM.length > 240) {
+  console.error('--negotiate item is too long (max 240 characters).')
+  process.exit(2)
+}
+let engine = ''
 if (LLM) {
   try { process.loadEnvFile(new URL('../../../.env', import.meta.url)) } catch { /* rely on the environment */ }
-  if (!plannerAvailable()) { console.error('--llm needs ANTHROPIC_API_KEY in .env (see docs/GETTING-STARTED.md). Without --llm the demo needs no key.'); process.exit(2) }
+  const r = await plannerReady()
+  if (!r.ok) { console.error(`--llm cannot start: ${r.why}\nWithout --llm the demo needs no model and no key.`); process.exit(2) }
+  engine = `${r.model} ${r.provider === 'ollama' ? 'running locally through Ollama (nothing leaves this computer)' : 'through the Anthropic API'}`
 }
 
 // ---- presentation -------------------------------------------------------------------------------------------------------
@@ -65,12 +86,17 @@ const shop = (host: string, behavior: MerchantBehavior, price: string, payee = '
 console.log(`${c.b}Tollgate demo${c.x}  verify before you pay`)
 line(`${c.g}REAL${c.x}       the gateway, the 12 checks, the budget ledger, the signer (a throwaway key), the SDK, the audit chain`)
 line(`${c.y}SIMULATED${c.x}  every merchant, 1Click, the chain, the customer and the seller agent. Nothing is broadcast, nothing is funded.`)
-line(LLM ? `${c.y}MODEL${c.x}      the agent's negotiation moves are planned by ${PLANNER_MODEL}. It sees only prices and limits, never merchant text. Everything else is scripted.` : `${c.y}SCRIPTED${c.x}   the agent's decisions (no model is called). Run with --llm to let a model plan its negotiation.`)
+line(LLM ? `${c.y}MODEL${c.x}      the agent decides what to buy, how to haggle and what to charge: ${engine}. It sees only prices and limits, never merchant text.` : `${c.y}SCRIPTED${c.x}   the agent's decisions (no model is called). Run with --llm to let a model decide: it uses Ollama on this computer.`)
+if (NEGOTIATE) line(`${c.y}NEGOTIATE${c.x}  haggle for: "${NEGOTIATE_ITEM}"`)
 
 // ---- the owner's setup --------------------------------------------------------------------------------------------------
 act(0, 'The owner sets the rules')
-for (const [id, host, payee, quoted] of [['svc_m', 'merchant.example.com', 'merchant.near', '0.30'], ['svc_p', 'premium.example.com', 'premium.near', '0.80']] as const) {
-  await op('POST', '/v1/services', { id, name: host, category: 'data', host, providerUrl: `https://${host}`, pricing: { model: 'per_request', quoted, currency: 'USDC' }, paymentRails: [], limits: { maxPerRequest: '1.00', timeoutMs: 8000 } })
+// Distinct categories so the spend planner has a real choice (it picks by category + price, never by listing text).
+for (const [id, host, category, payee, quoted] of [
+  ['svc_m', 'merchant.example.com', 'market_data', 'merchant.near', '0.30'],
+  ['svc_p', 'premium.example.com', 'premium_report', 'premium.near', '0.80'],
+] as const) {
+  await op('POST', '/v1/services', { id, name: host, category, host, providerUrl: `https://${host}`, pricing: { model: 'per_request', quoted, currency: 'USDC' }, paymentRails: [], limits: { maxPerRequest: '1.00', timeoutMs: 8000 } })
   await op('POST', `/v1/services/${id}/probe-result`, { verification: 'endpoint-checked', payee })
   await op('POST', `/v1/services/${id}/enable`)
 }
@@ -98,50 +124,122 @@ async function buy(label: string, host: string, opts: { negotiationId?: string }
   }
 }
 
-// ---- act 1: negotiate, then buy -----------------------------------------------------------------------------------------
-act(1, 'The agent haggles, then buys')
-const seller = new ScriptedSeller({ strategy: 'meets-in-middle', asset: 'USDC', payee: 'merchant.near', opening: '0.40', floor: '0.25' })
-const talk = (o: unknown) => api('POST', '/v1/negotiations/neg_1/offers', agent, o)
-let ask = seller.open(); await talk(ask)
-line(`seller opens at ${(ask as { price: string }).price}  ${c.dim}(simulated seller)${c.x}`)
-let mine = '0.20', deal: { price: string } | undefined
-for (let round = 0; round < 4 && !deal; round++) {
-  const lastAsk = (ask as { price: string }).price
-  if (LLM) {
-    // The model proposes. The gateway checks every proposal against the mandate (ceiling 0.30, at most 4 rounds).
-    let m: Move
-    try { m = await nextMove({ item: 'the daily market brief', sellerAsk: lastAsk, myLastOffer: round === 0 ? null : mine, round: round + 1, maxRounds: 4, ceiling: '0.30' }) } catch (e) {
-      line(`${c.r}planner failed${c.x} (${(e as Error).message}): the agent makes no move and walks away. Nothing is bought.`); await talk({ from: 'agent', kind: 'walk' }); break
-    }
-    line(`${c.dim}model:${c.x} ${m.action}${m.price ? ' ' + m.price : ''}  ${c.dim}"${m.reason}"${c.x}`)
-    if (m.action === 'walk') { await talk({ from: 'agent', kind: 'walk' }); line('agent walks away'); break }
-    if (m.action === 'accept') {
-      const r = await talk({ from: 'agent', kind: 'accept' })
-      if (r.status < 300 && r.json.deal) { deal = r.json.deal; line(`agent accepts ${lastAsk}`) } else line(`${c.r}gateway refused the accept${c.x}: ${r.json.error?.message ?? r.status}`)
+async function finish(extra?: () => Promise<void> | void) {
+  if (extra) await extra()
+  const b = await balance()
+  line()
+  line(`${c.b}Money${c.x}     budget ${b['total']}  settled ${b['settled']}  held ${b['committed']}  remaining ${b['remaining']}`)
+  const audit = (await op('GET', '/v1/audit/verify')).json
+  line(`${c.b}Audit${c.x}     ${audit.ok ? `${c.g}chain verifies${c.x}: ${audit.length} entries, head ${String(audit.head).slice(0, 12)}...` : `${c.r}BROKEN at ${audit.brokenAt}${c.x}`}`)
+  line(`${c.b}Totals${c.x}    ${tally.paid} paid, ${tally.blocked} blocked, ${tally.held} held for the owner`)
+  console.log(`\n${c.dim}Every line above came from the real checks. Run \`pnpm bench\` for the 16-attack comparison against a naive agent and a modelled stock policy.${c.x}\n`)
+  if (process.argv.includes('--serve')) {
+    const { serve } = await import('@hono/node-server')
+    serve({ fetch: app.fetch, port: 8787, hostname: '127.0.0.1' })
+    console.log(`${c.b}Dashboard${c.x}  http://127.0.0.1:8787/dashboard`)
+    console.log(`${c.b}Token${c.x}      ${OPERATOR}  ${c.dim}(this demo's operator token; the data lives only in this process, Ctrl+C to stop)${c.x}\n`)
+  }
+}
+
+/** Post one offer through the gateway and map the JSON into the shape negotiate.ts expects. */
+const talkNeg = (id: string): Talker => async o => {
+  const r = await api('POST', `/v1/negotiations/${id}/offers`, agent, o)
+  const j = r.json as { ok?: boolean; status?: string; deal?: Deal; reason?: string; detail?: string }
+  // Only copy fields the gateway actually sent (exactOptionalPropertyTypes: absent is not the same as undefined).
+  return {
+    ok: !!j.ok,
+    ...(j.status !== undefined && { status: j.status }),
+    ...(j.deal !== undefined && { deal: j.deal }),
+    ...(j.reason !== undefined && { reason: j.reason }),
+    ...(j.detail !== undefined && { detail: j.detail }),
+  }
+}
+
+/** Display a USDC amount without trailing zeros past the cent: "0.300000" → "0.30", "0.235000" → "0.235". Never rounds. */
+const usd = (p: string) => p.replace(/^(\d+\.\d\d\d*?)0+$/, '$1')
+
+/** Print each step the negotiation loop recorded (model reasons, gateway refusals, seller moves). */
+function showNegotiateSteps(steps: { from: string; kind: string; price?: string; note: string; refused?: string }[]) {
+  for (const s of steps) {
+    const p = s.price ? ` ${usd(s.price)}` : ''
+    if (s.refused) {
+      line(`${c.r}gateway REFUSED${c.x} ${s.from} ${s.kind}${p}: ${s.refused}`)
       continue
     }
-    mine = m.price as string
-    const counter = { from: 'agent', kind: 'counter', price: mine, asset: 'USDC', payee: 'merchant.near' }
-    const r = await talk(counter)
-    if (r.status >= 300) { line(`${c.r}gateway refused the model's offer ${mine}${c.x}: ${r.json.error?.message ?? r.status}`); continue }
-    line(`agent counters ${mine}`)
-    const reply = seller.respond(counter as never); await talk(reply)
-    if (reply.kind === 'accept') { deal = { price: mine }; line(`seller accepts ${mine}`) } else if (reply.kind === 'counter') { ask = reply; line(`seller counters ${reply.price}`) }
-    continue
+    // Honest labelling: the model picks the move; the counter price comes from code's menu.
+    if (s.from === 'agent' && LLM) line(`${c.dim}model:${c.x} ${s.kind}${p}${s.kind === 'counter' ? `  ${c.dim}(price set by code)${c.x}` : ''}  ${c.dim}"${s.note}"${c.x}`)
+    else if (s.from === 'agent') line(`agent ${s.kind}${p}${s.note ? `  ${c.dim}${s.note}${c.x}` : ''}`)
+    else if (s.from === 'seller') line(`${s.note.replace(/\d+\.\d+/, m => usd(m))}${s.kind === 'offer' ? `  ${c.dim}(simulated seller)${c.x}` : ''}`)
+    else line(`${c.r}${s.note}${c.x}`)
   }
-  if (toMicro(lastAsk) <= toMicro('0.30')) { const r = await talk({ from: 'agent', kind: 'accept' }); deal = r.json.deal; line(`agent accepts ${lastAsk}`); break }
-  mine = midpoint(mine, lastAsk); if (toMicro(mine) > toMicro('0.30')) mine = '0.30'
-  const counter = { from: 'agent', kind: 'counter', price: mine, asset: 'USDC', payee: 'merchant.near' }
-  await talk(counter); line(`agent counters ${mine}`)
-  const reply = seller.respond(counter as never); await talk(reply)
-  if (reply.kind === 'accept') { deal = { price: mine }; line(`seller accepts ${mine}`) } else if (reply.kind === 'counter') { ask = reply; line(`seller counters ${reply.price}`) }
 }
-if (!deal && !LLM) throw new Error('the demo expected a deal')
-if (deal) {
-  line(`${c.dim}Deal at ${deal.price}. The mandate's ceiling (0.30) bound every offer the agent could make, whatever a model might have said.${c.x}`)
+
+async function haggleThenMaybeBuy(opts: {
+  negotiationId: string
+  item: string
+  useLlm: boolean
+  /** When true (full demo without --llm), a missing deal is a hard failure. */
+  requireDeal: boolean
+}) {
+  const seller = new ScriptedSeller({ strategy: 'meets-in-middle', asset: 'USDC', payee: 'merchant.near', opening: '0.40', floor: '0.25' })
+  const result = await runNegotiation({
+    item: opts.item,
+    asset: 'USDC',
+    payee: 'merchant.near',
+    ownerCeiling: '0.30',
+    maxRounds: 4,
+    useLlm: opts.useLlm,
+    seller,
+    talk: talkNeg(opts.negotiationId),
+  })
+  showNegotiateSteps(result.steps)
+  if (result.outcome !== 'agreed') {
+    if (opts.requireDeal) throw new Error(`the demo expected a deal (${result.outcome}: ${result.why})`)
+    line(`${c.dim}No deal (${result.outcome}): ${result.why}. Nothing was bought.${c.x}`)
+    return
+  }
+  const deal = result.deal
+  line(`${c.dim}Deal at ${usd(deal.price)}. The mandate's ceiling (0.30) bound every offer the agent could make, whatever a model might have said.${c.x}`)
   shop('merchant.example.com', 'honest', deal.price)
-  await buy(`honest merchant, agreed price ${deal.price}`, 'merchant.example.com', { negotiationId: 'neg_1' })
-} else line(`${c.dim}No deal this time: nothing was bought in this act.${c.x}`)
+  // SAVE: the owner wants 1.00 USDC kept in reserve. The model decides; a plain code guard backs it up. This is the AGENT's own policy:
+  // Tollgate's mandate has no reserve field, so the reserve is enforced here, not by the gateway.
+  const RESERVE = '1.00'
+  let go = true
+  if (opts.useLlm) {
+    const bal = await balance()
+    const remaining = String(bal.remaining)
+    const after = toMicro(remaining) - toMicro(deal.price)
+    const breaches = after < toMicro(RESERVE)
+    if (breaches) {
+      go = false
+      line(`${c.y}guard${c.x}: buying at ${deal.price} would leave ${fromMicro(after)}, below the ${RESERVE} reserve. The agent skips it (decided in code, not by the model).`)
+    } else {
+      try {
+        const v = await buyOrSkip({ item: opts.item, price: Number(deal.price), typicalPrice: 0.30, budgetRemainingAfter: Number(fromMicro(after)), breachesReserve: false })
+        line(`${c.dim}model:${c.x} ${v.action}  ${c.dim}"${v.reason}"${c.x}`)
+        if (v.action === 'skip') go = false
+      } catch (e) {
+        line(`${c.r}planner failed${c.x} (${(e as Error).message}): the agent buys nothing.`)
+        go = false
+      }
+    }
+  }
+  if (go) await buy(`honest merchant, agreed price ${usd(deal.price)}`, 'merchant.example.com', { negotiationId: opts.negotiationId })
+  else line(`${c.dim}The agent saves its money: no purchase.${c.x}`)
+}
+
+// ---- negotiate-only path (pnpm demo --negotiate [--llm]) ---------------------------------------------------------------
+if (NEGOTIATE) {
+  act(1, 'Negotiate on the owner\'s behalf')
+  line(`item: "${NEGOTIATE_ITEM}"  ${c.dim}(${LLM ? 'model proposes' : 'scripted'} moves; gateway enforces ceiling 0.30 / max 4 rounds)${c.x}`)
+  await haggleThenMaybeBuy({ negotiationId: 'neg_task', item: NEGOTIATE_ITEM!, useLlm: LLM, requireDeal: !LLM })
+  await finish()
+  if (!process.argv.includes('--serve')) process.exit(0)
+}
+
+// ---- act 1: negotiate, then buy -----------------------------------------------------------------------------------------
+act(1, 'The agent haggles, then buys')
+await haggleThenMaybeBuy({ negotiationId: 'neg_1', item: 'the daily market brief', useLlm: LLM, requireDeal: !LLM })
 
 // ---- act 2: a payment that needs the owner ------------------------------------------------------------------------------
 act(2, 'A bigger purchase needs the owner')
@@ -171,9 +269,19 @@ line(`worker hands in real work -> ${c.g}accepted${c.x}; ${good.json.released} r
 
 // ---- act 4: earn -------------------------------------------------------------------------------------------------------
 act(4, 'The agent earns')
-await op('POST', '/v1/jobs', { id: 'job_brief', mandateId: 'mnd_research', goal: 'sell the weekly market brief', receivingAddress: '0xAGENT_RECEIVING_ADDRESS', price: '1.50', currency: 'USDC' })
-const receipt = { id: 'rcpt_sim_1', status: 'SUCCESS', amount: '1.500000', currency: 'USDC', payee: '0xAGENT_RECEIVING_ADDRESS', payerRef: 'SIMULATED-customer', settledAt: new Date(NOW.getTime() - 30_000).toISOString() }
-line(`${c.y}A SIMULATED customer${c.x} pays 1.50 for the brief and the agent reports the receipt.`)
+// EARN: with --llm the model chooses what to charge, inside a range the owner set (0.50 to 3.00). Outside the range, the default stands.
+let sellPrice = '1.50'
+if (LLM) {
+  try {
+    const q = await priceReport({ item: 'the weekly market brief', costToProduce: 0.30, minimumPrice: 0.50, maximumPrice: 3.00 })
+    line(`${c.dim}model:${c.x} charge ${q.price}  ${c.dim}"${q.reason}"${c.x}`)
+    if (toMicro(q.price) >= toMicro('0.50') && toMicro(q.price) <= toMicro('3.00')) sellPrice = q.price
+    else line(`${c.y}guard${c.x}: ${q.price} is outside the owner's range (0.50 to 3.00), so the default 1.50 stands.`)
+  } catch (e) { line(`${c.r}planner failed${c.x} (${(e as Error).message}): the default price 1.50 stands.`) }
+}
+await op('POST', '/v1/jobs', { id: 'job_brief', mandateId: 'mnd_research', goal: 'sell the weekly market brief', receivingAddress: '0xAGENT_RECEIVING_ADDRESS', price: sellPrice, currency: 'USDC' })
+const receipt = { id: 'rcpt_sim_1', status: 'SUCCESS', amount: fromMicro(toMicro(sellPrice)), currency: 'USDC', payee: '0xAGENT_RECEIVING_ADDRESS', payerRef: 'SIMULATED-customer', settledAt: new Date(NOW.getTime() - 30_000).toISOString() }
+line(`${c.y}A SIMULATED customer${c.x} pays ${sellPrice} for the brief and the agent reports the receipt.`)
 const credited = await api('POST', '/v1/jobs/job_brief/revenue', agent, receipt)
 line(`gateway verifies the receipt (fresh, settled, right payee, right amount, never seen) -> ${credited.json.credited ? `${c.g}credited ${credited.json.amount}${c.x}` : credited.json.reason}`)
 const replayed = await api('POST', '/v1/jobs/job_brief/revenue', agent, receipt)

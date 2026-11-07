@@ -1,6 +1,8 @@
 import { randomBytes } from 'node:crypto'
 import { chmodSync, writeFileSync, rmSync } from 'node:fs'
+import { networkInterfaces } from 'node:os'
 import { join } from 'node:path'
+import qrcode from 'qrcode-generator'
 import postgres from 'postgres'
 import { createKeyFile } from '@tollgate/signer/src/backend.ts'
 import { preferPort, makeTmp, removeTmp, ROOT, start, waitFor, type Proc } from './harness.ts'
@@ -16,6 +18,10 @@ try { process.loadEnvFile(`${ROOT}.env`) } catch { /* no .env: rely on the envir
 const DB = process.env['DATABASE_URL']
 if (!DB) { console.error('DATABASE_URL is required: the gateway keeps all its state in Postgres.\nFix: run `pnpm onboard` (it writes DATABASE_URL into .env), start Docker Desktop, run `pnpm db:up`, then try again. `pnpm preflight` checks all of this.'); process.exit(2) }
 
+// `pnpm sandbox:phone`: the same sandbox, reachable from a phone on this Wi-Fi, and every purchase waits for the phone's approval.
+const PHONE = process.argv.includes('--phone')
+const lan = Object.values(networkInterfaces()).flat().find(i => i && i.family === 'IPv4' && !i.internal)?.address
+if (PHONE && !lan) { console.error('No Wi-Fi or network address found. Connect this computer to the same Wi-Fi as your phone, then try again.'); process.exit(2) }
 const schema = `sandbox_${randomBytes(4).toString('hex')}`
 const tmp = makeTmp()
 const OP = `sandbox-owner-${randomBytes(12).toString('hex')}`, SVC = `sandbox-signer-${randomBytes(16).toString('hex')}`
@@ -34,7 +40,7 @@ for (const sig of ['SIGINT', 'SIGTERM'] as const) process.on(sig, () => { consol
 
 console.log(`${b}Starting the sandbox...${x} ${d}(about 10 seconds)${x}`)
 procs.push(start('world', 'apps/mock-merchants', 'src/world-server.ts', { WORLD_PORT: String(W) }, tmp)); await waitFor(`${WORLD}/_control/health`, 'the simulated world')
-procs.push(start('gateway', 'apps/gateway', 'src/server.ts', { PORT: String(G), DATABASE_URL: DB, DATABASE_SCHEMA: schema, GATEWAY_OPERATOR_TOKEN: OP, TOLLGATE_OFFLINE: 'false', NEAR_1CLICK_API_KEY: 'sandbox-simulated-key', ONECLICK_BASE_URL: `${WORLD}/1click`, SIGNER_URL: `http://127.0.0.1:${S}`, SIGNER_SERVICE_TOKEN: SVC, LOG_LEVEL: 'info' }, tmp)); await waitFor(`${GW}/healthz`, 'the gateway')
+procs.push(start('gateway', 'apps/gateway', 'src/server.ts', { PORT: String(G), DATABASE_URL: DB, DATABASE_SCHEMA: schema, GATEWAY_OPERATOR_TOKEN: OP, GATEWAY_HOST: PHONE ? '0.0.0.0' : '127.0.0.1', TOLLGATE_OFFLINE: 'false', NEAR_1CLICK_API_KEY: 'sandbox-simulated-key', ONECLICK_BASE_URL: `${WORLD}/1click`, SIGNER_URL: `http://127.0.0.1:${S}`, SIGNER_SERVICE_TOKEN: SVC, LOG_LEVEL: 'info' }, tmp)); await waitFor(`${GW}/healthz`, 'the gateway')
 procs.push(start('signer', 'apps/signer', 'src/server.ts', { SIGNER_PORT: String(S), SIGNER_SERVICE_TOKEN: SVC, SIGNER_KEY_FILE: join(tmp, 'signer.key'), DATABASE_URL: DB, DATABASE_SCHEMA: schema, SIGNER_MAX_PER_TX: '1.00', LOG_LEVEL: 'info' }, tmp)); await waitFor(`http://127.0.0.1:${S}/healthz`, 'the signer')
 
 const op = async (method: string, path: string, body?: unknown) => (await fetch(GW + path, { method, headers: { authorization: `Bearer ${OP}`, ...(body ? { 'content-type': 'application/json' } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}) })).json() as Promise<any>
@@ -44,10 +50,10 @@ const now = Date.now(), iso = (ms: number) => new Date(ms).toISOString()
 const m = await op('POST', '/v1/mandates', {
   id: 'mnd_sandbox', version: 1, principal: 'you@example.com', agentId: 'sandbox-agent', validFrom: iso(now - 864e5), validUntil: iso(now + 7 * 864e5),
   budget: { currency: 'USDC', total: '5.00', perPayment: '1.00' }, allowedHosts: ['merchant.example.com'], allowedOriginNetworks: ['eip155:42161'], allowedAssets: ['USDC'],
-  payee: { mode: 'registry' }, price: { tolerancePct: 3, onExceed: 'needs_approval' }, approval: { above: '1.00', riskAbove: 90, firstPayeeRequiresApproval: false }, refund: { mustBePayerOrPinned: true },
+  payee: { mode: 'registry' }, price: { tolerancePct: 3, onExceed: 'needs_approval' }, approval: { above: PHONE ? '0.00' : '1.00', riskAbove: 90, firstPayeeRequiresApproval: false }, refund: { mustBePayerOrPinned: true },
 })
 await fetch(`${WORLD}/_control/merchant`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ host: 'merchant.example.com', payee: 'merchant.near', price: '0.30', behavior: 'honest' }) })
-writeFileSync(sandboxFile, JSON.stringify({ gateway: GW, world: WORLD, operatorToken: OP, agentToken: m.agentToken, mandateId: 'mnd_sandbox', payer }, null, 2)); chmodSync(sandboxFile, 0o600)
+writeFileSync(sandboxFile, JSON.stringify({ gateway: GW, world: WORLD, operatorToken: OP, agentToken: m.agentToken, mandateId: 'mnd_sandbox', payer, phone: PHONE }, null, 2)); chmodSync(sandboxFile, 0o600)
 
 console.log(`
 ${g}${b}The sandbox is running.${x} ${d}Everything is real except the outside world: the 1Click, the chain and the merchant are simulated. No money, no real key.${x}
@@ -63,4 +69,29 @@ ${b}Now, in a SECOND terminal, from this same folder:${x}
 Refresh the dashboard after each one: you will see the payment, the twelve checks, and which one stopped it.
 ${d}Stop with Ctrl+C: this removes the sandbox's throwaway database data and key.${x}
 `)
+if (PHONE) {
+  const phoneUrl = `http://${lan}:${G}`
+  const q = qrcode(0, 'M'); q.addData(JSON.stringify({ tollgate: 1, url: phoneUrl, key: OP }), 'Byte'); q.make()
+  const n = q.getModuleCount(), dark = (r: number, c: number) => r >= 0 && c >= 0 && r < n && c < n && q.isDark(r, c)
+  // Two QR rows per text line (▀ ▄ █), dark-on-light with a quiet zone, so a phone camera reads it straight off the terminal.
+  const rows: string[] = []
+  for (let r = -2; r < n + 2; r += 2) {
+    let line = ''
+    for (let c = -2; c < n + 2; c++) { const t = dark(r, c), u = dark(r + 1, c); line += t && u ? ' ' : t ? '▄' : u ? '▀' : '█' }
+    rows.push('  ' + line)
+  }
+  console.log(`${b}${g}PHONE MODE${x} ${d}This gateway is reachable from your Wi-Fi at ${phoneUrl}. Every purchase waits for your phone.${x}
+
+${b}On your phone${x}
+  1. Install Expo Go from the App Store.
+  2. In a second terminal on this computer:  pnpm --filter @tollgate/mobile start   and scan its QR with the Camera app.
+  3. In Tollgate: Get started, then scan THIS code:
+
+${rows.join('\n')}
+
+  Or tap "Enter the address instead":  ${phoneUrl}   key: ${OP}
+
+${b}Then make the agent ask to pay${x} (third terminal):  pnpm sandbox:agent   ${d}it waits until you approve or reject on the phone${x}
+`)
+}
 await new Promise(() => {})

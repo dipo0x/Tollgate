@@ -26,6 +26,8 @@ const toTheSandbox = (input, init) => {
 const tollgate = createTollgate({
   gatewayUrl: box.gateway, agentToken: box.agentToken, mandateId: box.mandateId, payer: box.payer,
   rail: httpRpcRail({ 'eip155:42161': `${box.world}/rpc` }), fetch: toTheSandbox, purpose: 'buy the market brief',
+  // In phone mode every purchase waits for the owner's phone: keep asking for up to five minutes instead of giving up.
+  ...(box.phone ? { approval: { wait: true, pollMs: 2000, timeoutMs: 5 * 60_000 } } : {}),
 })
 async function attempt() {
   try {
@@ -42,6 +44,7 @@ async function attempt() {
 }
 
 console.log(`The merchant is acting: ${behaviour}. The agent asks for https://merchant.example.com/data ...\n`)
+if (box.phone) console.log('Phone mode: if the checks pass, this waits for you to approve or reject it in the Tollgate app ...\n')
 await attempt()
 if (behaviour === 'replays') {
   // This merchant hands out the same payment request every time. Wait for the first payment to settle, then ask again.

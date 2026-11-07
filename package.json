@@ -11,7 +11,8 @@
     "node": ">=22"
   },
   "scripts": {
-    "dev": "node scripts/preflight.mjs --quick && pnpm -r --parallel --stream dev",
+    "all": "node scripts/dev-all.mjs",
+  "dev": "node scripts/preflight.mjs --quick && pnpm -r --parallel --stream dev",
     "site": "pnpm --filter @tollgate/site dev",
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
@@ -29,9 +30,13 @@
     "services": "pnpm --filter @tollgate/workers start",
     "sandbox": "pnpm --filter trytollgate build && pnpm --filter @tollgate/e2e sandbox",
     "sandbox:agent": "pnpm --silent --filter @tollgate/e2e agent",
+    "sandbox:phone": "pnpm --filter trytollgate build && pnpm --filter @tollgate/e2e sandbox --phone",
     "prepare": "pnpm --filter trytollgate build",
     "live:near": "pnpm --filter @tollgate/e2e live:near",
-    "live:mandate": "pnpm --filter @tollgate/e2e live:mandate"
+    "live:mandate": "pnpm --filter @tollgate/e2e live:mandate",
+    "spend": "pnpm --silent --filter @tollgate/e2e spend",
+    "mobile": "pnpm --filter @tollgate/mobile ios",
+    "live:market": "pnpm --filter @tollgate/e2e live:market"
   },
   "devDependencies": {
     "@types/node": "^22.20.5",

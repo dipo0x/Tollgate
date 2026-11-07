@@ -3,7 +3,7 @@ import type { PostgresHandle } from '@tollgate/core/postgres'
 import type { Service } from '@tollgate/registry'
 import { toPrior, type Approval, type DecisionRecord, type Job } from '../state.ts'
 import { randomUUID } from 'node:crypto'
-import type { SignatureStore, StoredSignature, AcceptanceStore, ApprovalOutcome, DecisionFilter, DecisionStore, JobStore, LockStore, ServiceStore, SessionStore, SettingsStore, TokenOwner, TokenStore } from './types.ts'
+import type { SignatureStore, StoredSignature, AcceptanceStore, ApprovalOutcome, DecisionFilter, DecisionStore, JobStore, HistoryStore, HistoryRecord, LockStore, ServiceStore, SessionStore, SettingsStore, TokenOwner, TokenStore } from './types.ts'
 
 type Sql = PostgresHandle['sql']
 type Row = Record<string, any>
@@ -165,7 +165,32 @@ export class PostgresJobStore implements JobStore {
   }
   async get(id: string) {
     const [r] = await this.sql`SELECT * FROM gateway_jobs WHERE id = ${id}`
-    return r ? { id: r['id'], mandateId: r['mandate_id'], goal: r['goal'], receivingAddress: r['receiving_address'], price: r['price'], currency: r['currency'] } : undefined
+    return r ? toJob(r) : undefined
+  }
+  async list(limit: number) {
+    const rows = await this.sql`SELECT * FROM gateway_jobs ORDER BY created_at DESC, id LIMIT ${limit}`
+    return rows.map(toJob)
+  }
+}
+const toJob = (r: Record<string, unknown>) => ({ id: r['id'] as string, mandateId: r['mandate_id'] as string, goal: r['goal'] as string, receivingAddress: r['receiving_address'] as string, price: r['price'] as string, currency: r['currency'] as string })
+
+export class PostgresHistoryStore implements HistoryStore {
+  private readonly sql: Sql
+  constructor(sql: Sql) { this.sql = sql }
+  async create(r: HistoryRecord) {
+    const rows = await this.sql`
+      INSERT INTO gateway_history (id, kind, occurred_at, title, amount, currency, network, tx_hash, explorer, status, note)
+      VALUES (${r.id}, ${r.kind}, ${r.occurredAt}, ${r.title}, ${r.amount}, ${r.currency}, ${r.network}, ${r.txHash ?? null}, ${r.explorer ?? null}, ${r.status}, ${r.note})
+      ON CONFLICT (id) DO NOTHING RETURNING id`
+    return rows.length > 0
+  }
+  async list(limit: number) {
+    const rows = await this.sql`SELECT * FROM gateway_history ORDER BY occurred_at DESC, id LIMIT ${limit}`
+    return rows.map(r => ({
+      id: r['id'] as string, kind: r['kind'] as HistoryRecord['kind'], occurredAt: new Date(r['occurred_at'] as string | Date).toISOString().replace(/\.\d{3}Z$/, 'Z'), title: r['title'] as string,
+      amount: r['amount'] as string, currency: r['currency'] as string, network: r['network'] as string,
+      ...(r['tx_hash'] ? { txHash: r['tx_hash'] as string } : {}), ...(r['explorer'] ? { explorer: r['explorer'] as string } : {}), status: r['status'] as string, note: r['note'] as string,
+    }))
   }
 }
 

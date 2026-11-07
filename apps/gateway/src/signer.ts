@@ -3,7 +3,7 @@
  * never sees the key, and the agent never reaches the signer. The gateway proves who it is with a service token.
  */
 /** EVM: nonce, gas and fees. NEAR: the access key's nonce (as a string; it can exceed 2^53) and a recent block hash. */
-export type TxParams = { nonce: number; gas: string; maxFeePerGas: string; maxPriorityFeePerGas: string } | { nonce: string; blockHash: string }
+export type TxParams = { nonce: number; gas: string; maxFeePerGas: string; maxPriorityFeePerGas: string } | { nonce: string; blockHash: string } | { nonce: string; blockHeight: string }
 
 export type SignerRequest = {
   decisionId: string

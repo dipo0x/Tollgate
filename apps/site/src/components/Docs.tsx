@@ -160,7 +160,7 @@ function AgentEconomy() {
           <li>The SDK wraps spending only. Negotiating, hiring and earning are plain HTTP calls, as above.</li>
           <li>There is no earning server: Tollgate verifies a receipt but does not provide the paid endpoint that issues one. The demo’s customer and receipt are simulated.</li>
           <li>The seller in the demo is scripted, and hired workers are played inline. Nothing here has run with real money.</li>
-          <li>The agent itself is scripted by default. <code>pnpm demo --llm</code> lets a Claude model plan its negotiation from prices and limits only; the gateway still decides every move. It needs your own Anthropic key.</li>
+          <li>The agent is scripted by default. <code>pnpm demo --llm</code> lets a model on your own computer (Ollama, <code>qwen2.5:7b</code>) decide whether to buy, how to haggle and what to charge. It sees only prices and limits, and the gateway checks every move: in the recorded run it offered 0.35 against a 0.30 ceiling and was refused. Small local models are not always right, so the savings reserve is checked in code.</li>
           <li>The agent can pay from Arbitrum or from NEAR (a NEP-141 USDC transfer to the 1Click deposit address). The NEAR path has made one real payment (0.21 USDC, 3 Nov 2026), verifiable on nearblocks.io; the Arbitrum path has not been run with real money.</li>
         </ul>
         <p className="dx-t dx-dim">Run all four in one go, offline, with <code>pnpm demo</code>. Add <code>--serve</code> to keep the gateway up and open its dashboard on the result.</p>

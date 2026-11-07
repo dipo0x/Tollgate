@@ -6,7 +6,7 @@ import { verifyChain } from '@tollgate/core'
 import { bearer } from './auth.ts'
 import { Gateway, type GatewayDeps, type Out } from './gateway.ts'
 import type { Principal } from './state.ts'
-import { dashboardAsset } from './dashboard.ts'
+import { dashboardAsset, dashboardFont, DASHBOARD_FONTS } from './dashboard.ts'
 
 type Env = { Variables: { who: Principal; requestId: string } }
 type Agent = Extract<Principal, { role: 'agent' }>
@@ -30,12 +30,18 @@ const HireBody = z.strictObject({
   acceptance: z.strictObject({ requiredFields: z.array(z.string().max(64)).max(30), minSources: z.number().int().min(0).max(20).optional() }).optional(),
 })
 const DeliverableBody = z.strictObject({ fields: z.record(z.string(), z.unknown()), sources: z.array(z.string().max(2048)).max(50).optional() })
+const HistoryBody = z.strictObject({
+  id: z.string().min(1).max(128), kind: z.enum(['payment', 'job']), occurredAt: z.string().datetime(), title: z.string().min(1).max(200), amount, currency: z.string().min(1).max(32),
+  network: z.string().min(1).max(32), txHash: z.string().max(128).optional(), explorer: z.string().url().max(300).optional(), status: z.string().min(1).max(64), note: z.string().min(1).max(500),
+})
 const JobBody = z.strictObject({ id: z.string().min(1).max(128), mandateId: z.string().min(1).max(128), goal: z.string().max(500), receivingAddress: z.string().min(1).max(256), price: amount, currency: z.string().min(1).max(32) })
 const wholeNumber = z.string().regex(/^\d{1,30}$/, 'must be a whole number written as a string')
 // EVM: nonce, gas and fees. NEAR: the access key's nonce (a string; it can exceed 2^53) and a recent base58 block hash.
 const SignBody = z.strictObject({ tx: z.union([
   z.strictObject({ nonce: z.number().int().min(0).max(0xffffffff), gas: wholeNumber, maxFeePerGas: wholeNumber, maxPriorityFeePerGas: wholeNumber }),
   z.strictObject({ nonce: wholeNumber, blockHash: z.string().regex(/^[1-9A-HJ-NP-Za-km-z]{32,44}$/) }),
+  // x402 on NEAR (NEAR AI Agent Market): the access key's next nonce and the current block height.
+  z.strictObject({ nonce: wholeNumber, blockHeight: wholeNumber }),
 ]) })
 const ReasonBody = z.strictObject({ reason: z.string().min(1, 'a reason is required').max(500) })
 const ServiceBody = z.strictObject({
@@ -100,10 +106,17 @@ export function createApp(deps: GatewayDeps) {
   app.get('/healthz', async c => c.json({ ok: true, frozen: await gw.isFrozen() }))
 
   // ---- the owner's dashboard: a static page. It holds no secrets; the operator token is typed into it and kept for the tab only ----
-  for (const name of ['', 'app.js', 'app.css'] as const) {
+  for (const name of ['', 'app.js', 'app.css', 'qr.js'] as const) {
     app.get(`/dashboard${name ? `/${name}` : ''}`, () => {
       const a = dashboardAsset(name)
       return new Response(a.body, { headers: { 'content-type': a.type, ...a.headers } })
+    })
+  }
+
+  for (const w of DASHBOARD_FONTS) {
+    app.get(`/dashboard/fonts/Satoshi-${w}.otf`, () => {
+      const f = dashboardFont(w)
+      return f ? new Response(f.body, { headers: f.headers }) : new Response('Font not installed', { status: 404 })
     })
   }
 
@@ -111,6 +124,8 @@ export function createApp(deps: GatewayDeps) {
   app.get('/v1/mandates', asOperator(async c => send(c, await gw.listMandates())))
   // What the dashboard's status pills show. Nothing secret: whether it is frozen, where state is kept, and whether a signer is attached.
   app.get('/v1/status', asOperator(async c => c.json(await gw.status())))
+  // Operator only: it reveals this computer's network addresses, which is all the dashboard needs to build a pairing code that works.
+  app.get('/v1/pairing', asOperator(async c => c.json(gw.pairing())))
   app.post('/v1/mandates', asOperator(async c => { const raw = await c.req.json().catch(() => undefined); return send(c, await gw.createMandate(raw)) }))
   app.get('/v1/mandates/:id', asEither((c, p) => {
     const id = P(c, 'id')
@@ -165,6 +180,9 @@ export function createApp(deps: GatewayDeps) {
 
   // ---- jobs and earning ------------------------------------------------------------------
   app.post('/v1/jobs', asOperator(async c => { const b = await parse(c, JobBody); return b.ok ? send(c, await gw.createJob(b.data)) : b.res }))
+  app.get('/v1/history', asOperator(async c => send(c, await gw.listHistory(Math.min(Number(c.req.query('limit') ?? 100) || 100, 500)))))
+  app.post('/v1/history', asOperator(async c => { const b = await parse(c, HistoryBody); return b.ok ? send(c, await gw.importHistory(b.data)) : b.res }))
+  app.get('/v1/jobs', asOperator(async c => send(c, await gw.listJobs(Math.min(Number(c.req.query('limit') ?? 100) || 100, 500)))))
   app.get('/v1/jobs/:id', asEither(async (c, p) => send(c, await gw.getJob(P(c, 'id'), p.role === 'agent' ? { mandateId: p.mandateId } : {}))))
   app.post('/v1/jobs/:id/revenue', asAgent(async (c, a) => { const raw = await c.req.json().catch(() => undefined); return send(c, await gw.reportRevenue(a, P(c, 'id'), raw)) }))
 

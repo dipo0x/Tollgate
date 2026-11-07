@@ -4,7 +4,9 @@ import { keccak256, type Hex } from 'viem'
 export type EvmTxParams = { nonce: number; gas: string; maxFeePerGas: string; maxPriorityFeePerGas: string }
 /** NEAR: the access key's next nonce (a string: it can exceed 2^53) and a recent block hash, which anchors the transaction's expiry. */
 export type NearTxParams = { nonce: string; blockHash: string }
-export type TxParams = EvmTxParams | NearTxParams
+/** x402 on NEAR: the access key's next nonce and the current block height (a signed delegate is valid from there). */
+export type NearDelegateTxParams = { nonce: string; blockHeight: string }
+export type TxParams = EvmTxParams | NearTxParams | NearDelegateTxParams
 
 /**
  * How a signed payment reaches the chain. The SDK does not know about wallets or keys: it asks the gateway for a signature
@@ -65,10 +67,11 @@ export function nearRpcRail(o: { rpcUrl: string; publicKey: string }, doFetch: t
   const onlyNear = (chain: string) => { if (chain !== 'near') throw new Error(`this rail pays from NEAR only, not ${chain}`) }
   return {
     async txParams(from, chain) {
-      onlyNear(chain)
-      // One call gives both: the access key's current nonce, and the hash of the block it was read at.
-      const r = await rpc<{ nonce: number | string; block_hash: string }>('query', { request_type: 'view_access_key', finality: 'final', account_id: from, public_key: o.publicKey })
-      return { nonce: (BigInt(r.nonce) + 1n).toString(), blockHash: r.block_hash }
+      if (chain !== 'near' && chain !== 'near:mainnet') throw new Error(`this rail pays from NEAR only, not ${chain}`)
+      // One call gives all three: the access key's current nonce, and the hash and height of the block it was read at.
+      const r = await rpc<{ nonce: number | string; block_hash: string; block_height: number | string }>('query', { request_type: 'view_access_key', finality: 'final', account_id: from, public_key: o.publicKey })
+      const nonce = (BigInt(r.nonce) + 1n).toString()
+      return chain === 'near:mainnet' ? { nonce, blockHeight: BigInt(r.block_height).toString() } : { nonce, blockHash: r.block_hash }
     },
     async send(chain, signedTx) {
       onlyNear(chain)

@@ -85,9 +85,12 @@ Click any decision to see the twelve checks and their evidence, as below.
 
 ![One blocked payment, with all twelve checks and their evidence](images/dashboard-decision-checks.jpg)
 
-> **Optional: let a model plan the negotiation.** `pnpm demo --llm` lets a Claude model choose the agent's negotiation moves. It needs
-> `ANTHROPIC_API_KEY` in `.env` and a funded Anthropic account; it sees only prices and limits, and the gateway still enforces the mandate.
-> If the model fails, the agent makes no move and buys nothing. Without `--llm` the demo needs no key.
+> **Optional: let a model on your own computer run the agent.** `pnpm demo --llm` lets a local model decide whether to buy, how to haggle and what
+> to charge for the report it sells. It needs [Ollama](https://ollama.com) running and one model: `ollama pull qwen2.5:7b` (a one-time download of about
+> 4.7 GB; it then runs offline, with no key and no cost). It sees only prices and limits, and the gateway still enforces the mandate on every move: if it
+> offers too much, the gateway refuses and says why. If the model fails or answers badly, the agent does nothing and the demo says so. If Ollama
+> is not running or the model is missing, the demo prints the exact command to fix it. Without `--llm` the demo needs no model. To use Claude instead,
+> set `PLANNER_PROVIDER=anthropic` and `ANTHROPIC_API_KEY` in `.env`.
 
 ## Step 3. Run the real system on your computer
 

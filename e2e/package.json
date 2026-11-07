@@ -11,12 +11,16 @@
     "live": "tsx src/live.ts",
     "agent": "node examples/agent.mjs",
     "live:near": "tsx src/live-near.ts",
-    "live:mandate": "tsx src/live-mandate.ts"
+    "live:mandate": "tsx src/live-mandate.ts",
+    "spend": "tsx src/live-spend.ts",
+    "live:market": "tsx src/live-market.ts"
   },
   "dependencies": {
     "@tollgate/core": "workspace:*",
+    "@tollgate/demo-agent": "workspace:*",
     "@tollgate/signer": "workspace:*",
     "postgres": "^4.0.0",
+    "qrcode-generator": "^1.5.2",
     "trytollgate": "workspace:*"
   },
   "devDependencies": {

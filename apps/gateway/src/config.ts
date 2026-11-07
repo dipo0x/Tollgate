@@ -6,6 +6,12 @@ const bool = z.enum(['true', 'false']).transform(v => v === 'true')
 /** Validated once at boot, with a clear message, so a bad setting fails at startup and not mid-payment. */
 export const ConfigSchema = z.object({
   PORT: z.coerce.number().int().min(1).max(65535).default(8787),
+  /**
+   * Which network address to listen on. The default, 127.0.0.1, means only this machine can reach the gateway. Set 0.0.0.0 (or this
+   * machine's LAN address) to let a phone on the same network reach it for testing, or run it behind an https proxy on a server.
+   * Every call still needs a token; the server logs a warning whenever it is reachable from outside this machine.
+   */
+  GATEWAY_HOST: z.string().default('127.0.0.1').refine(v => /^(\d{1,3}\.){3}\d{1,3}$/.test(v) || v === 'localhost' || v === '::1' || v === '::', { message: 'GATEWAY_HOST must be an IP address to listen on, e.g. 127.0.0.1 (this machine only) or 0.0.0.0 (every network)' }),
   /** Offline replays recorded 1Click fixtures: no network, no key, no funds. The default, and what CI uses. */
   TOLLGATE_OFFLINE: bool.default(true),
   /** Per-check time limit. A slower check fails (DENY), never passes. 2.5 s suits recorded answers; live 1Click needs more (its first lookup of a new deposit address was measured at ~5 s). */

@@ -1,7 +1,7 @@
 import type { AcceptanceSpec, NegotiationSnapshot, Prior } from '@tollgate/core'
 import type { Service } from '@tollgate/registry'
 import { isPrior, toPrior, type Approval, type DecisionRecord, type Job } from '../state.ts'
-import type { SignatureStore, StoredSignature, AcceptanceStore, ApprovalOutcome, DecisionFilter, DecisionStore, GatewayStore, JobStore, LockStore, ServiceStore, SessionStore, SettingsStore, TokenOwner, TokenStore } from './types.ts'
+import type { SignatureStore, StoredSignature, AcceptanceStore, ApprovalOutcome, DecisionFilter, DecisionStore, GatewayStore, JobStore, HistoryStore, HistoryRecord, LockStore, ServiceStore, SessionStore, SettingsStore, TokenOwner, TokenStore } from './types.ts'
 
 export class MemoryDecisionStore implements DecisionStore {
   private rows = new Map<string, DecisionRecord>()
@@ -52,6 +52,13 @@ export class MemoryJobStore implements JobStore {
   private rows = new Map<string, Job>()
   async create(job: Job) { if (this.rows.has(job.id)) return false; this.rows.set(job.id, job); return true }
   async get(id: string) { return this.rows.get(id) }
+  async list(limit: number) { return [...this.rows.values()].reverse().slice(0, limit) }
+}
+
+export class MemoryHistoryStore implements HistoryStore {
+  private rows = new Map<string, HistoryRecord>()
+  async create(r: HistoryRecord) { if (this.rows.has(r.id)) return false; this.rows.set(r.id, r); return true }
+  async list(limit: number) { return [...this.rows.values()].sort((a, b) => b.occurredAt.localeCompare(a.occurredAt)).slice(0, limit) }
 }
 
 export class MemoryAcceptanceStore implements AcceptanceStore {
@@ -113,7 +120,7 @@ export class MemoryLockStore implements LockStore {
 
 export function memoryStore(): GatewayStore {
   return {
-    kind: 'memory', decisions: new MemoryDecisionStore(), jobs: new MemoryJobStore(), acceptance: new MemoryAcceptanceStore(),
+    kind: 'memory', decisions: new MemoryDecisionStore(), jobs: new MemoryJobStore(), history: new MemoryHistoryStore(), acceptance: new MemoryAcceptanceStore(),
     sessions: new MemorySessionStore(), tokens: new MemoryTokenStore(), services: new MemoryServiceStore(), settings: new MemorySettingsStore(), locks: new MemoryLockStore(), signatures: new MemorySignatureStore(),
   }
 }

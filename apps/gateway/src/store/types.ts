@@ -39,6 +39,8 @@ export interface JobStore {
   /** False, saving nothing, if the id is taken. */
   create(job: Job): Promise<boolean>
   get(id: string): Promise<Job | undefined>
+  /** Newest first. */
+  list(limit: number): Promise<Job[]>
 }
 
 export interface AcceptanceStore {
@@ -91,10 +93,26 @@ export interface LockStore {
   run<T>(key: string, work: () => Promise<T>): Promise<T>
 }
 
+/**
+ * A real run that did NOT go through this gateway's own decision log (for example a script run before the history was kept here).
+ * Stored as plain facts and always shown as imported. It is never turned into a decision, so no checks are invented for it.
+ */
+export type HistoryRecord = {
+  id: string; kind: 'payment' | 'job'; occurredAt: string; title: string; amount: string; currency: string
+  network: string; txHash?: string | undefined; explorer?: string | undefined; status: string; note: string
+}
+export interface HistoryStore {
+  /** False, saving nothing, if the id is taken. */
+  create(r: HistoryRecord): Promise<boolean>
+  /** Newest first. */
+  list(limit: number): Promise<HistoryRecord[]>
+}
+
 export type GatewayStore = {
   kind: 'memory' | 'postgres'
   decisions: DecisionStore
   jobs: JobStore
+  history: HistoryStore
   acceptance: AcceptanceStore
   sessions: SessionStore
   tokens: TokenStore

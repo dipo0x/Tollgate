@@ -25,6 +25,7 @@
     ".": "./src/index.ts",
     "./postgres": "./src/postgres/index.ts",
     "./oneclick": "./src/oneclick/index.ts",
-    "./audit-file": "./src/audit-file.ts"
+    "./audit-file": "./src/audit-file.ts",
+    "./market": "./src/market/index.ts"
   }
 }

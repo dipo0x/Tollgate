@@ -48,3 +48,8 @@ payload.json
 .signer-near-key*
 .near-pay-confirm
 .near-pay-result.json
+.spend-result.json
+# Satoshi (ITF Free Font License): may be embedded in the app, may NOT be redistributed from a repository.
+# apps/mobile/scripts/get-fonts.mjs fetches it from Fontshare before the app starts.
+apps/mobile/assets/fonts/Satoshi-*.otf
+.market-pay-confirm

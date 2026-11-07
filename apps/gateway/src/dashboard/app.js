@@ -30,7 +30,7 @@ function svg(tag, attrs, ...kids) {
 }
 const ICONS = {
   overview: 'M3 3h8v8H3z M13 3h8v5h-8z M13 10h8v11h-8z M3 13h8v8H3z', decisions: 'M4 6h16 M4 12h16 M4 18h10', approvals: 'M9 12l2 2 4-4 M12 21a9 9 0 100-18 9 9 0 000 18z',
-  mandates: 'M12 3l9 5-9 5-9-5 9-5z M3 13l9 5 9-5 M3 17l9 5 9-5', services: 'M4 5h16v6H4z M4 13h16v6H4z M8 8h.01 M8 16h.01',
+  mandates: 'M12 3l9 5-9 5-9-5 9-5z M3 13l9 5 9-5 M3 17l9 5 9-5', jobs: 'M4 7h16v12H4z M9 7V5h6v2 M4 12h16', services: 'M4 5h16v6H4z M4 13h16v6H4z M8 8h.01 M8 16h.01',
   audit: 'M10 14a4 4 0 005.7 0l3-3a4 4 0 00-5.7-5.7l-1 1 M14 10a4 4 0 00-5.7 0l-3 3a4 4 0 005.7 5.7l1-1', shield: 'M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6l8-3z',
   wallet: 'M3 7h16a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z M3 7l2-3h11 M17 13h.01', out: 'M7 17L17 7 M8 7h9v9', lock: 'M6 11h12v9H6z M8 11V8a4 4 0 018 0v3', clock: 'M12 7v5l3 2 M12 21a9 9 0 100-18 9 9 0 000 18z',
 }
@@ -38,10 +38,10 @@ function icon(name) { return svg('svg', { viewBox: '0 0 24 24', fill: 'none', 's
 
 const KEYS = { current: 'overview', filter: 'all', query: '' }
 let timer = null, status = null, approvals = [], lastLoad = 0
-const PAGES = [['overview', 'Overview'], ['decisions', 'Decisions'], ['approvals', 'Approvals'], ['mandates', 'Mandates'], ['services', 'Services'], ['audit', 'Audit']]
+const PAGES = [['overview', 'Overview'], ['decisions', 'Decisions'], ['approvals', 'Approvals'], ['mandates', 'Mandates'], ['jobs', 'Jobs'], ['services', 'Services'], ['audit', 'Audit']]
 const SUB = {
   overview: 'What your agents are spending, and what stopped them', decisions: 'Every payment request, with the checks that judged it', approvals: 'Payments waiting for you',
-  mandates: 'The rules each agent works under, and their money', services: 'What can be paid, and what has been verified', audit: 'A tamper-evident record of everything that happened',
+  mandates: 'The rules each agent works under, and their money', jobs: 'Work your agents were hired for, with what it earned and cost', services: 'What can be paid, and what has been verified', audit: 'A tamper-evident record of everything that happened',
 }
 
 const token = () => sessionStorage.getItem(KEY)
@@ -52,8 +52,24 @@ function when(iso) { try { return new Date(iso).toISOString().replace('T', ' ').
 function hue(s) { let h = 0; for (const ch of String(s)) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return [h % 360, (h >>> 9) % 360] }
 function avatar(seed, small) { const [a, b] = hue(seed); return el('span', { class: 'avatar' + (small ? ' sm' : ''), vars: { '--h1': String(a), '--h2': String(b) } }) }
 function toast(msg) { const t = el('div', { class: 'toast', role: 'status' }, msg); document.body.append(t); setTimeout(() => t.remove(), 1500) }
+// Copy text, wherever the dashboard is opened. The clipboard API exists only on https and localhost; on a plain-http network
+// address (a phone-testing setup) it is missing, so fall back to a hidden textarea and execCommand('copy'). Resolves true or false.
+function copyText(value) {
+  const text = String(value)
+  if (window.isSecureContext && navigator.clipboard) return navigator.clipboard.writeText(text).then(() => true, () => copyFallback(text))
+  return Promise.resolve(copyFallback(text))
+}
+function copyFallback(text) {
+  const ta = el('textarea', { readonly: true, 'aria-hidden': 'true', class: 'offscreen' })
+  ta.value = text
+  document.body.append(ta); ta.select()
+  let ok = false
+  try { ok = document.execCommand('copy') } catch (e) { ok = false }
+  ta.remove()
+  return ok
+}
 function copyBtn(value) {
-  return el('button', { type: 'button', class: 'copy', title: 'Copy', onclick: e => { e.stopPropagation(); const p = navigator.clipboard ? navigator.clipboard.writeText(String(value)) : Promise.reject(); p.then(() => toast('Copied'), () => toast('Copy failed')) } }, 'copy')
+  return el('button', { type: 'button', class: 'copy', title: 'Copy', onclick: e => { e.stopPropagation(); copyText(value).then(ok => toast(ok ? 'Copied' : 'Copy failed')) } }, 'copy')
 }
 const addr = v => el('span', { class: 'addr', title: String(v) }, short(v), copyBtn(v))
 const tokenChip = c => el('span', { class: 'tok' }, el('i', null, '$'), c || 'USDC')
@@ -231,6 +247,31 @@ const PAGE_LOADERS = {
       }))
     })
   },
+  jobs() {
+    return Promise.all([api('/v1/jobs?limit=200'), api('/v1/history?limit=200')]).then(([r, h]) => {
+      const jobs = r.jobs, past = h.history
+      if (!jobs.length && !past.length) return el('div', { class: 'card' }, el('p', { class: 'empty' }, 'Nothing here yet. A job appears when you register work for an agent (POST /v1/jobs); a real payment appears once it is recorded.'))
+      return [
+        el('h3', { class: 'sect' }, 'Jobs your agents were hired for'),
+        jobs.length ? el('div', { class: 'tablewrap' }, el('table', null, el('thead', null, el('tr', null, ['Job', 'Agent mandate', 'Price', 'Earned', 'Spent', 'Net', 'Blocked'].map(h => el('th', null, h)))),
+          el('tbody', null, jobs.map(x => el('tr', null,
+            el('td', null, el('div', { class: 'cell' }, avatar(x.job.id), el('div', null, el('b', null, x.job.goal || x.job.id), el('small', null, x.job.id)))),
+            el('td', { class: 'mono' }, short(x.job.mandateId)),
+            el('td', null, el('span', { class: 'amt' }, x.job.price), ' ', tokenChip(x.job.currency)),
+            el('td', null, x.summary ? money(x.summary.revenue) : '—'), el('td', null, x.summary ? money(x.summary.settled) : '—'),
+            el('td', { class: x.summary && num(x.summary.net) < 0 ? 'no' : 'ok' }, x.summary ? money(x.summary.net) : '—'),
+            el('td', null, x.summary ? x.summary.blockedAttempts : '—')))))) : el('p', { class: 'note' }, 'No jobs registered yet. Earned and spent come from the ledger and verified revenue receipts, never from the agent.'),
+        el('h3', { class: 'sect' }, 'Real runs recorded from outside the decision log'),
+        el('p', { class: 'note' }, 'Each is a real run saved as plain facts and marked imported. Its twelve checks are not stored here, so none are shown.'),
+        past.length ? el('div', { class: 'tablewrap' }, el('table', null, el('thead', null, el('tr', null, ['Run', 'When (UTC)', 'Amount', 'Status', 'Transaction'].map(h => el('th', null, h)))),
+          el('tbody', null, past.map(x => el('tr', null,
+            el('td', null, el('div', { class: 'cell' }, avatar(x.id), el('div', null, el('b', null, x.title), el('small', null, x.note)))),
+            el('td', { class: 'mono muted' }, when(x.occurredAt)),
+            el('td', null, el('span', { class: 'amt' }, x.amount), ' ', tokenChip(x.currency)),
+            el('td', null, el('span', { class: 'chip bl plain' }, 'imported'), ' ', x.status),
+            el('td', null, x.txHash ? el('a', { href: x.explorer || '#', target: '_blank', rel: 'noopener noreferrer' }, short(x.txHash)) : '—')))))) : el('p', { class: 'empty' }, 'None recorded.')]
+    })
+  },
   services() {
     return api('/v1/services').then(r => {
       if (!r.services.length) return el('div', { class: 'card' }, el('p', { class: 'empty' }, 'No services registered. Nothing can be paid until a service is probed and enabled.'))
@@ -289,4 +330,95 @@ $('#login').addEventListener('submit', e => {
   api('/v1/mandates').then(start).catch(() => { /* signOut already showed why */ })
 })
 $('#signout').addEventListener('click', () => signOut(''))
+
+// ---- pair a phone ---------------------------------------------------------------------------------------------------------------------
+// The Tollgate app scans this to pair: {"tollgate":1,"url":"…","key":"…"} (parsePairingCode in apps/mobile/src/api/gateway.ts).
+// The code carries the operator token, so it is shown only on request, only in this tab, and hides itself after two minutes.
+let pairTimer = null
+function qrSvg(text) {
+  if (typeof window.qrcode !== 'function') return el('p', { class: 'err' }, 'The QR encoder did not load. Use the address and key below.')
+  const q = window.qrcode(0, 'M'); q.addData(text, 'Byte'); q.make()
+  const n = q.getModuleCount(); let d = ''
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) if (q.isDark(y, x)) d += 'M' + x + ' ' + y + 'h1v1h-1z'
+  return svg('svg', { viewBox: '-4 -4 ' + (n + 8) + ' ' + (n + 8), width: 240, height: 240, role: 'img', 'aria-label': 'Pairing code for the Tollgate app', 'shape-rendering': 'crispEdges' },
+    svg('rect', { x: -4, y: -4, width: n + 8, height: n + 8, fill: '#fff' }), svg('path', { d: d, fill: '#000' }))
+}
+// A phone can only use an address on this computer's network. 127.0.0.1 / localhost on a phone means the phone itself.
+const isLoopback = host => /^(localhost|127\.\d+\.\d+\.\d+|\[::1\])$/i.test(host)
+function hostOf(url) { try { return new URL(url).hostname } catch { return '' } }
+
+/** What stops a phone from pairing, in steps a person can follow. null: nothing, the code can be shown. */
+function pairingBlocker(info, url) {
+  if (!info) return ['The dashboard could not ask the gateway where it can be reached. Reload this page and press Pair a phone again.']
+  if (!info.openToNetwork) return [
+    'Your gateway only accepts connections from this computer, so your phone cannot reach it.',
+    '1. Stop the gateway (Ctrl+C in its terminal).',
+    '2. Add the line GATEWAY_HOST=0.0.0.0 to the .env file in the Tollgate folder.',
+    '3. Start it again (pnpm dev) and press Pair a phone again.',
+    'Every request still needs your key. Do this only on a network you trust, like your home Wi-Fi.',
+  ]
+  if (!url) return [
+    'This computer has no Wi-Fi or network address your phone could use.',
+    'Connect this computer to the same Wi-Fi as your phone, then press Pair a phone again.',
+  ]
+  if (isLoopback(hostOf(url))) return [
+    hostOf(url) + ' cannot work for a phone: on the phone, that address is the phone itself.',
+    'Use this computer’s Wi-Fi address instead' + (info.addresses.length ? ', for example http://' + info.addresses[0] + ':' + info.port + '.' : '.'),
+  ]
+  return null
+}
+
+function openPairing() {
+  const close = () => { clearTimeout(pairTimer); overlay.remove() }
+  const address = el('input', { type: 'url', value: '', 'aria-label': 'Gateway address the phone will use' })
+  const box = el('div', { class: 'pairqr' })
+  const help = el('div', { class: 'pairhelp' })
+  const keyBox = el('div')
+  // If even the fallback copy is refused, show the key, selected, so it can be copied by hand. Never a button that does nothing.
+  const copyKey = () => copyText(token()).then(ok => {
+    if (ok) { toast('Key copied'); keyBox.replaceChildren(); return }
+    const field = el('input', { type: 'text', readonly: true, 'aria-label': 'Gateway key, selected for copying' })
+    field.value = token()
+    keyBox.replaceChildren(el('label', null, 'Your browser blocked copying. Press Cmd+C to copy the key:', field))
+    field.focus(); field.select()
+  })
+  let info = null
+  const paint = () => {
+    clearTimeout(pairTimer)
+    const url = address.value.trim().replace(/\/+$/, '')
+    const blocker = pairingBlocker(info, url)
+    if (blocker) {
+      // Never show a code that cannot work: a phone that scans it can only fail, and the reason would be hidden from the person.
+      box.replaceChildren(el('p', { class: 'muted' }, 'No code yet.'))
+      help.replaceChildren(...blocker.map((line, i) => el('p', { class: i === 0 ? 'err' : 'muted' }, line)))
+      return
+    }
+    help.replaceChildren(el('p', { class: 'muted' }, 'Your phone must be on the same Wi-Fi as this computer.'))
+    box.replaceChildren(qrSvg(JSON.stringify({ tollgate: 1, url: url, key: token() })))
+    pairTimer = setTimeout(() => box.replaceChildren(el('button', { type: 'button', onclick: paint }, 'Show the code again')), 120000)
+  }
+  address.addEventListener('change', paint)
+  const overlay = el('div', { class: 'pair', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Pair a phone', onclick: e => { if (e.target === overlay) close() } },
+    el('div', { class: 'card pairbox' },
+      el('h2', null, 'Pair a phone'),
+      el('p', { class: 'muted' }, 'Open the Tollgate app and scan this. The phone can then approve, reject and freeze, and add agents that always need your approval. Show it only to your own phone.'),
+      box,
+      help,
+      el('label', null, 'Address the phone will use', address),
+      keyBox,
+      el('div', { class: 'row wrap' },
+        el('button', { type: 'button', class: 'ghost', onclick: copyKey }, 'Copy key instead'),
+        el('span', { class: 'grow' }),
+        el('button', { type: 'button', class: 'primary', onclick: close }, 'Done'))))
+  document.addEventListener('keydown', function esc(e) { if (e.key === 'Escape') { close(); document.removeEventListener('keydown', esc) } })
+  document.body.append(overlay)
+  box.replaceChildren(el('p', { class: 'muted' }, 'Finding this computer’s Wi-Fi address…'))
+  api('/v1/pairing').then(j => { info = j }, () => { info = null }).then(() => {
+    // Opened on a Wi-Fi address already: the phone can use the same one. Opened as 127.0.0.1: use this computer's Wi-Fi address.
+    const lan = info && info.addresses.length ? 'http://' + info.addresses[0] + ':' + (location.port || info.port) : ''
+    address.value = isLoopback(location.hostname) ? lan : location.origin
+    paint()
+  })
+}
+$('#pair').addEventListener('click', openPairing)
 if (token()) start()

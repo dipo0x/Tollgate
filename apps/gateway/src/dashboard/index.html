@@ -14,6 +14,16 @@
   <label>Operator token <input id="token" type="password" autocomplete="off" required></label>
   <button type="submit" class="primary">Open dashboard</button>
   <p id="loginError" class="err" role="alert"></p>
+  <details class="help">
+    <summary>Where do I find my token?</summary>
+    <ol>
+      <li>Open a terminal in the Tollgate folder on the computer that runs the gateway.</li>
+      <li>Run <code>grep GATEWAY_OPERATOR_TOKEN .env</code>. Paste everything after the <code>=</code>.</li>
+      <li>No <code>.env</code> file yet? Run <code>pnpm onboard</code> first. It creates one with a random token.</li>
+      <li>Running <code>pnpm demo --serve</code> or the sandbox? They print their own token when they start. Use that one.</li>
+    </ol>
+    <p>The token is your owner password. Never share it or commit it. To change it, edit <code>GATEWAY_OPERATOR_TOKEN</code> in <code>.env</code> (16 characters or more) and restart the gateway.</p>
+  </details>
 </form>
 
 <div id="app" class="shell" hidden>
@@ -26,6 +36,7 @@
         <small>The kill switch refuses every payment request until you turn it off.</small>
         <button id="freeze" type="button"></button>
       </div>
+      <button id="pair" type="button" class="ghost">Pair a phone</button>
       <button id="signout" type="button" class="ghost">Sign out</button>
     </div>
   </aside>
@@ -40,6 +51,7 @@
     <section id="view" hidden></section>
   </main>
 </div>
+<script src="/dashboard/qr.js"></script>
 <script src="/dashboard/app.js"></script>
 </body>
 </html>

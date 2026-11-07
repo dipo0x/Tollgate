@@ -1,4 +1,4 @@
-import type { DecisionIndex, OneClickAdapter, OneClickRecord, OneClickStatusResult, PinStore, Prior, QuoteRequest } from './adapters.ts'
+import type { DecisionIndex, MarketAdapter, OneClickAdapter, OneClickRecord, OneClickStatusResult, PinStore, Prior, QuoteRequest } from './adapters.ts'
 
 /**
  * A scriptable stand-in for 1Click, for tests and the offline benchmark. Because it is
@@ -33,6 +33,29 @@ export class FakeOneClick implements OneClickAdapter {
 
   private async misbehave(): Promise<void> {
     if (this.fault === 'throw') throw new Error('1Click unavailable')
+    if (this.fault === 'hang') await new Promise<never>(() => {})
+  }
+}
+
+/**
+ * A scriptable stand-in for the NEAR AI Agent Market's published facts (payee list and sellers' default prices).
+ * Tests only: the gateway talks to the real market through HttpMarket.
+ */
+export class FakeMarket implements MarketAdapter {
+  payees: unknown = { x402Version: 2, recipients: [] }
+  prices = new Map<string, unknown>()
+  fault: 'none' | 'throw' | 'hang' = 'none'
+  calls = { recipients: 0, defaultPrice: 0 }
+  publish(network: string, asset: string, payTo: string): this {
+    const cur = (this.payees as { recipients: unknown[] }).recipients ?? []
+    this.payees = { x402Version: 2, recipients: [...cur, { network, asset, payTo }] }
+    return this
+  }
+  price(host: string, price: string): this { this.prices.set(host, { found: true, price, currency: 'USD' }); return this }
+  async recipients(): Promise<unknown> { this.calls.recipients++; await this.misbehave(); return this.payees }
+  async defaultPrice(host: string): Promise<unknown> { this.calls.defaultPrice++; await this.misbehave(); return this.prices.get(host) ?? { found: false } }
+  private async misbehave(): Promise<void> {
+    if (this.fault === 'throw') throw new Error('market unavailable')
     if (this.fault === 'hang') await new Promise<never>(() => {})
   }
 }

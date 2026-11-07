@@ -6,7 +6,8 @@
   "description": "Builder agent that decides, buys, negotiates, hires and earns: the thing Tollgate protects. Offline demo with a scripted planner.",
   "scripts": {
     "start": "tsx src/demo.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.4.0",

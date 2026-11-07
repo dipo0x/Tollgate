@@ -1,8 +1,10 @@
 import { InMemoryLedger, InMemoryMandateStore, InMemoryPins, InMemoryRevenueStore, MemoryAuditStore } from '@tollgate/core'
 import { FileFixtureStore, HttpOneClick, replayFetch } from '@tollgate/core/oneclick'
+import { HttpMarket } from '@tollgate/core/market'
 import { TokenRegistry } from './auth.ts'
 import type { Config } from './config.ts'
 import type { GatewayDeps } from './gateway.ts'
+import { lanAddresses } from './network.ts'
 import { Services } from './services.ts'
 import { HttpSignerClient } from './signer.ts'
 import { memoryStore, postgresStore, type GatewayStore } from './store/index.ts'
@@ -29,8 +31,12 @@ function assemble(cfg: Config, durable: Durable, over: Partial<GatewayDeps>): Ga
     oneClick: cfg.TOLLGATE_OFFLINE
       ? new HttpOneClick({ fetch: replayFetch(new FileFixtureStore(FIXTURES_DIR)), now: clock })
       : new HttpOneClick({ apiKey: cfg.NEAR_1CLICK_API_KEY as string, now: clock, ...(cfg.ONECLICK_BASE_URL ? { baseUrl: cfg.ONECLICK_BASE_URL } : {}) }),
+    // The NEAR AI Agent Market's published payees and prices: live only. Offline there is no market, so every market payment is
+    // refused at C06/C07 (fail closed) rather than judged against made-up facts.
+    ...(cfg.TOLLGATE_OFFLINE ? {} : { market: new HttpMarket() }),
     tokens: new TokenRegistry(cfg.GATEWAY_OPERATOR_TOKEN, durable.store.tokens),
-    info: { mode: cfg.TOLLGATE_OFFLINE ? 'offline' : 'live' } as const,
+    info: { mode: cfg.TOLLGATE_OFFLINE ? 'offline' : 'live', network: { host: cfg.GATEWAY_HOST, port: cfg.PORT } } as const,
+    lanAddresses,
     ...(cfg.SIGNER_URL && cfg.SIGNER_SERVICE_TOKEN ? { signer: new HttpSignerClient({ url: cfg.SIGNER_URL, token: cfg.SIGNER_SERVICE_TOKEN }) } : {}),
     clock,
     approvalTtlMs: cfg.APPROVAL_TTL_MINUTES * 60_000,

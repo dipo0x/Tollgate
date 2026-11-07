@@ -1,7 +1,8 @@
 import { z } from 'zod'
 import { isAmount } from './money.ts'
 
-export const SUPPORTED_METHODS = ['nearintents'] as const
+/** `nearintents`: a 1Click deposit address. `x402-near`: a NEAR AI Agent Market payment (see x402.ts). */
+export const SUPPORTED_METHODS = ['nearintents', 'x402-near'] as const
 export const MAX_CHALLENGE_BYTES = 4096
 
 // Strict on purpose: an unknown field is a reason to refuse, not to ignore.

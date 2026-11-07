@@ -2,7 +2,7 @@ import { ApprovalRequired, GatewayError, PaymentDenied, PaymentFailed, type Chec
 import type { Rail } from './rail.ts'
 
 export { ApprovalRequired, GatewayError, PaymentDenied, PaymentFailed, TollgateError } from './errors.ts'
-export { httpRpcRail, nearRpcRail, type EvmTxParams, type NearTxParams, type Rail, type TxParams } from './rail.ts'
+export { httpRpcRail, nearRpcRail, type EvmTxParams, type NearDelegateTxParams, type NearTxParams, type Rail, type TxParams } from './rail.ts'
 
 export type TollgateOptions = {
   /** Base URL of the Tollgate gateway, like http://127.0.0.1:8787 */
@@ -21,8 +21,25 @@ export type TollgateOptions = {
   fetch?: typeof fetch
 }
 
-/** Per-call extras, passed as `init.tollgate`. */
-export type CallOptions = { purpose?: string; negotiationId?: string }
+/** Per-call extras, passed as `init.tollgate`. `requestId` names this one request for an x402 payment (default: a fresh UUID). */
+export type CallOptions = { purpose?: string; negotiationId?: string; requestId?: string }
+
+/** x402 on NEAR (the NEAR AI Agent Market). */
+export const X402_NEAR_NETWORK = 'near:mainnet'
+type X402Row = { scheme: string; network: string; asset: string; amount: string; payTo: string; maxTimeoutSeconds: number }
+
+/** The NEAR row of an x402 v2 402 body, or undefined. The gateway re-checks every field; this only finds it. */
+export function x402NearRow(body: unknown): X402Row | undefined {
+  if (!body || typeof body !== 'object' || (body as { x402Version?: unknown }).x402Version !== 2) return undefined
+  const accepts = (body as { accepts?: unknown }).accepts
+  if (!Array.isArray(accepts)) return undefined
+  return accepts.find((r): r is X402Row => !!r && typeof r === 'object' && (r as X402Row).network === X402_NEAR_NETWORK && (r as X402Row).scheme === 'exact')
+}
+
+/** The X-PAYMENT header the market expects: base64 JSON with the row EXACTLY as the server sent it, and the signed delegate. */
+export function x402PaymentHeader(row: X402Row, signedDelegateAction: string): string {
+  return Buffer.from(JSON.stringify({ x402Version: 2, accepted: row, payload: { signedDelegateAction } })).toString('base64')
+}
 
 type Decision = { decisionId: string; decision: 'ALLOW' | 'DENY' | 'NEEDS_APPROVAL'; failedCheck?: string; reason?: string; checks?: CheckSummary[]; bind?: { to: string; chain: string; amount: string; asset: string } }
 
@@ -91,9 +108,14 @@ export function createTollgate(o: TollgateOptions) {
     const first = await doFetch(input, { ...plain, headers: { ...Object.fromEntries(new Headers(plain.headers).entries()), 'x-payer': o.payer } })
     if (first.status !== 402) return first
 
+    const url = new URL(typeof input === 'string' || input instanceof URL ? input : input.url)
+    let body: unknown
+    try { body = await first.clone().json() } catch { body = undefined }
+    const row = x402NearRow(body)
+    if (row) return payX402(input, plain, url, row, call)
+
     const challenge = await challengeOf(first)
     if (challenge === undefined) return first // a 402 we cannot read is not something we will pay
-    const url = new URL(typeof input === 'string' || input instanceof URL ? input : input.url)
 
     const d = await decide(url, challenge, call)
     if (d.decision === 'DENY') throw new PaymentDenied({ decisionId: d.decisionId, ...(d.failedCheck ? { failedCheck: d.failedCheck } : {}), ...(d.reason ? { reason: d.reason } : {}), ...(d.checks ? { checks: d.checks } : {}) })
@@ -105,6 +127,30 @@ export function createTollgate(o: TollgateOptions) {
     // Best effort: ask the gateway to check 1Click and settle the held money. The merchant's answer is what the caller gets either way.
     void gateway('POST', `/v1/payments/${d.decisionId}/reconcile`).catch(() => {})
     return retried
+  }
+
+  /**
+   * x402 (NEAR AI Agent Market): the gateway judges the row, the signer signs a delegate action, and the request is sent ONCE more
+   * with it in X-PAYMENT. Nothing is broadcast here: the market's relayer submits the payment only when the hired agent delivers.
+   */
+  async function payX402(input: string | URL | Request, plain: RequestInit, url: URL, row: X402Row, call: CallOptions): Promise<Response> {
+    const requestId = call.requestId ?? crypto.randomUUID()
+    const d = await decide(url, { x402: { requestId, accepted: row } }, call)
+    if (d.decision === 'DENY') throw new PaymentDenied({ decisionId: d.decisionId, ...(d.failedCheck ? { failedCheck: d.failedCheck } : {}), ...(d.reason ? { reason: d.reason } : {}), ...(d.checks ? { checks: d.checks } : {}) })
+    if (d.decision === 'NEEDS_APPROVAL') throw new ApprovalRequired(d.decisionId)
+    if (!d.bind || d.bind.chain !== X402_NEAR_NETWORK) throw new PaymentFailed('the gateway allowed the payment but sent no x402 bind to sign', { decisionId: d.decisionId, stage: 'sign', mayHavePaid: false })
+    let tx
+    try { tx = await o.rail.txParams(o.payer, X402_NEAR_NETWORK) } catch (e) { throw new PaymentFailed(`could not prepare the payment: ${(e as Error).message}`, { decisionId: d.decisionId, stage: 'params', mayHavePaid: false }) }
+    let signed: { signedTx: string }
+    try { signed = await gateway<{ signedTx: string }>('POST', `/v1/payments/${d.decisionId}/sign`, { tx }) } catch (e) {
+      const g = e as GatewayError
+      throw new PaymentFailed(`the payment could not be signed: ${g.message}${g.code ? ` (${g.code})` : ''}`, { decisionId: d.decisionId, stage: 'sign', mayHavePaid: false })
+    }
+    const headers = { ...Object.fromEntries(new Headers(plain.headers).entries()), 'x-payer': o.payer, 'x-payment': x402PaymentHeader(row, signed.signedTx) }
+    try { return await doFetch(input, { ...plain, headers }) } catch (e) {
+      // The signed payment left this process. If the seller delivers, the market settles it. Do not assume it did not.
+      throw new PaymentFailed(`the paid request could not be confirmed: ${(e as Error).message}`, { decisionId: d.decisionId, stage: 'broadcast', mayHavePaid: true })
+    }
   }
 
   return {

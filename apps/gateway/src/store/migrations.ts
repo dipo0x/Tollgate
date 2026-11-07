@@ -89,4 +89,27 @@ export const GATEWAY_MIGRATIONS: readonly Migration[] = [
       );
     `,
   },
+  {
+    // So the owner's Jobs list can show newest first. Additive: rows already saved get the time of this migration.
+    id: 'gateway_0002_job_time',
+    sql: `ALTER TABLE gateway_jobs ADD COLUMN created_at timestamptz NOT NULL DEFAULT now();`,
+  },
+  {
+    id: 'gateway_0003_history',
+    sql: `
+      CREATE TABLE gateway_history (
+        id          text PRIMARY KEY,
+        kind        text NOT NULL,
+        occurred_at timestamptz NOT NULL,
+        title       text NOT NULL,
+        amount      text NOT NULL,
+        currency    text NOT NULL,
+        network     text NOT NULL,
+        tx_hash     text,
+        explorer    text,
+        status      text NOT NULL,
+        note        text NOT NULL
+      );
+    `,
+  },
 ]

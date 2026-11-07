@@ -7,6 +7,7 @@ import { createSignerApp } from '@tollgate/signer'
 import { viemBackend } from '@tollgate/signer/src/backend.ts'
 import { tokensFor } from '@tollgate/signer/src/chains.ts'
 import { MemorySignerStore } from '@tollgate/signer/src/store.ts'
+import { NEAR_USDC, type NearBackend } from '@tollgate/signer/src/near.ts'
 import { generatePrivateKey } from 'viem/accounts'
 import { HttpSignerClient } from '../src/signer.ts'
 
@@ -108,11 +109,14 @@ export class BridgedStore extends MemorySignerStore {
 }
 
 /** A gateway wired to a real signer app (in the same process), with the gateway's clock. */
-export function bootWithSigner(opts: { token?: string; over?: Partial<GatewayDeps> } = {}) {
+export function bootWithSigner(opts: { token?: string; over?: Partial<GatewayDeps>; near?: NearBackend } = {}) {
   const g = boot(opts.over ?? {})
   const backend = viemBackend(generatePrivateKey())
   const store = new BridgedStore(g)
-  const signerApp = createSignerApp({ store, backend, limits: { tokens: tokensFor(['eip155:42161']), maxPerTx: 1_000_000n, maxGas: 200_000n, maxFeePerGas: 2_000_000_000n }, clock: () => g.deps.clock() }, SIGNER_SERVICE_TOKEN)
+  // With a NEAR key, the signer also pays x402 on NEAR (NEAR AI Agent Market) in native USDC, as the real one is configured to.
+  const nearPart = opts.near ? { near: opts.near } : {}
+  const nearTokens = opts.near ? { nearTokens: { 'near:mainnet:USDC': NEAR_USDC } } : {}
+  const signerApp = createSignerApp({ store, backend, limits: { tokens: tokensFor(['eip155:42161']), maxPerTx: 1_000_000n, maxGas: 200_000n, maxFeePerGas: 2_000_000_000n, ...nearTokens }, clock: () => g.deps.clock(), ...nearPart }, SIGNER_SERVICE_TOKEN)
   const calls: unknown[] = []
   const toSigner = ((url: string, init: RequestInit) => { calls.push(JSON.parse(String(init.body))); return Promise.resolve(signerApp.request(new URL(url).pathname, init)) }) as unknown as typeof fetch
   g.deps.signer = new HttpSignerClient({ url: 'http://signer.local', token: opts.token ?? SIGNER_SERVICE_TOKEN, fetch: toSigner })
