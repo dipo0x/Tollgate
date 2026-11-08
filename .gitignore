@@ -54,3 +54,4 @@ payload.json
 apps/mobile/assets/fonts/Satoshi-*.otf
 .market-pay-confirm
 .live-agent.json
+.vercel
