@@ -3,7 +3,7 @@ import type { PostgresHandle } from '@tollgate/core/postgres'
 import type { Service } from '@tollgate/registry'
 import { toPrior, type Approval, type DecisionRecord, type Job } from '../state.ts'
 import { randomUUID } from 'node:crypto'
-import type { SignatureStore, StoredSignature, AcceptanceStore, ApprovalOutcome, DecisionFilter, DecisionStore, JobStore, HistoryStore, HistoryRecord, AgentTask, TaskMessage, TaskStatus, TaskStore, LockStore, ServiceStore, SessionStore, SettingsStore, TokenOwner, TokenStore } from './types.ts'
+import type { SignatureStore, StoredSignature, AcceptanceStore, ApprovalOutcome, DecisionFilter, DecisionStore, JobStore, HistoryStore, HistoryRecord, AgentTask, AttachmentStore, StoredAttachment, TaskMessage, TaskStatus, TaskStore, LockStore, ServiceStore, SessionStore, SettingsStore, TokenOwner, TokenStore, AgentStore, AgentProfile, RunnerHello } from './types.ts'
 
 type Sql = PostgresHandle['sql']
 type Row = Record<string, any>
@@ -178,6 +178,23 @@ const taskFromRow = (r: Row): AgentTask => ({
   id: r['id'], mandateId: r['mandate_id'], status: r['status'], createdAt: ts(r['created_at']), updatedAt: ts(r['updated_at']), messages: r['messages'],
 })
 
+export class PostgresAttachmentStore implements AttachmentStore {
+  private readonly sql: Sql
+  constructor(sql: Sql) { this.sql = sql }
+  async put(a: StoredAttachment) {
+    await this.sql`INSERT INTO gateway_attachments (id, name, content_type, size, iv, tag, data, created_at) VALUES (${a.id}, ${a.name}, ${a.contentType}, ${a.size}, ${a.iv}, ${a.tag}, ${a.data}, ${a.createdAt})`
+  }
+  async get(id: string) {
+    const [r] = await this.sql`SELECT * FROM gateway_attachments WHERE id = ${id}`
+    return r ? { id: r.id as string, name: r.name as string, contentType: r.content_type as string, size: Number(r.size), iv: Buffer.from(r.iv as Uint8Array), tag: Buffer.from(r.tag as Uint8Array), data: Buffer.from(r.data as Uint8Array), createdAt: new Date(r.created_at as string).toISOString() } : undefined
+  }
+  async refs(ids: readonly string[]) {
+    if (ids.length === 0) return []
+    const rows = await this.sql`SELECT id, name, content_type, size FROM gateway_attachments WHERE id IN ${this.sql([...ids])}`
+    return rows.map(r => ({ id: r.id as string, name: r.name as string, contentType: r.content_type as string, size: Number(r.size) }))
+  }
+}
+
 export class PostgresTaskStore implements TaskStore {
   private readonly sql: Sql
   constructor(sql: Sql) { this.sql = sql }
@@ -209,6 +226,14 @@ export class PostgresTaskStore implements TaskStore {
       RETURNING *`
     return r ? taskFromRow(r) : undefined
   }
+  async claimNextAny(mandateIds: readonly string[], at: string) {
+    if (mandateIds.length === 0) return undefined
+    const [r] = await this.sql`
+      UPDATE gateway_tasks SET status = 'working', updated_at = ${at}
+      WHERE id = (SELECT id FROM gateway_tasks WHERE mandate_id IN ${this.sql([...mandateIds])} AND status = 'queued' ORDER BY created_at, id FOR UPDATE SKIP LOCKED LIMIT 1)
+      RETURNING *`
+    return r ? taskFromRow(r) : undefined
+  }
   async reply(id: string, mandateId: string, msg: TaskMessage, status: TaskStatus | undefined, at: string) {
     const rows = await this.sql`
       UPDATE gateway_tasks SET messages = messages || ${json([msg])}::jsonb, status = COALESCE(${status ?? null}, status), updated_at = ${at}
@@ -225,6 +250,31 @@ export class PostgresTaskStore implements TaskStore {
       UPDATE gateway_tasks SET messages = messages || ${json([msg])}::jsonb, status = 'failed', updated_at = ${msg.at}::timestamptz
       WHERE status = 'working' AND updated_at < ${before}::timestamptz RETURNING *`
     return rows.map(taskFromRow)
+  }
+}
+
+export class PostgresAgentStore implements AgentStore {
+  private readonly sql: Sql
+  constructor(sql: Sql) { this.sql = sql }
+  private fromRow = (r: Record<string, unknown>): AgentProfile => ({
+    name: r['name'] as string, mode: r['mode'] as AgentProfile['mode'], brain: (r['brain'] as string | null) ?? null,
+    createdAt: new Date(r['created_at'] as string | Date).toISOString().replace(/\.\d{3}Z$/, 'Z'), archived: r['archived'] === true,
+  })
+  async get(name: string) { const [r] = await this.sql`SELECT * FROM gateway_agents WHERE name = ${name}`; return r ? this.fromRow(r) : undefined }
+  async list() { return (await this.sql`SELECT * FROM gateway_agents ORDER BY created_at, name`).map(this.fromRow) }
+  async put(p: AgentProfile) {
+    await this.sql`
+      INSERT INTO gateway_agents (name, mode, brain, created_at, archived) VALUES (${p.name}, ${p.mode}, ${p.brain}, ${p.createdAt}::timestamptz, ${p.archived})
+      ON CONFLICT (name) DO UPDATE SET mode = EXCLUDED.mode, brain = EXCLUDED.brain, archived = EXCLUDED.archived`
+  }
+  async setArchived(name: string, archived: boolean) { return (await this.sql`UPDATE gateway_agents SET archived = ${archived} WHERE name = ${name} RETURNING name`).length > 0 }
+  async runner() {
+    const [r] = await this.sql`SELECT value FROM gateway_settings WHERE key = 'runner'`
+    const v = r?.['value'] as RunnerHello | undefined
+    return v && Array.isArray(v.brains) && typeof v.at === 'string' ? v : undefined
+  }
+  async setRunner(h: RunnerHello) {
+    await this.sql`INSERT INTO gateway_settings (key, value) VALUES ('runner', ${json(h)}::jsonb) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`
   }
 }
 

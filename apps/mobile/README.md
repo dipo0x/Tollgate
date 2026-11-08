@@ -8,17 +8,20 @@ Expo SDK 58 (React Native 0.88), expo-router, TypeScript strict.
 ## Run it
 
 1. On your computer, `pnpm live:app`. It starts the live gateway on your Wi-Fi (your own `GATEWAY_OPERATOR_TOKEN` and database from `.env`),
-   live 1Click, the NEAR signer, the reference merchant, and one agent, `spend-agent`. It prints a pairing QR. Real money: every payment waits for you.
+   live 1Click, the NEAR signer, the reference merchant, and the **agent host**: one program that answers every agent you make in the app. It prints a pairing QR and
+   lists the brains it can run (Claude, Grok, a local model, your own server: see `.env.example`). Real money: every payment waits for you.
 2. `pnpm --filter @tollgate/mobile start`, then open it in Expo Go on your phone (same Wi-Fi), or `pnpm mobile` for the simulator.
 3. In the app: **Get started**, scan the QR from step 1 (or enter the address it prints and your operator key).
 4. Turn on Face ID.
-5. **Agents → spend-agent → Message spend-agent**, type "buy the bridge cost brief". The agent replies in the chat, asks to pay,
-   and the payment shows up for you to approve (hold, then Face ID). Say no, or wait, and nothing is signed.
+5. **Agents → New chat.** Give it a name, pick **who answers** (one of your computer's brains, or **My own agent**), set a budget, and start. You land in the chat.
+6. Type "buy the bridge cost brief". The agent replies, asks to pay, and the payment shows up for you to approve (hold, then Face ID). Say no, or wait, and nothing is signed.
+
+Plugging in an agent of your own (Claude, Grok, ChatGPT, a script on localhost, anything that can make web requests): see `docs/bring-your-own-agent.md`.
 
 Checks, all offline:
 
 ```
-pnpm --filter @tollgate/mobile test        # gateway client + formatting (26 tests)
+pnpm --filter @tollgate/mobile test        # gateway client, formatting, new chats, connect kit
 pnpm --filter @tollgate/mobile typecheck
 ```
 
@@ -75,7 +78,7 @@ Both read the same gateway, so data is always in step. Features:
 | Agents / mandates and balances | ✓ | ✓ |
 | Shops (services) | read-only | ✓ |
 | Pair a phone (QR) | scans | ✓ shows |
-| Add an agent | ✓ (always needs approval) | not yet |
+| New chat (budget, shops, who answers) | ✓ (always needs approval) | not yet |
 | Stop an agent | ✓ | not yet |
 | Message an agent (task inbox) | ✓ chat | ✓ on each agent card |
 | Jobs and imported runs | ✓ read-only | ✓ |

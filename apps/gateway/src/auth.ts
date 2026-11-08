@@ -20,9 +20,15 @@ export const newAgentToken = (): string => `tg_agent_${randomBytes(24).toString(
  */
 export class TokenRegistry {
   private readonly operatorDigest: string
+  private readonly runnerDigest: string | undefined
   private readonly store: TokenStore
 
-  constructor(operatorToken: string, store: TokenStore) { this.operatorDigest = sha256(operatorToken); this.store = store }
+  constructor(operatorToken: string, store: TokenStore, runnerToken?: string) {
+    this.operatorDigest = sha256(operatorToken); this.store = store
+    // The runner key must differ from the owner's key: sharing one would hand the agent host the power to approve payments.
+    if (runnerToken && sha256(runnerToken) === this.operatorDigest) throw new Error('GATEWAY_RUNNER_TOKEN must differ from GATEWAY_OPERATOR_TOKEN')
+    this.runnerDigest = runnerToken ? sha256(runnerToken) : undefined
+  }
 
   async issueAgent(mandateId: string, agentId: string): Promise<string> {
     const token = newAgentToken()
@@ -30,12 +36,16 @@ export class TokenRegistry {
     return token
   }
 
+  /** Whether a runner key is configured on this gateway at all. */
+  get runnerEnabled(): boolean { return this.runnerDigest !== undefined }
+
   revokeMandate(mandateId: string): Promise<void> { return this.store.revokeMandate(mandateId) }
 
   async resolve(token: string | undefined): Promise<Principal | undefined> {
     if (!token) return undefined
     const digest = sha256(token)
     if (sameDigest(digest, this.operatorDigest)) return { role: 'operator' }
+    if (this.runnerDigest && sameDigest(digest, this.runnerDigest)) return { role: 'runner' }
     const hit = await this.store.find(digest)
     return hit ? { role: 'agent', mandateId: hit.mandateId, agentId: hit.agentId } : undefined
   }

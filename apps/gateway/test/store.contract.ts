@@ -169,6 +169,33 @@ export function storeContract(label: string, make: () => Promise<Made>) {
       expect(await tasks.listForMandates([], 10)).toEqual([])
     }))
 
+    it('tasks: claimNextAny takes the oldest queued task of the given mandates only, once', () => using(async ({ tasks }) => {
+      const t = (id: string, mandateId: string, at: string) => ({ id, mandateId, status: 'queued' as const, createdAt: at, updatedAt: at, messages: [] })
+      await tasks.create(t('a1', 'm1', '2026-11-07T10:02:00.000Z')); await tasks.create(t('b1', 'm2', '2026-11-07T10:01:00.000Z')); await tasks.create(t('c1', 'm3', '2026-11-07T10:00:00.000Z'))
+      expect(await tasks.claimNextAny([], '2026-11-07T11:00:00.000Z')).toBeUndefined()
+      expect((await tasks.claimNextAny(['m1', 'm2'], '2026-11-07T11:00:00.000Z'))?.id).toBe('b1') // m3's older task is not theirs
+      expect((await tasks.claimNextAny(['m1', 'm2'], '2026-11-07T11:00:01.000Z'))?.id).toBe('a1')
+      expect(await tasks.claimNextAny(['m1', 'm2'], '2026-11-07T11:00:02.000Z')).toBeUndefined()
+      expect((await tasks.get('b1'))?.status).toBe('working')
+    }))
+
+    it('agents: profiles are kept, replaced, hidden, and the runner’s hello is remembered', () => using(async ({ agents }) => {
+      expect(await agents.get('alpha')).toBeUndefined()
+      expect(await agents.runner()).toBeUndefined()
+      await agents.put({ name: 'alpha', mode: 'hosted', brain: 'claude', createdAt: '2026-11-07T10:00:00Z', archived: false })
+      await agents.put({ name: 'beta', mode: 'external', brain: null, createdAt: '2026-11-07T10:01:00Z', archived: false })
+      expect(await agents.get('alpha')).toEqual({ name: 'alpha', mode: 'hosted', brain: 'claude', createdAt: '2026-11-07T10:00:00Z', archived: false })
+      expect((await agents.list()).map(a => a.name)).toEqual(['alpha', 'beta'])
+      await agents.put({ name: 'alpha', mode: 'hosted', brain: 'grok', createdAt: '2026-11-07T12:00:00Z', archived: false }) // replaces; the first creation time stays
+      expect(await agents.get('alpha')).toMatchObject({ brain: 'grok', createdAt: '2026-11-07T10:00:00Z' })
+      expect(await agents.setArchived('beta', true)).toBe(true)
+      expect(await agents.setArchived('nobody', true)).toBe(false)
+      expect((await agents.get('beta'))?.archived).toBe(true)
+      await agents.setRunner({ brains: [{ id: 'claude', label: 'Claude', detail: 'haiku' }], at: '2026-11-07T10:00:00.000Z' })
+      await agents.setRunner({ brains: [{ id: 'grok', label: 'Grok', detail: 'xai' }], at: '2026-11-07T10:00:15.000Z' })
+      expect(await agents.runner()).toEqual({ brains: [{ id: 'grok', label: 'Grok', detail: 'xai' }], at: '2026-11-07T10:00:15.000Z' })
+    }))
+
     it('tasks: two agents claiming at once never get the same task', () => using(async ({ tasks }) => {
       for (let i = 0; i < 6; i++) await tasks.create({ id: `c${i}`, mandateId: 'm1', status: 'queued', createdAt: `2026-11-07T10:0${i}:00.000Z`, updatedAt: `2026-11-07T10:0${i}:00.000Z`, messages: [] })
       const got = await Promise.all(Array.from({ length: 8 }, () => tasks.claimNext('m1', '2026-11-07T11:00:00.000Z')))

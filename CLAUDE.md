@@ -76,7 +76,7 @@ beyond the prompt — Tollgate is not a wallet, not a fraud-ML product, not a ma
 ## 5. Engineering conventions
 
 - **pnpm workspace**, Node 22+, TypeScript strict across SDK, gateway, signer, dashboard.
-- Layout is fixed: `apps/{gateway,signer,dashboard,demo-agent,workers,mock-merchants,site}`,
+- Layout is fixed: `apps/{gateway,signer,dashboard,demo-agent,workers,mock-merchants,site,docs}`,
   `packages/{core,sdk,registry}`, `bench/`, `docs/`. New code goes in an existing package
   unless there is a reason to add one.
 - **Fail closed.** Any check error, timeout or ambiguity yields `DENY` or

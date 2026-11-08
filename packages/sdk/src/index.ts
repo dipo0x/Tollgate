@@ -17,6 +17,8 @@ export type TollgateOptions = {
   purpose?: string
   /** What to do when a person has to approve first: stop (the default) or wait and re-ask. */
   approval?: { wait: boolean; pollMs?: number; timeoutMs?: number }
+  /** Extra headers for calls to the GATEWAY only (never the merchant). The agent host uses this to name which hosted agent it acts as. */
+  gatewayHeaders?: Record<string, string>
   /** For tests: the fetch used for the GATEWAY and the merchant. */
   fetch?: typeof fetch
 }
@@ -60,7 +62,7 @@ export function createTollgate(o: TollgateOptions) {
   async function gateway<T>(method: string, path: string, body?: unknown): Promise<T> {
     let res: Response
     try {
-      res = await doFetch(`${base}${path}`, { method, headers: { authorization: `Bearer ${o.agentToken}`, ...(body !== undefined ? { 'content-type': 'application/json' } : {}) }, ...(body !== undefined ? { body: JSON.stringify(body) } : {}) })
+      res = await doFetch(`${base}${path}`, { method, headers: { ...o.gatewayHeaders, authorization: `Bearer ${o.agentToken}`, ...(body !== undefined ? { 'content-type': 'application/json' } : {}) }, ...(body !== undefined ? { body: JSON.stringify(body) } : {}) })
     } catch { throw new GatewayError('the Tollgate gateway could not be reached; nothing was paid', 0, 'unreachable') }
     const text = await res.text()
     let json: any; try { json = JSON.parse(text) } catch { json = undefined }

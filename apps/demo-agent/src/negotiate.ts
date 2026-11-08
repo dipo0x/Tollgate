@@ -33,8 +33,8 @@ export type Talker = (offer: Offer) => Promise<TalkResult>
 
 /** The other side of the table. In the demo this is a ScriptedSeller; later it can be HTTP. */
 export type SellerSide = {
-  open: () => Offer
-  respond: (agent: PriceOffer) => Offer
+  open: () => Offer | Promise<Offer>
+  respond: (agent: PriceOffer) => Offer | Promise<Offer>
 }
 
 export type NegotiateStep = {
@@ -149,7 +149,7 @@ export async function runNegotiation(input: NegotiateInput): Promise<NegotiateOu
   if (input.maxRounds < 1) return { outcome: 'failed', why: 'maxRounds must be at least 1', steps: [] }
 
   const steps: NegotiateStep[] = []
-  const open = input.seller.open()
+  const open = await input.seller.open()
   const openRes = await input.talk(open)
   if (!openRes.ok) {
     return {
@@ -218,7 +218,7 @@ export async function runNegotiation(input: NegotiateInput): Promise<NegotiateOu
     steps.push({ from: 'agent', kind: 'counter', price: myLast, note: move.reason })
 
     const counter: PriceOffer = { from: 'agent', kind: 'counter', price: myLast, asset: input.asset, payee: input.payee }
-    const reply = input.seller.respond(counter)
+    const reply = await input.seller.respond(counter)
     const rr = await input.talk(reply)
     if (reply.kind === 'walk') {
       steps.push({ from: 'seller', kind: 'walk', note: 'seller walks away' })

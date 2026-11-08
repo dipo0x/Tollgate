@@ -24,8 +24,6 @@ export function usePoll<T>(load: () => Promise<T>, everyMs = 5000, key?: string)
   const hasData = useRef(!!(key && lastSeen.has(key)))
   const keyRef = useRef(key)
   useEffect(() => { keyRef.current = key }, [key])
-  useEffect(() => { loadRef.current = load }, [load])
-
   const refresh = useCallback(() => {
     if (busy.current) return busy.current // a load is still running: wait for it instead of starting another
     busy.current = (async () => {
@@ -43,6 +41,15 @@ export function usePoll<T>(load: () => Promise<T>, everyMs = 5000, key?: string)
     })()
     return busy.current
   }, [])
+
+  // The loader changes when the phone switches gateway address: load again at once (after any load already running), rather than
+  // waiting for the next tick and leaving the screen looking dormant.
+  const firstLoad = useRef(true)
+  useEffect(() => {
+    loadRef.current = load
+    if (firstLoad.current) { firstLoad.current = false; return }
+    void (busy.current ?? Promise.resolve()).then(() => refresh())
+  }, [load, refresh])
 
   useFocusEffect(useCallback(() => {
     void refresh()

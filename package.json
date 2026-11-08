@@ -14,6 +14,7 @@
     "all": "node scripts/dev-all.mjs",
   "dev": "node scripts/preflight.mjs --quick && pnpm -r --parallel --stream dev",
     "site": "pnpm --filter @tollgate/site dev",
+    "docs": "pnpm --filter @tollgate/docs start",
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test && node --test scripts/*.test.mjs",

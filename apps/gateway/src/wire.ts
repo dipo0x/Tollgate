@@ -1,3 +1,4 @@
+import { attachmentKeyFrom } from './attachments.ts'
 import { InMemoryLedger, InMemoryMandateStore, InMemoryPins, InMemoryRevenueStore, MemoryAuditStore } from '@tollgate/core'
 import { FileFixtureStore, HttpOneClick, replayFetch } from '@tollgate/core/oneclick'
 import { HttpMarket } from '@tollgate/core/market'
@@ -34,7 +35,7 @@ function assemble(cfg: Config, durable: Durable, over: Partial<GatewayDeps>): Ga
     // The NEAR AI Agent Market's published payees and prices: live only. Offline there is no market, so every market payment is
     // refused at C06/C07 (fail closed) rather than judged against made-up facts.
     ...(cfg.TOLLGATE_OFFLINE ? {} : { market: new HttpMarket() }),
-    tokens: new TokenRegistry(cfg.GATEWAY_OPERATOR_TOKEN, durable.store.tokens),
+    tokens: new TokenRegistry(cfg.GATEWAY_OPERATOR_TOKEN, durable.store.tokens, cfg.GATEWAY_RUNNER_TOKEN),
     info: { mode: cfg.TOLLGATE_OFFLINE ? 'offline' : 'live', network: { host: cfg.GATEWAY_HOST, port: cfg.PORT } } as const,
     lanAddresses,
     localName,
@@ -42,6 +43,7 @@ function assemble(cfg: Config, durable: Durable, over: Partial<GatewayDeps>): Ga
     clock,
     approvalTtlMs: cfg.APPROVAL_TTL_MINUTES * 60_000,
     readCacheMs: cfg.GATEWAY_READ_CACHE_MS,
+    ...(attachmentKeyFrom(cfg.GATEWAY_ATTACHMENT_KEY) ? { attachmentKey: attachmentKeyFrom(cfg.GATEWAY_ATTACHMENT_KEY)! } : {}),
     checkTimeoutMs: cfg.CHECK_TIMEOUT_MS,
     log: makeLogger(cfg.LOG_LEVEL),
     ...over,

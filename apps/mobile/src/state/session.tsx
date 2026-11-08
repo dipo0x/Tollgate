@@ -31,6 +31,8 @@ type Session = {
   alternates: string[]
   /** Move to another address of the same gateway, keeping the key. Checked with the key first; nothing is saved if it fails. */
   switchTo: (url: string) => Promise<void>
+  /** The host the app is pulling fresh data from after a switch or pairing; null once it has. For the "Loading your data" pill. */
+  syncing: string | null
   unpair: () => Promise<void>
   setFaceReady: () => Promise<void>
 }
@@ -43,6 +45,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(null)
   const [faceReady, setFace] = useState(false)
   const [alternates, setAlternates] = useState<string[]>([])
+  const [syncing, setSyncing] = useState<string | null>(null)
+  // Never stuck on screen: prefetch steps aside for the owner's own requests, so it can take a while; the pill gives up after 25 s.
+  useEffect(() => { if (!syncing) return; const t = setTimeout(() => setSyncing(null), 25_000); return () => clearTimeout(t) }, [syncing])
 
   useEffect(() => {
     (async () => {
@@ -56,6 +61,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     await SecureStore.setItemAsync(KEY_URL, u, opts)
     await SecureStore.setItemAsync(KEY_TOKEN, t, opts)
     clearScreenCache() // a new gateway: nothing from the old one may show
+    setSyncing(hostOf(u))
     setUrl(u); setToken(t)
   }, [])
 
@@ -72,6 +78,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     await createGateway({ baseUrl: c.url, token }).status() // the same key must work there, or nothing changes
     await SecureStore.setItemAsync(KEY_URL, c.url, { keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY })
     clearScreenCache()
+    setSyncing(hostOf(c.url)) // cleared when the prefetch for the new address has finished
     setUrl(c.url)
   }, [token])
 
@@ -96,16 +103,18 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     const start = (refresh: boolean) => {
       const me = ++run.current
       lastRun.current = Date.now()
-      void prefetchAll(background, () => run.current === me, { refresh }).catch(() => {})
+      void prefetchAll(background, () => run.current === me, { refresh }).catch(() => {}).finally(() => { if (run.current === me) setSyncing(null) })
     }
     start(false)
     // Back after a minute or more: refresh what is stored in place (nothing is emptied, so no screen goes blank meanwhile).
     const sub = AppState.addEventListener('change', s => { if (s === 'active' && Date.now() - lastRun.current > 60_000) start(true) })
     return () => { run.current++; sub.remove() }
   }, [url, token, faceReady])
-  const value = useMemo<Session>(() => ({ ready, paired: !!gateway, faceReady, url, gateway, pair, unpair, setFaceReady, alternates, switchTo }), [ready, gateway, faceReady, url, pair, unpair, setFaceReady, alternates, switchTo])
+  const value = useMemo<Session>(() => ({ ready, paired: !!gateway, faceReady, url, gateway, pair, unpair, setFaceReady, alternates, switchTo, syncing }), [ready, gateway, faceReady, url, pair, unpair, setFaceReady, alternates, switchTo, syncing])
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }
+
+const hostOf = (u: string) => { try { return new URL(u).host } catch { return u } }
 
 /** Saved alternates, re-checked: anything malformed or unsafe is dropped. */
 function parseAlternates(raw: string | null): string[] {

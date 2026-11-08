@@ -61,6 +61,7 @@ const STUCK: [string, string][] = [
 
 const INDEX: [string, string, string][] = [
   ['Quickstart', 'The seven steps on this page, and what to do when one fails.', '#docs-start'],
+  ['Shops', 'The places your agent is allowed to pay: what they are, where they come from, how to add one.', '#shops'],
   ['How to write a mandate', 'Every field, how to choose it, three starting points, and the usual mistakes.', '#mandate-guide'],
   ['How a payment is checked', 'The twelve checks, in order, and where each one fails closed.', '/#how'],
   ['npm package: trytollgate', 'The TypeScript SDK, published on npm. Install it with npm install trytollgate.', 'https://www.npmjs.com/package/trytollgate'],
@@ -112,6 +113,62 @@ const MANDATE_FIELDS: [string, string][] = [
   ["refund.mustBePayerOrPinned", "A failed payment must refund to your wallet, never a stranger. Leave true."],
   ["negotiation, delegation", "Optional. Without them the agent cannot haggle or hire. The human sets the ceiling and depth, never the model."],
 ]
+
+const SHOP_KINDS: [string, string][] = [
+  ['Bridge cost brief', 'A small seller we run. For about 0.20 USDC it answers one question: what does it cost right now to move 1 USDC from Arbitrum to NEAR? The answer is a live 1Click quote. Real, but ours: a reference seller, not a third-party marketplace.'],
+  ['Market sellers (name.market.near.ai)', 'Independent agents on the NEAR AI Agent Market that do a job for a fee: research, a plan, a lookup. Real and run by other people. They deliver information and plans; none of them books tickets. Paid only if they deliver.'],
+  ['Quickstart example', 'A made-up shop at api.example.com that the quickstart creates so you can practise. It does not exist on the internet. It used to be called "Market data".'],
+]
+
+const ADD_SHOP = `# 1. register: a name, a host and a price. It starts unverified and off.
+curl -X POST $GW/v1/services -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{
+  "id":"svc_data","name":"My data feed","category":"data","host":"api.example.com","providerUrl":"https://api.example.com",
+  "pricing":{"model":"per_request","quoted":"0.30","currency":"USDC"},"paymentRails":[],
+  "limits":{"maxPerRequest":"1.00","timeoutMs":8000}}'
+
+# 2. probe: record who the shop really pays
+curl -X POST $GW/v1/services/svc_data/probe-result -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \\
+  -d '{"verification":"endpoint-checked","payee":"merchant.near","health":"healthy"}'
+
+# 3. enable it
+curl -X POST $GW/v1/services/svc_data/enable -H "Authorization: Bearer $TOKEN"`
+
+function ShopsGuide() {
+  return (
+    <div className="dx-econ" id="shops">
+      <div className="dx-head">
+        <p className="eyebrow">Shops</p>
+        <h2 className="dx-h2">The places your agent is allowed to pay.</h2>
+        <p className="dx-sub">Think of a prepaid card for a teenager that only works at the bakery and the bookshop. Each of those places is a shop. The agent can pay the shops on its list and nowhere else; a payment to anything else is refused, however convincing the reason sounds.</p>
+      </div>
+      <div className="dx-card">
+        <p className="dx-k mono">What you will see in the app</p>
+        <ul className="dx-rules">{SHOP_KINDS.map(([n, d]) => <li key={n}><b>{n}.</b> {d}</li>)}</ul>
+        <p className="dx-t dx-dim">A brief is just a short report. A fresh install has no shops: they exist only because someone registered them. <code>pnpm live:app</code> registers the bridge cost brief and any market sellers you list.</p>
+      </div>
+      <div className="dx-card">
+        <p className="dx-k mono">What a shop is made of</p>
+        <ul className="dx-rules">
+          <li><b className="mono">host</b> The web address that sends the bill. A payment is matched against it.</li>
+          <li><b className="mono">category</b> What kind of thing it sells.</li>
+          <li><b className="mono">quoted price</b> What the shop says it charges. Tollgate cross-checks it against an independent quote.</li>
+          <li><b className="mono">payee</b> Who really gets the money, recorded when the shop is probed and never taken from the bill.</li>
+          <li><b className="mono">verification</b> unverified (never paid), endpoint-checked (small amounts), paid-delivery-tested, or disabled.</li>
+        </ul>
+        <p className="dx-t dx-dim">An agent sees only these fields, never a shop’s description or anything the seller wrote. A seller could hide “ignore your rules” in a description; keeping listing text away from the model is the defence (attack A16). What a shop delivers goes straight to your chat, not to the model.</p>
+      </div>
+      <div className="dx-card">
+        <p className="dx-k mono">How an agent gets a shop</p>
+        <p className="dx-t">A shop does nothing on its own. The agent’s mandate lists the hosts it may pay in <code>allowedHosts</code>. On the phone, <b>Agents → New chat</b> shows <b>Shops it may pay</b>: tick the shops that agent may use. The wildcard <code>*.market.near.ai</code> covers every market seller, but not look-alikes. The phone can tick shops that are already enabled; adding or enabling a shop is done on the computer.</p>
+      </div>
+      <div className="dx-card">
+        <p className="dx-k mono">Add a shop (on the computer)</p>
+        <pre className="dx-code mono" data-lang="shell"><code>{ADD_SHOP}</code></pre>
+        <p className="dx-t dx-dim">Here you state the payee yourself, which is fine for practice. In real use the probe reads the shop’s own payment request. Registering a shop does not let anyone pay it until it is probed and enabled.</p>
+      </div>
+    </div>
+  )
+}
 
 function MandateGuide() {
   return (
@@ -245,6 +302,7 @@ export default function Docs() {
           </aside>
         </div>
 
+        <ShopsGuide />
         <MandateGuide />
         <AgentEconomy />
       </div>

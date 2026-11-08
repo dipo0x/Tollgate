@@ -93,9 +93,18 @@ export function agentState(status: string): { label: string; short: string; runn
   return { label: status, short: status, running: false }
 }
 
+/** Who answers an agent, in the owner's words. */
+export function answeredBy(m: { mode?: 'hosted' | 'external' | undefined; brain?: string | null | undefined }): string {
+  if (m.mode === 'external') return 'Your own agent'
+  if (m.mode === 'hosted') return m.brain ? (BRAIN_NAME[m.brain] ?? m.brain) : 'This computer'
+  return 'Your agent'
+}
+const BRAIN_NAME: Record<string, string> = { claude: 'Claude', ollama: 'Local model', grok: 'Grok', openai: 'ChatGPT', near: 'NEAR AI' }
+
 /** Agents grouped by name: the running runs, and the names with no running run (newest end first), for the Agents tab. */
-export function groupAgents<M extends { id: string; agentId: string; status: string; validUntil: string; parentId?: string | undefined }>(rows: readonly M[]) {
-  const tops = rows.filter(m => !m.parentId)
+export function groupAgents<M extends { id: string; agentId: string; status: string; validUntil: string; parentId?: string | undefined; archived?: boolean | undefined }>(rows: readonly M[]) {
+  // A name the owner removed from the list stays hidden until a new run of it starts (the gateway then clears the flag).
+  const tops = rows.filter(m => !m.parentId && !m.archived)
   const running = tops.filter(m => m.status === 'active')
   const runningNames = new Set(running.map(m => m.agentId))
   const past = new Map<string, M[]>()

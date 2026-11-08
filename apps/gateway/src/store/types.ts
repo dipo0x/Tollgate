@@ -113,7 +113,18 @@ export interface HistoryStore {
  * and replies. A task never moves money: the agent still asks to pay through the twelve checks and the owner's approval.
  */
 export type TaskStatus = 'queued' | 'working' | 'done' | 'failed'
-export type TaskMessage = { at: string; from: 'owner' | 'agent'; text: string; decisionId?: string }
+/** A photo or file the owner attached to a message. Only these facts travel with the message; the bytes stay in the attachment store. */
+export type AttachmentRef = { id: string; name: string; contentType: string; size: number }
+export type TaskMessage = { at: string; from: 'owner' | 'agent'; text: string; decisionId?: string; attachments?: AttachmentRef[] }
+
+/** An attachment as stored: encrypted with AES-256-GCM under the gateway's attachment key. The database never holds the plain bytes. */
+export type StoredAttachment = AttachmentRef & { iv: Buffer; tag: Buffer; data: Buffer; createdAt: string }
+export interface AttachmentStore {
+  put(a: StoredAttachment): Promise<void>
+  get(id: string): Promise<StoredAttachment | undefined>
+  /** Only the facts, for many ids at once (to check a message's attachments exist). */
+  refs(ids: readonly string[]): Promise<AttachmentRef[]>
+}
 export type AgentTask = { id: string; mandateId: string; status: TaskStatus; createdAt: string; updatedAt: string; messages: TaskMessage[] }
 export interface TaskStore {
   /** False, saving nothing, if the id is taken. */
@@ -125,6 +136,8 @@ export interface TaskStore {
   listForMandates(mandateIds: readonly string[], limit: number): Promise<AgentTask[]>
   /** Moves this mandate's oldest queued task to working and returns it; two agents asking at once never get the same task. */
   claimNext(mandateId: string, at: string): Promise<AgentTask | undefined>
+  /** The same, across several mandates (the agents one runner hosts): the oldest queued task of any of them. */
+  claimNextAny(mandateIds: readonly string[], at: string): Promise<AgentTask | undefined>
   /** Adds a message (and maybe a new status) to a task of THIS mandate. False if there is no such task for it. */
   reply(id: string, mandateId: string, msg: TaskMessage, status: TaskStatus | undefined, at: string): Promise<boolean>
   /** The agent says it is still on a working task of THIS mandate: renews its lease. False if there is no such working task. */
@@ -133,12 +146,37 @@ export interface TaskStore {
   closeAbandoned(before: string, msg: TaskMessage): Promise<AgentTask[]>
 }
 
+/**
+ * An agent is a chat room: a NAME the owner talks to. Its runs (mandates) come and go; the profile says who answers it.
+ *   hosted    the owner's computer answers it, with one of the brains the runner offers (Claude, Grok, a local model...).
+ *   external  the owner's own program answers it with its own key, over the same HTTP API (or the SDK).
+ * `brain` is only the NAME of a brain the runner offers. Keys and addresses for brains live in the runner's environment, never here.
+ */
+export type AgentMode = 'hosted' | 'external'
+export type AgentProfile = { name: string; mode: AgentMode; brain: string | null; createdAt: string; archived: boolean }
+/** What the runner says it can run. No keys, no addresses with credentials: an id, a label for the phone, and a short detail. */
+export type BrainInfo = { id: string; label: string; detail: string }
+export type RunnerHello = { brains: BrainInfo[]; at: string }
+export interface AgentStore {
+  get(name: string): Promise<AgentProfile | undefined>
+  list(): Promise<AgentProfile[]>
+  /** Creates the profile or replaces it. */
+  put(p: AgentProfile): Promise<void>
+  /** False if there is no such profile. */
+  setArchived(name: string, archived: boolean): Promise<boolean>
+  /** The runner's last hello: which brains it offers, and when it last checked in. */
+  runner(): Promise<RunnerHello | undefined>
+  setRunner(h: RunnerHello): Promise<void>
+}
+
 export type GatewayStore = {
   kind: 'memory' | 'postgres'
   decisions: DecisionStore
   jobs: JobStore
   history: HistoryStore
   tasks: TaskStore
+  agents: AgentStore
+  attachments: AttachmentStore
   acceptance: AcceptanceStore
   sessions: SessionStore
   tokens: TokenStore

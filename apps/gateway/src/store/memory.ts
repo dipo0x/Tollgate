@@ -1,7 +1,7 @@
 import type { AcceptanceSpec, NegotiationSnapshot, Prior } from '@tollgate/core'
 import type { Service } from '@tollgate/registry'
 import { isPrior, toPrior, type Approval, type DecisionRecord, type Job } from '../state.ts'
-import type { SignatureStore, StoredSignature, AcceptanceStore, ApprovalOutcome, DecisionFilter, DecisionStore, GatewayStore, JobStore, HistoryStore, HistoryRecord, LockStore, ServiceStore, SessionStore, SettingsStore, TokenOwner, TokenStore, AgentTask, TaskMessage, TaskStatus, TaskStore } from './types.ts'
+import type { SignatureStore, StoredSignature, AcceptanceStore, ApprovalOutcome, DecisionFilter, DecisionStore, GatewayStore, JobStore, HistoryStore, HistoryRecord, LockStore, ServiceStore, SessionStore, SettingsStore, TokenOwner, TokenStore, AgentTask, TaskMessage, TaskStatus, TaskStore, AttachmentStore, StoredAttachment, AgentStore, AgentProfile, RunnerHello } from './types.ts'
 
 export class MemoryDecisionStore implements DecisionStore {
   private rows = new Map<string, DecisionRecord>()
@@ -63,6 +63,13 @@ export class MemoryHistoryStore implements HistoryStore {
   async list(limit: number) { return [...this.rows.values()].sort((a, b) => b.occurredAt.localeCompare(a.occurredAt)).slice(0, limit) }
 }
 
+export class MemoryAttachmentStore implements AttachmentStore {
+  private readonly rows = new Map<string, StoredAttachment>()
+  async put(a: StoredAttachment) { this.rows.set(a.id, a) }
+  async get(id: string) { return this.rows.get(id) }
+  async refs(ids: readonly string[]) { return ids.flatMap(id => { const a = this.rows.get(id); return a ? [{ id: a.id, name: a.name, contentType: a.contentType, size: a.size }] : [] }) }
+}
+
 export class MemoryTaskStore implements TaskStore {
   private rows = new Map<string, AgentTask>()
   private copy = (t: AgentTask): AgentTask => ({ ...t, messages: t.messages.map(m => ({ ...m })) })
@@ -77,6 +84,13 @@ export class MemoryTaskStore implements TaskStore {
   }
   async claimNext(mandateId: string, at: string) {
     const next = [...this.rows.values()].filter(t => t.mandateId === mandateId && t.status === 'queued').sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))[0]
+    if (!next) return undefined
+    next.status = 'working'; next.updatedAt = at
+    return this.copy(next)
+  }
+  async claimNextAny(mandateIds: readonly string[], at: string) {
+    const ids = new Set(mandateIds)
+    const next = [...this.rows.values()].filter(t => ids.has(t.mandateId) && t.status === 'queued').sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))[0]
     if (!next) return undefined
     next.status = 'working'; next.updatedAt = at
     return this.copy(next)
@@ -98,6 +112,17 @@ export class MemoryTaskStore implements TaskStore {
     for (const t of stale) { t.messages.push({ ...msg }); t.status = 'failed'; t.updatedAt = msg.at }
     return stale.map(this.copy)
   }
+}
+
+export class MemoryAgentStore implements AgentStore {
+  private rows = new Map<string, AgentProfile>()
+  private hello: RunnerHello | undefined
+  async get(name: string) { const p = this.rows.get(name); return p ? { ...p } : undefined }
+  async list() { return [...this.rows.values()].map(p => ({ ...p })) }
+  async put(p: AgentProfile) { this.rows.set(p.name, { ...p, createdAt: this.rows.get(p.name)?.createdAt ?? p.createdAt }) } // the first creation time stays, as in Postgres
+  async setArchived(name: string, archived: boolean) { const p = this.rows.get(name); if (!p) return false; p.archived = archived; return true }
+  async runner() { return this.hello ? { brains: this.hello.brains.map(b => ({ ...b })), at: this.hello.at } : undefined }
+  async setRunner(h: RunnerHello) { this.hello = { brains: h.brains.map(b => ({ ...b })), at: h.at } }
 }
 
 export class MemoryAcceptanceStore implements AcceptanceStore {
@@ -159,7 +184,7 @@ export class MemoryLockStore implements LockStore {
 
 export function memoryStore(): GatewayStore {
   return {
-    kind: 'memory', decisions: new MemoryDecisionStore(), jobs: new MemoryJobStore(), history: new MemoryHistoryStore(), tasks: new MemoryTaskStore(), acceptance: new MemoryAcceptanceStore(),
+    kind: 'memory', decisions: new MemoryDecisionStore(), jobs: new MemoryJobStore(), history: new MemoryHistoryStore(), tasks: new MemoryTaskStore(), agents: new MemoryAgentStore(), attachments: new MemoryAttachmentStore(), acceptance: new MemoryAcceptanceStore(),
     sessions: new MemorySessionStore(), tokens: new MemoryTokenStore(), services: new MemoryServiceStore(), settings: new MemorySettingsStore(), locks: new MemoryLockStore(), signatures: new MemorySignatureStore(),
   }
 }

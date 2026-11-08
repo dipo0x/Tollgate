@@ -2,8 +2,8 @@ import { CameraView, useCameraPermissions } from 'expo-camera'
 import * as Haptics from 'expo-haptics'
 import { router } from 'expo-router'
 import { useEffect, useRef, useState } from 'react'
-import { ActivityIndicator, Pressable, TextInput, View } from 'react-native'
-import { createGateway, GatewayError, parsePairingCode } from '../src/api/gateway'
+import { ActivityIndicator, Modal, Pressable, TextInput, View } from 'react-native'
+import { checkGatewayUrl, createGateway, GatewayError, parsePairingCode } from '../src/api/gateway'
 import { useSession } from '../src/state/session'
 import { Card, Circle, Dot, Icon, Label, Pill, Screen, T, TopBar } from '../src/ui/kit'
 import { C, F, R } from '../src/ui/theme'
@@ -24,6 +24,8 @@ export default function Switch() {
   const [mode, setMode] = useState<'pick' | 'scan' | 'type'>('pick')
   const [typed, setTyped] = useState('')
   const [busy, setBusy] = useState<string | null>(null)
+  // What the overlay says while switching: does it answer (no key sent), does it accept the key, then connected.
+  const [step, setStep] = useState<'reach' | 'key' | 'done'>('reach')
   const [problem, setProblem] = useState<string | null>(null)
   const [perm, askPerm] = useCameraPermissions()
   const scanned = useRef(false)
@@ -40,13 +42,28 @@ export default function Switch() {
     return () => { live = false }
   }, [all.join('|')]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  async function use(address: string) {
-    setProblem(null); setBusy(address)
+  async function use(raw: string) {
+    setProblem(null)
+    const c = checkGatewayUrl(raw)
+    if (!c.ok) { setProblem(c.why); return } // a typo is refused here: nothing is sent anywhere
+    setBusy(c.url); setStep('reach')
     try {
-      await switchTo(address)
-      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success)
-      router.back()
+      // 1. Does anything answer there? Asks the open health check only: no key is sent to an address that is not even up.
+      await createGateway({ baseUrl: c.url, token: '', timeoutMs: 8000 }).health()
+        .catch(() => { throw new GatewayError(`Nothing answers at ${host(c.url)}. Check the computer is on and on the same Wi-Fi.`, 0) })
+      // 2. Does it accept this phone's key? Only then is the new address saved (session.switchTo).
+      setStep('key')
+      await switchTo(c.url)
+      await connected()
     } catch (e) { setProblem(e instanceof GatewayError ? e.message : 'Not switched. Nothing was changed.') } finally { setBusy(null) }
+  }
+
+  /** A moment of "Connected" before closing, so the switch is seen to have worked; the app then loads fresh data (the pill). */
+  async function connected() {
+    setStep('done')
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success)
+    await new Promise(r => setTimeout(r, 700))
+    router.back()
   }
 
   async function onScan(data: string) {
@@ -54,12 +71,11 @@ export default function Switch() {
     scanned.current = true
     const p = parsePairingCode(data)
     if (!p.ok) { setProblem(p.why); setTimeout(() => { scanned.current = false }, 1500); return }
-    setProblem(null); setBusy(p.url)
+    setProblem(null); setBusy(p.url); setStep('key')
     try {
       await createGateway({ baseUrl: p.url, token: p.key }).status() // nothing is saved until this gateway accepts this key
       await pair(p.url, p.key) // Face ID stays set up; only the address (and the key, if it changed) is replaced
-      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success)
-      router.back()
+      await connected()
     } catch (e) {
       setProblem(e instanceof GatewayError ? e.message : 'Not switched. Nothing was changed.'); scanned.current = false
     } finally { setBusy(null) }
@@ -129,6 +145,19 @@ export default function Switch() {
         {mode !== 'type' ? <Pill title="Type an address" dark onPress={() => { setProblem(null); setMode('type') }} /> : null}
         {mode !== 'pick' ? <Pill title="Back to saved addresses" dark onPress={() => { setProblem(null); setMode('pick') }} /> : null}
       </View>
+
+      {/* While switching: the whole screen says what is happening, step by step, so a tap never looks like nothing happened. */}
+      <Modal transparent visible={busy !== null} animationType="fade" statusBarTranslucent>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.78)', alignItems: 'center', justifyContent: 'center', padding: 32 }} accessibilityViewIsModal accessibilityLiveRegion="polite">
+          <View style={{ width: '100%', maxWidth: 320, padding: 24, borderRadius: R.card, backgroundColor: C.card, alignItems: 'center', gap: 14 }}>
+            {step === 'done' ? <Icon name="check" size={34} color={C.green} width={2.6} /> : <ActivityIndicator size="large" color={C.text} />}
+            <T v="h2" style={{ textAlign: 'center' }}>{step === 'done' ? 'Connected' : `Connecting to ${busy ? host(busy) : ''}`}</T>
+            <T v="sub" style={{ textAlign: 'center', lineHeight: 20 }}>
+              {step === 'reach' ? 'Checking it answers…' : step === 'key' ? 'Checking it accepts this phone’s key…' : 'Loading your data…'}
+            </T>
+          </View>
+        </View>
+      </Modal>
     </Screen>
   )
 }

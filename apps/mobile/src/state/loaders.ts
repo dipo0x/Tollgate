@@ -21,13 +21,18 @@ export const loaders = {
   services: (gw: Gateway) => gw.services(),
   jobs: async (gw: Gateway) => ({ jobs: await gw.jobs(), past: await gw.history() }),
   agent: async (gw: Gateway, id: string) => {
-    const [m, decisions] = await Promise.all([gw.mandate(id), gw.decisionsFor(id, 8)])
-    return { ...m, decisions }
+    // The list row says who answers this agent (hosted with a brain, or its own program). The gateway keeps the list for 5 s, so this is cheap.
+    const [m, decisions, rows] = await Promise.all([gw.mandate(id), gw.decisionsFor(id, 8), soft(gw.mandates())])
+    return { ...m, decisions, row: rows.find(r => r.id === id) }
   },
+  brains: (gw: Gateway) => gw.brains(),
   chat: async (gw: Gateway, agentId: string) => {
-    const [c, approvals, decisions] = await Promise.all([gw.conversation(agentId), soft(gw.approvals()), soft(gw.decisions(100))])
+    const [c, approvals, decisions, brains] = await Promise.all([gw.conversation(agentId), soft(gw.approvals()), soft(gw.decisions(100)), gw.brains().catch((e: { code?: string }) => { if (e?.code === 'yielded') throw e; return undefined })])
+    const lastRun = [...c.runs].sort((a, b) => b.validUntil.localeCompare(a.validUntil))[0]
     return {
       tasks: c.tasks, agent: c.agentId, sendTo: c.runningMandateId, active: !!c.runningMandateId,
+      // Who answers this chat, and whether the owner's computer is answering at all right now (for the "offline" words).
+      mode: c.agent?.mode, brain: c.agent?.brain ?? null, hostOnline: brains?.online, detailId: c.runningMandateId ?? lastRun?.id,
       pending: new Set(approvals.filter(a => a.status === 'pending').map(a => a.decisionId)),
       rejected: new Set(approvals.filter(a => a.status === 'rejected').map(a => a.decisionId)),
       decisions: new Map<string, Decision>([...decisions.map(d => [d.decisionId, d] as const), ...approvals.map(a => [a.decisionId, a.decision] as const)]),

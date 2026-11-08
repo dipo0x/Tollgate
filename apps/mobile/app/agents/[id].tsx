@@ -1,11 +1,13 @@
 import { router, useLocalSearchParams } from 'expo-router'
 import { useCallback, useState } from 'react'
-import { Alert, Pressable, View } from 'react-native'
+import { ActionSheetIOS, Alert, Pressable, View } from 'react-native'
 import { GatewayError, type MandateRow } from '../../src/api/gateway'
-import { agentState, kindOf, KIND_LABEL, money, when } from '../../src/lib/format'
-import { useGateway } from '../../src/state/session'
+import { connectKit, type Kit } from '../../src/lib/connect'
+import { agentState, answeredBy, kindOf, KIND_LABEL, money, when } from '../../src/lib/format'
+import { useGateway, useSession } from '../../src/state/session'
 import { peekScreen, useNow, usePoll } from '../../src/state/usePoll'
 import { loaders } from '../../src/state/loaders'
+import { ConnectKit, KitNote } from '../../src/ui/ConnectKit'
 import { Amount, Card, Circle, Dot, ErrorNote, Glyph, Icon, KindIcon, Label, Loading, Row, Screen, T, TopBar } from '../../src/ui/kit'
 import { C } from '../../src/ui/theme'
 
@@ -13,8 +15,10 @@ import { C } from '../../src/ui/theme'
 export default function AgentDetail() {
   const { id } = useLocalSearchParams<{ id: string }>()
   const gw = useGateway()
+  const { url } = useSession()
   const now = useNow()
   const [problem, setProblem] = useState<string | null>(null)
+  const [kit, setKit] = useState<Kit | null>(null) // a fresh key's instructions, shown once
   const load = useCallback(() => loaders.agent(gw, id), [gw, id])
   const { data, error, loading, refresh } = usePoll(load, 6000, `agent:${id}`)
   const m = data?.mandate
@@ -25,6 +29,51 @@ export default function AgentDetail() {
     : row ? { agentId: row.agentId, validUntil: row.validUntil, status: row.status, currency: row.currency, total: row.balance?.total, remaining: row.balance?.remaining, settled: row.balance?.settled, committed: row.balance?.committed } : undefined
   const active = head?.status === 'active'
   const askAlways = m ? Number(m.approval.above) === 0 : false
+
+  const who = data?.row ?? row
+  const external = who?.mode === 'external'
+
+  /** Choose another brain on this computer for the agent (or hand an agent of your own back to it). */
+  async function pickBrain() {
+    setProblem(null)
+    let offered: { id: string; label: string }[] = []
+    try { offered = (await gw.brains()).brains } catch (e) { setProblem(e instanceof GatewayError ? e.message : 'Could not ask your computer. Try again.'); return }
+    const options = [...offered.map(b => b.label), 'This computer’s default', 'Cancel']
+    ActionSheetIOS.showActionSheetWithOptions({ title: 'Who answers this chat?', options, cancelButtonIndex: options.length - 1 }, async i => {
+      if (i === options.length - 1) return
+      const brain = i < offered.length ? offered[i]!.id : null
+      try { await gw.setAgent(m?.agentId ?? head?.agentId ?? '', { mode: 'hosted', brain }); await refresh() } catch (e) { setProblem(e instanceof GatewayError ? e.message : 'Not changed. Try again.') }
+    })
+  }
+
+  /** A new key for an agent you run yourself; the old one stops working at once. */
+  function newKey() {
+    Alert.alert('Get a new key?', 'The old key stops working at once. Your agent needs the new one to keep answering.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Get new key', onPress: async () => {
+        try { const key = await gw.newKey(m!.agentId); setKit(connectKit({ url: url ?? '', key, name: m!.agentId, mandateId: id })) } catch (e) { setProblem(e instanceof GatewayError ? e.message : 'No new key. Try again.') }
+      } },
+    ])
+  }
+
+  /** Switch a hosted agent to your own program: a key is made, once. */
+  function useOwnAgent() {
+    Alert.alert('Answer with your own agent?', 'Your computer stops answering this chat. You get a key to plug your own agent in.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Get key', onPress: async () => {
+        try { const r = await gw.setAgent(m!.agentId, { mode: 'external' }); if (r.agentToken) setKit(connectKit({ url: url ?? '', key: r.agentToken, name: m!.agentId, mandateId: id })); await refresh() } catch (e) { setProblem(e instanceof GatewayError ? e.message : 'Not changed. Try again.') }
+      } },
+    ])
+  }
+
+  function remove() {
+    Alert.alert(`Remove ${m?.agentId ?? 'this agent'} from your list?`, 'Its conversation and payment records stay. Starting an agent with the same name brings the chat back.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Remove', style: 'destructive', onPress: async () => {
+        try { await gw.archiveAgent(m!.agentId); router.back() } catch (e) { setProblem(e instanceof GatewayError ? e.message : 'Not removed. Try again.') }
+      } },
+    ])
+  }
 
   function stop() {
     Alert.alert(`Stop ${m?.agentId ?? 'this agent'}?`, 'It will not be able to pay anything again. Its key stops working. This cannot be undone; add it again to restart.', [
@@ -62,6 +111,19 @@ export default function AgentDetail() {
       {m && data ? (
         <>
 
+          {active ? (
+            <>
+              <Label>Answered by</Label>
+              <Card>
+                <Row first title={answeredBy(who ?? {})} sub={external ? 'Your own program, with a key' : 'The agent host on your computer'} onPress={external ? undefined : () => void pickBrain()} right={external ? undefined : <T v="sub">Change</T>} chevron={false} />
+                {external ? <Row title="Get a new key" sub="Replaces the old one at once" onPress={newKey} /> : null}
+                {external ? <Row title="Let this computer answer instead" sub="Pick a brain on your computer" onPress={() => void pickBrain()} /> : null}
+                {who?.mode === 'hosted' ? <Row title="Use my own agent" sub="Claude, Grok, ChatGPT or one you built" onPress={useOwnAgent} /> : null}
+              </Card>
+              {kit ? <><Label>Plug it in</Label><ConnectKit kit={kit} /><KitNote /></> : null}
+            </>
+          ) : null}
+
           <Label>Rules</Label>
           <Card>
             <Row first title="Max per payment" right={<T>{money(m.budget.perPayment)} {m.budget.currency}</T>} />
@@ -89,6 +151,11 @@ export default function AgentDetail() {
           {active ? (
             <Card style={{ marginTop: 24 }}>
               <Row first icon="power" title={`Stop ${m.agentId}`} sub="For good. Other agents keep running." danger chevron={false} onPress={stop} />
+            </Card>
+          ) : null}
+          {!active ? (
+            <Card style={{ marginTop: 24 }}>
+              <Row first icon="x" title="Remove from my list" sub="The conversation and records stay" chevron={false} onPress={remove} />
             </Card>
           ) : null}
           {problem ? <T v="sub" style={{ marginTop: 12, color: C.red, textAlign: 'center' }}>{problem}</T> : null}

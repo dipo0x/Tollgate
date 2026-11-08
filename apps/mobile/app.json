@@ -48,12 +48,28 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Tollgate uses the camera only to scan the pairing code on your dashboard.",
-          "recordAudioAndroid": false
+          "cameraPermission": "Tollgate uses the camera to scan the pairing code on your dashboard and to take a photo for your agent.",
+          "recordAudioAndroid": false,
+          "microphonePermission": "Tollgate listens only while you record a voice note, to turn it into a message for your agent."
         }
       ],
       "expo-font",
-      "expo-notifications"
+      "expo-notifications",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Tollgate lets you attach a photo to a message for your agent. It is sealed on your own gateway.",
+          "cameraPermission": "Tollgate uses the camera to scan the pairing code and to take a photo for your agent.",
+          "microphonePermission": false
+        }
+      ],
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Tollgate listens only while you hold a voice note, to turn it into a message for your agent.",
+          "speechRecognitionPermission": "Your iPhone turns your voice note into text, on the phone when it can."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": false

@@ -106,3 +106,68 @@ describe('converse on Ollama, and falling back to it', () => {
     expect(replies[0]).toMatch(/ollama pull qwen3:14b/)
   })
 })
+
+describe('the agent does what it says, in plain words', () => {
+  it('spots a reply that promises an action instead of doing it', async () => {
+    const { promisesAction } = await import('../src/claude-agent.ts')
+    for (const t of ['I need to find a suitable seller first. Let me search for one now.', "I'll look for a travel planner.", 'I will hire nomad-planner for this.', "I'm going to check your budget."]) expect(promisesAction(t), t).toBe(true)
+    for (const t of ['I searched the market and found nomad-planner, 0.20 USDC.', 'You have 1.00 USDC left.', 'Which dates are you travelling?']) expect(promisesAction(t), t).toBe(false)
+  })
+  it('never shows a tool name to the owner', async () => {
+    const { plainWords } = await import('../src/claude-agent.ts')
+    expect(plainWords("Let's find a suitable seller first using `find_sellers`.")).toBe("Let's find a suitable seller first using a market search.")
+    expect(plainWords('I checked list_shops and check_budget.')).toBe('I checked your shop list and your budget.')
+    expect(plainWords('I can buy the brief or hire a seller.')).toBe('I can buy the brief or hire a seller.') // ordinary words stay
+  })
+})
+
+describe('a reply can never claim money moved when it did not', () => {
+  it('spots a claim of hiring or paying', async () => {
+    const { claimsPayment } = await import('../src/claude-agent.ts')
+    for (const t of ['I have hired a seller to plan your trip.', "I've paid 0.20 USDC.", 'The brief was bought.', 'I hired nomad-planner.', 'Payment has been paid.']) expect(claimsPayment(t), t).toBe(true)
+    for (const t of ['Shall I hire nomad-planner?', 'Nothing was hired or paid.', 'I can buy the brief if you approve.', 'I found a seller named nomad-planner.']) expect(claimsPayment(t), t).toBe(false)
+  })
+})
+
+describe('negotiate then buy: the agreed price is what is billed, and Tollgate is told which deal', () => {
+  const SVC = { id: 'svc_brief', category: 'market_data', host: '127.0.0.1', pricing: { model: 'per_request', quoted: '0.30', currency: 'USDC' }, verification: 'endpoint-checked', enabled: true, health: 'healthy' }
+  const LIM = { allowedHosts: ['127.0.0.1'], perPayment: 0.5, reserve: 0, useLlm: false, approvalWaitMs: 60_000, settleTries: 2 }
+  const allow = { decision: 'ALLOW' as const, decisionId: 'dec_1', bind: { to: 'dep.near', amount: '0.20' } }
+
+  function world(haggle: unknown) {
+    const seen: { billDeal?: string; negotiationId?: string; paid: string[]; replies: string[] } = { paid: [], replies: [] }
+    const io = {
+      reply: async (t: string) => { seen.replies.push(t) },
+      catalog: async () => [SVC], remaining: async () => 1, funds: async () => ({ usdcMicro: 5_000_000n, nearYocto: 10n ** 23n }),
+      bill: async (_id: string, deal?: { token: string }) => { seen.billDeal = deal?.token; return { id: 'c1', amount: deal ? '0.20' : '0.30', recipient: 'dep.near', expires: '2099-01-01T00:00:00Z' } },
+      authorize: async (_h: string, _c: unknown, _p: string, negotiationId?: string) => { seen.negotiationId = negotiationId; return allow },
+      pay: async (id: string) => { seen.paid.push(id); return '7Hx9abcdef0123' }, settled: async () => 'SUCCESS',
+      collect: async () => ({ status: 200, summary: 'Delivered.' }), reconcile: async () => {},
+      sleep: async () => {}, now: () => Date.now(),
+      negotiate: async () => haggle,
+    }
+    // A scripted brain: negotiate, then buy.
+    const engine = {
+      id: 'test', label: 'test', explain: String,
+      ask: async ({ tools }: { tools: { name: string; run: (i: Record<string, unknown>) => Promise<string> }[] }) => {
+        const run = (n: string, i: Record<string, unknown>) => tools.find(t => t.name === n)!.run(i)
+        await run('negotiate', { shop_id: 'svc_brief' })
+        await run('buy', { shop_id: 'svc_brief', purpose: 'bridge cost brief' })
+        return { text: 'Done.' }
+      },
+    }
+    return { io, seen, engine }
+  }
+
+  it('an agreed deal: the bill carries the deal token and the authorization names the negotiation', async () => {
+    const w = world({ outcome: 'agreed', ask: '0.30', rounds: [], deal: { negotiationId: 'neg_1', token: 'tok', price: '0.20' } })
+    await converse([{ from: 'owner', text: 'buy the brief, haggle' }], w.io as never, LIM, { engine: w.engine as never })
+    expect(w.seen.billDeal).toBe('tok'); expect(w.seen.negotiationId).toBe('neg_1'); expect(w.seen.paid).toEqual(['dec_1'])
+    expect(w.seen.replies.join(' ')).toMatch(/opened at 0\.30 USDC and we agreed 0\.20 USDC/)
+  })
+  it('no deal: buy still works at the listed price, with no negotiation id', async () => {
+    const w = world({ outcome: 'no_deal', why: 'the seller walked', rounds: [] })
+    await converse([{ from: 'owner', text: 'buy the brief' }], w.io as never, LIM, { engine: w.engine as never })
+    expect(w.seen.billDeal).toBeUndefined(); expect(w.seen.negotiationId).toBeUndefined()
+  })
+})

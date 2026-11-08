@@ -1,0 +1,16 @@
+{
+  "name": "@tollgate/docs",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "The Tollgate documentation site (docs.trytollgate.xyz). Static pages built from markdown.",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "start": "node scripts/build.mjs && node scripts/serve.mjs",
+    "test": "node --test scripts/*.test.mjs",
+    "typecheck": "node --check scripts/build.mjs && node --check scripts/serve.mjs && node --check public/docs.js"
+  },
+  "dependencies": {
+    "marked": "^16.0.0"
+  }
+}

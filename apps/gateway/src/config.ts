@@ -19,6 +19,12 @@ export const ConfigSchema = z.object({
   LOG_LEVEL: z.enum(['silent', 'info', 'debug']).default('info'),
   /** Owner-level access. Never shown in logs; compared as a digest. */
   GATEWAY_OPERATOR_TOKEN: z.string().min(16, 'GATEWAY_OPERATOR_TOKEN must be at least 16 characters'),
+  /**
+   * The key of the runner: the program on the owner's computer that answers hosted agents (pnpm live:app). It can collect messages
+   * for, and act as, a HOSTED agent, and nothing else: it cannot approve, freeze, create agents, or touch an agent the owner connected
+   * with its own key. Unset: no runner can connect, and only agents with their own key work.
+   */
+  GATEWAY_RUNNER_TOKEN: z.string().optional().transform(v => v || undefined).pipe(z.string().min(16, 'GATEWAY_RUNNER_TOKEN must be at least 16 characters').optional()),
   /** The 1Click key, only needed when not offline. */
   NEAR_1CLICK_API_KEY: z.string().optional(),
   /**
@@ -46,6 +52,8 @@ export const ConfigSchema = z.object({
    * wait on a slow database. Any write through this gateway empties it at once; a change made by ANOTHER gateway on the same database
    * shows within this time. 0 turns it off. Paying and deciding never use it.
    */
+  /** Seals photos attached in the chat (AES-256-GCM). 32 random bytes, base64. Without it, attachments are off. */
+  GATEWAY_ATTACHMENT_KEY: z.string().optional(),
   GATEWAY_READ_CACHE_MS: z.coerce.number().int().min(0).max(30_000).default(5000),
   DATABASE_POOL_MAX: z.coerce.number().int().min(1).max(50).default(10),
   /** How long a payment held for approval waits for a human before it expires, in minutes. */

@@ -68,6 +68,11 @@ const MandateRow = z.object({
   id: z.string(),
   agentId: z.string(),
   status: z.string(),
+  /** Who answers this agent's chat: `hosted` (the owner's computer, with `brain`) or `external` (the owner's own program). Absent on an older agent. */
+  mode: z.enum(['hosted', 'external']).optional(),
+  brain: z.string().nullable().optional(),
+  /** Hidden from the owner's list by "Remove". */
+  archived: z.boolean().optional(),
   parentId: z.string().optional(),
   validUntil: z.string(),
   currency: z.string(),
@@ -105,14 +110,25 @@ const HistoryRow = z.object({
   txHash: z.string().optional(), explorer: z.string().optional(), status: z.string(), note: z.string(),
 })
 /** A task the owner gave an agent, with the conversation so far. Words only: any payment still goes through the checks and approval. */
-const TaskMessage = z.object({ at: z.string(), from: z.enum(['owner', 'agent']), text: z.string(), decisionId: z.string().optional() })
+const AttachmentRef = z.object({ id: z.string(), name: z.string(), contentType: z.string(), size: z.number() })
+export type AttachmentRefT = z.infer<typeof AttachmentRef>
+const TaskMessage = z.object({ at: z.string(), from: z.enum(['owner', 'agent']), text: z.string(), decisionId: z.string().optional(), attachments: z.array(AttachmentRef).optional() })
 const Task = z.object({ id: z.string(), mandateId: z.string(), status: z.enum(['queued', 'working', 'done', 'failed']), createdAt: z.string(), updatedAt: z.string(), messages: z.array(TaskMessage) })
 export type TaskT = z.infer<typeof Task>
 /** Every run (mandate) of one agent name, and the one conversation across them. runningMandateId is where new messages go. */
 const Conversation = z.object({
   agentId: z.string(), runningMandateId: z.string().nullable(),
   runs: z.array(z.object({ id: z.string(), status: z.string(), validFrom: z.string(), validUntil: z.string() })), tasks: z.array(Task),
+  agent: z.object({ mode: z.enum(['hosted', 'external']), brain: z.string().nullable() }).optional(),
 })
+
+/** A brain the owner's computer offers: an id, a label, a short detail. Never a key or an address. */
+const Brain = z.object({ id: z.string(), label: z.string(), detail: z.string() })
+const Brains = z.object({ brains: z.array(Brain), online: z.boolean(), lastSeen: z.string().nullable(), runnerEnabled: z.boolean() })
+export type BrainT = z.infer<typeof Brain>
+export type BrainsT = z.infer<typeof Brains>
+const AgentCreated = z.looseObject({ agent: z.object({ name: z.string(), mode: z.enum(['hosted', 'external']), brain: z.string().nullable() }), mandate: z.looseObject({ id: z.string() }), agentToken: z.string().optional() })
+export type AgentCreatedT = z.infer<typeof AgentCreated>
 export type ConversationT = z.infer<typeof Conversation>
 export type JobRowT = z.infer<typeof JobRow>
 export type HistoryRowT = z.infer<typeof HistoryRow>
@@ -199,6 +215,8 @@ export function mandateForNewAgent(a: NewAgent) {
     payee: { mode: 'registry' as const }, price: { tolerancePct: 3, onExceed: 'deny' as const },
     approval: { above: '0.00', riskAbove: 90, firstPayeeRequiresApproval: true },
     refund: { mustBePayerOrPinned: true },
+    // The agent may haggle, never above what one payment may be. The gateway enforces both numbers; a model only chooses among moves.
+    negotiation: { priceCeiling: a.perPayment, maxRounds: 4 },
   }
 }
 
@@ -290,14 +308,42 @@ export function createGateway(o: { baseUrl: string; token: string; fetchImpl?: t
     /** The chat with one agent, newest task first. */
     tasks: (mandateId: string) => call(z.object({ tasks: z.array(Task) }), 'GET', `/v1/agents/${encodeURIComponent(mandateId)}/tasks?limit=50`).then(r => r.tasks),
     /** Tell an agent what to do. It moves no money by itself: the agent still has to ask, and the owner still has to say yes. */
-    sendTask: (mandateId: string, text: string) => call(z.object({ task: Task }), 'POST', `/v1/agents/${encodeURIComponent(mandateId)}/tasks`, { text }).then(r => r.task),
+    sendTask: (mandateId: string, text: string, attachments: readonly string[] = []) => call(z.object({ task: Task }), 'POST', `/v1/agents/${encodeURIComponent(mandateId)}/tasks`, { text, ...(attachments.length ? { attachments } : {}) }).then(r => r.task),
+    /** A photo or PDF for the chat, sealed on the gateway. Only the owner's key can read it back; agents cannot. */
+    uploadAttachment: (a: { name: string; contentType: string; base64: string }) => call(z.object({ attachment: AttachmentRef }), 'POST', '/v1/attachments', { name: a.name, contentType: a.contentType, data: a.base64 }).then(r => r.attachment),
+    /** The photo as a data URI the Image component can show. Fetched with the owner's key, kept only in memory. */
+    attachmentDataUri: async (id: string): Promise<string> => {
+      const res = await doFetch(`${o.baseUrl}/v1/attachments/${encodeURIComponent(id)}`, { headers: { authorization: `Bearer ${o.token}` } })
+      if (!res.ok) throw new GatewayError(res.status === 404 ? 'This photo is no longer on your gateway.' : `The photo could not be loaded (${res.status}).`, res.status)
+      const type = res.headers.get('content-type') ?? 'image/jpeg'
+      const bytes = new Uint8Array(await res.arrayBuffer())
+      let bin = ''; for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
+      return `data:${type};base64,${btoa(bin)}`
+    },
     approve: (id: string, reason: string) => call(z.unknown(), 'POST', `/v1/approvals/${encodeURIComponent(id)}/approve`, { reason }),
     reject: (id: string, reason: string) => call(z.unknown(), 'POST', `/v1/approvals/${encodeURIComponent(id)}/reject`, { reason }),
     /** Stop one agent for good (the gateway's revoke). Only ever tightens, so the phone may do it without the dashboard. */
     stopAgent: (mandateId: string) => call(z.unknown(), 'POST', `/v1/mandates/${encodeURIComponent(mandateId)}/revoke`),
     freeze: () => call(z.unknown(), 'POST', '/v1/freeze'),
     unfreeze: () => call(z.unknown(), 'POST', '/v1/unfreeze'),
-    addAgent: (a: NewAgent) => call(z.looseObject({ agentToken: z.string() }), 'POST', '/v1/mandates', mandateForNewAgent(a)),
+    /** Which brains the owner's computer offers for hosted agents, and whether it is answering right now. */
+    brains: () => call(Brains, 'GET', '/v1/brains'),
+    /**
+     * A new chat. hosted: the owner's computer answers with `brain` (null: its own default), and no key exists. external: the owner's
+     * own program answers; the key comes back ONCE in `agentToken`. Either way every payment starts out needing the owner's yes.
+     */
+    createAgent: (a: NewAgent, who: { mode: 'hosted'; brain: string | null } | { mode: 'external' }) =>
+      call(AgentCreated, 'POST', '/v1/agents', { mode: who.mode, ...(who.mode === 'hosted' && who.brain ? { brain: who.brain } : {}), mandate: mandateForNewAgent(a) }),
+    /** Change who answers: another brain, or hosted <-> external (to external returns a new key, once). */
+    setAgent: (name: string, change: { brain?: string | null; mode?: 'hosted' | 'external' }) =>
+      call(z.looseObject({ agent: z.object({ mode: z.enum(['hosted', 'external']), brain: z.string().nullable() }), agentToken: z.string().optional() }), 'POST', `/v1/agents/${encodeURIComponent(name)}/settings`, change),
+    /** A new key for an agent that runs on the owner's own program. The old key stops working at once. */
+    newKey: (name: string) => call(z.object({ agentToken: z.string() }), 'POST', `/v1/agents/${encodeURIComponent(name)}/key`).then(r => r.agentToken),
+    /** Hide an ended agent from the list. Its conversation and records stay. */
+    archiveAgent: (name: string, archived = true) => call(z.unknown(), 'POST', `/v1/agents/${encodeURIComponent(name)}/archive`, { archived }),
   }
 }
 export type Gateway = ReturnType<typeof createGateway>
+
+/** A host pattern covering every seller on the NEAR AI Agent Market. A mandate lists hosts; the gateway matches this one with a wildcard. */
+export const MARKET_HOST = '*.market.near.ai'

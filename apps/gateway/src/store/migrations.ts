@@ -126,4 +126,32 @@ export const GATEWAY_MIGRATIONS: readonly Migration[] = [
       CREATE INDEX gateway_tasks_queue ON gateway_tasks (mandate_id, status, created_at);
     `,
   },
+  {
+    id: 'gateway_0005_attachments',
+    sql: `
+      CREATE TABLE gateway_attachments (
+        id           text PRIMARY KEY,
+        name         text NOT NULL,
+        content_type text NOT NULL,
+        size         integer NOT NULL,
+        iv           bytea NOT NULL,
+        tag          bytea NOT NULL,
+        data         bytea NOT NULL,
+        created_at   timestamptz NOT NULL
+      );
+    `,
+  },
+  {
+    // An agent is a chat room with a name. Who answers it (the owner's computer with a named brain, or the owner's own program) is kept here.
+    id: 'gateway_0006_agents',
+    sql: `
+      CREATE TABLE gateway_agents (
+        name       text PRIMARY KEY,
+        mode       text NOT NULL,
+        brain      text,
+        created_at timestamptz NOT NULL,
+        archived   boolean NOT NULL DEFAULT false
+      );
+    `,
+  },
 ]

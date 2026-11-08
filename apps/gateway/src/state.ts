@@ -61,4 +61,5 @@ export type Approval = {
 
 export type Job = { id: string; mandateId: string; goal: string; receivingAddress: string; price: string; currency: string }
 
-export type Principal = { role: 'operator' } | { role: 'agent'; mandateId: string; agentId: string }
+/** `runner` is the owner's agent host. It becomes an `agent` only for one call, naming one HOSTED mandate (see authenticate in app.ts). */
+export type Principal = { role: 'operator' } | { role: 'runner' } | { role: 'agent'; mandateId: string; agentId: string }

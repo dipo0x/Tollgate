@@ -45,6 +45,7 @@ apps/
   workers/          hired worker agents  (not built yet; the demo plays the worker inline)
   mock-merchants/   fake sellers, fake directory, fake 1Click — benchmark and offline runs
   site/             tollgate marketing homepage  (React 19, Vite, GSAP, Three.js)
+  docs/             documentation site for docs.trytollgate.xyz  (static pages built from markdown; `pnpm docs`)
 packages/
   core/             check pipeline C01-C12, budget ledger, hash-chained audit log
   sdk/              TypeScript SDK: routes an HTTP 402 challenge through the gateway
@@ -154,6 +155,28 @@ Steps 1 to 4 need no keys, no database and no network beyond the install. The SD
 - `docs/Tollgate_PRD_v1.2.pdf` — full product requirements and system architecture
 - `HACKATHON.md` — NEAR HACKATHON rules, tracks and submission contract
 - `CLAUDE.md` — standing rules for AI agents working in this repository
+
+## Roadmap
+
+Direction, not a promise, and none of it is built unless the Status section says so. Ordered by
+what I would do next.
+
+1. **Earn for real.** An agent lists a service on the NEAR AI Agent Market and is paid by a
+   real customer. Today the gateway records revenue it can verify, but nothing sells yet.
+2. **Negotiate with market sellers.** Negotiation works against the reference seller in this
+   repo. Market sellers publish one fixed price, so there is nothing to haggle with yet.
+3. **x402 on Base for APIs and compute.** Most paid APIs take USDC on Base. The buyer for
+   that rail is not built; the NEAR rail is.
+4. **A way in that needs no server.** Today you run the gateway and signer yourself. Next: a
+   connector so an assistant you already use (a Claude account) can talk to a gateway, then a
+   hosted gateway. The signer stays non-custodial in both: the host asks to spend inside a
+   limited, revocable allowance and never holds your money. A hosted version that holds keys
+   would change the security claim, so it is not on this list.
+5. **Photos shared with a seller.** Photos and passport scans sit sealed in the gateway and
+   the agent cannot read them. Letting an agent hand one to a named seller, with the owner's
+   Face ID each time, is not built.
+6. **Booking.** No seller on the market books tickets today; they plan and research. Booking
+   needs a seller that does.
 
 ## Hackathon disclosures
 

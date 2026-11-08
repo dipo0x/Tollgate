@@ -23,9 +23,15 @@ export type WorkerIO = {
   remaining(): Promise<number>
   /** What the signer's account holds, in USDC micro-units and yoctoNEAR. */
   funds(): Promise<{ usdcMicro: bigint; nearYocto: bigint }>
-  /** Ask the shop for a bill (its 402). */
-  bill(serviceId: string): Promise<Challenge>
-  authorize(serviceHost: string, challenge: Challenge, purpose: string): Promise<Decision>
+  /** Ask the shop for a bill (its 402). With a deal, the shop bills the agreed price. */
+  bill(serviceId: string, deal?: Deal): Promise<Challenge>
+  /** With a negotiation id, Tollgate holds the shop to the agreed price, asset and payee (a bill that differs is refused at C07). */
+  authorize(serviceHost: string, challenge: Challenge, purpose: string, negotiationId?: string): Promise<Decision>
+  /**
+   * Haggle with a shop that negotiates (the reference seller does; market sellers have one fixed price). Code works out the legal
+   * moves and the gateway enforces the owner's ceiling and round limit. Absent when no shop here negotiates.
+   */
+  negotiate?(shopId: string): Promise<HaggleOutcome>
   /** Sign through Tollgate (the signer rebuilds it from the stored decision) and broadcast. Returns the transaction hash. */
   pay(decisionId: string): Promise<string>
   /** 1Click's word on whether the deposit was paid: SUCCESS, REFUNDED, FAILED, or still pending. */
@@ -38,9 +44,19 @@ export type WorkerIO = {
    * approves on the phone, and the market settles only if the seller delivers. Absent when this agent has no market access.
    */
   marketBuy?(shop: { id: string; host: string }, task: string): Promise<BuyOutcome>
+  /** Search the NEAR AI Agent Market. Structured fields only: never a seller's own description (A16). */
+  marketSearch?(q: { category?: string | undefined; keyword?: string | undefined }): Promise<MarketSeller[]>
+  /** Hire a seller found by marketSearch: registered as a shop on the spot (price and payee from the market), then marketBuy. */
+  marketHire?(handle: string, task: string): Promise<BuyOutcome>
   sleep(ms: number): Promise<void>
   now(): number
 }
+
+/** An agreed price: the gateway's record of the deal, plus the seller's signed token that proves it to the seller. */
+export type Deal = { negotiationId: string; token: string; price: string }
+export type HaggleOutcome =
+  | { outcome: 'agreed'; deal: Deal; ask: string; rounds: string[] }
+  | { outcome: 'no_deal'; why: string; rounds: string[] }
 
 export type WorkerLimits = { allowedHosts: string[]; perPayment: number; reserve: number; useLlm: boolean; approvalWaitMs: number; settleTries: number }
 
@@ -68,6 +84,8 @@ export async function runTask(text: string, io: WorkerIO, lim: WorkerLimits): Pr
   }
 }
 
+export type MarketSeller = { handle: string; category: string; priceUsdc: string | null; deliveredJobs: number }
+
 export type BuyOutcome = { outcome: 'paid' | 'not_paid'; text: string; decisionId?: string; amount?: string; tx?: string }
 
 /**
@@ -75,16 +93,17 @@ export type BuyOutcome = { outcome: 'paid' | 'not_paid'; text: string; decisionI
  * Says the in-between steps in the chat itself (the approval request, the payment); returns how it ended, for the caller to say.
  * The delivered goods go to the owner as their own message and never back to a model (A16).
  */
-export async function buy(svc: Pick<SpendCatalogEntry, 'id' | 'host' | 'quotedPrice'>, purpose: string, io: WorkerIO, lim: WorkerLimits): Promise<BuyOutcome> {
+export async function buy(svc: Pick<SpendCatalogEntry, 'id' | 'host' | 'quotedPrice'>, purpose: string, io: WorkerIO, lim: WorkerLimits, deal?: Deal): Promise<BuyOutcome> {
   const stop = (text: string, decisionId?: string): BuyOutcome => ({ outcome: 'not_paid', text, ...(decisionId ? { decisionId } : {}) })
   const f = await io.funds()
-  const need = micro(svc.quotedPrice) * 105n / 100n
+  // With a deal the agreed price is what is asked for; without one, the shop's listed price.
+  const need = micro(deal ? Number(deal.price) : svc.quotedPrice) * 105n / 100n
   if (f.usdcMicro < need) return stop(`The payment account holds ${usd(f.usdcMicro)} USDC; this needs about ${usd(need)}. Top it up from Account → Add money. Nothing was paid.`)
   if (f.nearYocto < MIN_GAS_YOCTO) return stop('The payment account needs 0.01 NEAR for network fees. Top it up from Account → Add money. Nothing was paid.')
 
   // A cold first 1Click lookup can time out (a DENY): one fresh retry, only for that.
-  let ch = await io.bill(svc.id), d = await io.authorize(svc.host, ch, purpose)
-  if (d.decision === 'DENY' && JSON.stringify(d.checks ?? []).includes('timed out')) { ch = await io.bill(svc.id); d = await io.authorize(svc.host, ch, purpose) }
+  let ch = await io.bill(svc.id, deal), d = await io.authorize(svc.host, ch, purpose, deal?.negotiationId)
+  if (d.decision === 'DENY' && JSON.stringify(d.checks ?? []).includes('timed out')) { ch = await io.bill(svc.id, deal); d = await io.authorize(svc.host, ch, purpose, deal?.negotiationId) }
   if (d.decision === 'DENY') return stop(`Tollgate blocked it: “${CHECK_PLAIN[d.failedCheck ?? ''] ?? 'a check'}” failed${d.reason ? ` (${d.reason})` : ''}. Nothing was paid.`, d.decisionId)
   if (micro(Number(ch.amount)) > f.usdcMicro) return stop(`The shop wants ${ch.amount} USDC; the account holds ${usd(f.usdcMicro)}. Nothing was paid.`, d.decisionId)
 
@@ -92,7 +111,7 @@ export async function buy(svc: Pick<SpendCatalogEntry, 'id' | 'host' | 'quotedPr
     await io.reply(`I want to pay ${ch.amount} USDC to ${svc.id} for this. Approve it in Tollgate to go ahead.`, { decisionId: d.decisionId })
     const expires = Date.parse(ch.expires)
     const until = Math.min(io.now() + lim.approvalWaitMs, Number.isFinite(expires) ? expires - 30_000 : Infinity)
-    while (d.decision === 'NEEDS_APPROVAL' && io.now() < until) { await io.sleep(3000); d = await io.authorize(svc.host, ch, purpose) }
+    while (d.decision === 'NEEDS_APPROVAL' && io.now() < until) { await io.sleep(3000); d = await io.authorize(svc.host, ch, purpose, deal?.negotiationId) }
     if (d.decision === 'NEEDS_APPROVAL') return stop('No answer before the bill expired. Nothing was paid.', d.decisionId)
     if (d.decision !== 'ALLOW') return stop('You said no, so nothing was paid.', d.decisionId)
   }

@@ -100,6 +100,10 @@ describe('mandateForNewAgent: a phone-created agent can never pay without the ow
     expect(m.refund.mustBePayerOrPinned).toBe(true)
     expect(m.validFrom).toBe('2026-11-07T10:00:00Z')
   })
+  it('may haggle, but never above what one payment may be', () => {
+    const m = mandateForNewAgent({ name: 'a1', budget: '1.00', perPayment: '0.25', hosts: ['127.0.0.1'], now: new Date('2026-11-07T10:00:00Z') })
+    expect(m.negotiation).toEqual({ priceCeiling: '0.25', maxRounds: 4 })
+  })
 })
 
 describe('parseUsd: what the owner types for a budget or a limit', () => {

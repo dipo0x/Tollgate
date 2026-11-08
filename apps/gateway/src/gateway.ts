@@ -7,8 +7,9 @@ import type { Services } from './services.ts'
 import type { SignerClient, TxParams } from './signer.ts'
 import type { TokenRegistry } from './auth.ts'
 import type { Approval, Bind, DecisionRecord, Job } from './state.ts'
-import type { GatewayStore, HistoryRecord, TaskStatus } from './store/types.ts'
+import type { AgentMode, AgentProfile, BrainInfo, GatewayStore, HistoryRecord, TaskStatus } from './store/types.ts'
 import { randomUUID as uuid } from 'node:crypto'
+import { open, seal } from './attachments.ts'
 import { listensOnNetwork } from './network.ts'
 import { ReadCache } from './read-cache.ts'
 import { z } from 'zod'
@@ -18,6 +19,8 @@ export type GatewayDeps = {
   localName?: () => string | undefined
   /** How long the owner's read pages are kept (src/read-cache.ts). 0 or absent: no cache. Never applies to deciding or paying. */
   readCacheMs?: number
+  /** Seals chat attachments (src/attachments.ts). Absent: uploading is refused with a clear message. */
+  attachmentKey?: Buffer
   /** Mandates. Separate from `store` because core defines this interface and a Postgres version of it. */
   mandates: MandateStore
   /** Everything else the gateway remembers: decisions, approvals, jobs, negotiations, tokens, services, the freeze flag. */
@@ -55,6 +58,11 @@ const SignedReply = z.union([
 
 /** An agent that has said nothing and sent no heartbeat for this long has stopped. Its heartbeat runs every 20 s (e2e/src/live-app.ts). */
 export const TASK_LEASE_MS = 90_000
+/** An agent's name is a chat room's name: it must be safe in a URL, a log line and a filename. */
+export const AGENT_NAME = /^[a-z0-9][a-z0-9-]{1,23}$/
+const HOSTED_CACHE_MS = 3000
+/** The runner says hello every 15 s; two missed hellos and the phone shows the owner's computer as offline. */
+export const RUNNER_ONLINE_MS = 45_000
 export const ABANDONED_TEXT = 'Tollgate: the agent stopped before it answered this. Nothing is paid without your yes; Activity shows anything that was. Send it again when the agent is running.'
 
 export type Out = { status: 200 | 201 | 400 | 401 | 403 | 404 | 409 | 422 | 423 | 502 | 503; body: unknown }
@@ -124,7 +132,7 @@ export class Gateway {
 
   // ---- mandates --------------------------------------------------------------------------
 
-  async createMandate(raw: unknown): Promise<Out> {
+  async createMandate(raw: unknown, opts: { issueToken?: boolean } = {}): Promise<Out> {
     const parsed = MandateSchema.safeParse(raw)
     if (!parsed.success) return fail(400, 'invalid_mandate', `${parsed.error.issues[0]?.path.join('.') || 'mandate'}: ${parsed.error.issues[0]?.message}`)
     const spec = parsed.data
@@ -132,9 +140,139 @@ export class Gateway {
     if (await this.d.mandates.get(spec.id)) return fail(409, 'mandate_exists', `mandate ${spec.id} already exists: create a new id`)
     await this.d.ledger.openBudget(spec.id, toMicro(spec.budget.total))
     await this.d.mandates.put({ spec, status: 'active' })
-    const agentToken = await this.d.tokens.issueAgent(spec.id, spec.agentId)
+    // A hosted agent (answered by the owner's runner) never gets a key of its own: nobody holds it, so nobody can leak it.
+    const agentToken = opts.issueToken === false ? undefined : await this.d.tokens.issueAgent(spec.id, spec.agentId)
     await this.audit('mandate.created', { mandateId: spec.id, agentId: spec.agentId, version: spec.version, budget: spec.budget.total, currency: spec.budget.currency })
-    return ok({ mandate: spec, agentToken, note: 'the agent token is shown once; only its hash is kept' }, 201)
+    return ok({ mandate: spec, ...(agentToken ? { agentToken, note: 'the agent token is shown once; only its hash is kept' } : {}) }, 201)
+  }
+
+  // ---- agents: a chat room with a name, and who answers it -------------------------------------
+
+  /** Known hosted/active mandates are looked up on every runner call; this keeps that to one database read every few seconds. */
+  private hostedCache: { at: number; rows: { mandateId: string; agentId: string; brain: string | null }[] } | undefined
+
+  /** Every running (not ended, not a hired child) mandate whose agent is hosted: the ones the runner answers. */
+  async hostedMandates(): Promise<{ mandateId: string; agentId: string; brain: string | null }[]> {
+    const now = this.d.clock().getTime()
+    if (this.hostedCache && now - this.hostedCache.at < HOSTED_CACHE_MS) return this.hostedCache.rows
+    const [profiles, mandates] = await Promise.all([this.d.store.agents.list(), this.d.mandates.all()])
+    const hosted = new Map(profiles.filter(p => p.mode === 'hosted').map(p => [p.name, p]))
+    const rows = mandates.filter(m => !m.spec.parentId && this.shownStatus(m) === 'active' && hosted.has(m.spec.agentId))
+      .map(m => ({ mandateId: m.spec.id, agentId: m.spec.agentId, brain: hosted.get(m.spec.agentId)?.brain ?? null }))
+    this.hostedCache = { at: now, rows }
+    return rows
+  }
+
+  /** The agent a runner may act as for this one call, or undefined: the mandate must be running, original (not a hired child) and hosted. */
+  async hostedAgent(mandateId: string): Promise<Agent | undefined> {
+    const h = (await this.hostedMandates()).find(x => x.mandateId === mandateId)
+    return h ? { mandateId: h.mandateId, agentId: h.agentId } : undefined
+  }
+
+  private async runsOf(name: string) { return (await this.d.mandates.all()).filter(m => m.spec.agentId === name && !m.spec.parentId) }
+  private async runningOf(name: string) { return (await this.runsOf(name)).find(m => this.shownStatus(m) === 'active') }
+
+  /** Is this the name of a brain the runner offers? Unknown when the runner has never checked in: then any well-formed name is accepted and the runner answers for itself. */
+  private async brainProblem(brain: string): Promise<Out | undefined> {
+    const known = (await this.d.store.agents.runner())?.brains
+    if (!known || known.length === 0 || known.some(b => b.id === brain)) return undefined
+    return fail(400, 'unknown_brain', `Your computer does not offer "${brain}". It offers: ${known.map(b => b.id).join(', ')}.`)
+  }
+
+  /**
+   * New chat room: the owner's mandate (money rules) plus who answers it. hosted: the owner's runner answers with `brain`, and no key
+   * is made. external: the owner's own program answers, and its key is returned once. A name that is already running is refused;
+   * a name whose runs have all ended starts a fresh run in the same chat.
+   */
+  async createAgent(a: { mode: AgentMode; brain?: string | undefined; mandate: unknown }): Promise<Out> {
+    const name = (a.mandate as { agentId?: unknown } | null)?.agentId
+    if (typeof name !== 'string' || !AGENT_NAME.test(name)) return fail(400, 'invalid_agent', 'agentId: use 2 to 24 lowercase letters, numbers or dashes, starting with a letter or number')
+    // Two taps on "Start chat" at the same moment would both see "not running" and make two runs of one name. One at a time per name.
+    return this.d.store.locks.run(`agent:create:${name}`, () => this.createAgentNow(name, a))
+  }
+
+  private async createAgentNow(name: string, a: { mode: AgentMode; brain?: string | undefined; mandate: unknown }): Promise<Out> {
+    if (await this.runningOf(name)) return fail(409, 'agent_running', `${name} is already running. Open its chat, or stop it first.`)
+    if (a.mode === 'external' && a.brain) return fail(400, 'invalid_agent', 'an agent with its own key has no brain to choose')
+    if (a.brain) { const bad = await this.brainProblem(a.brain); if (bad) return bad }
+    const made = await this.createMandate(a.mandate, { issueToken: a.mode === 'external' })
+    if (made.status !== 201) return made
+    const agent: AgentProfile = { name, mode: a.mode, brain: a.mode === 'hosted' ? (a.brain ?? null) : null, createdAt: this.d.clock().toISOString(), archived: false }
+    await this.d.store.agents.put(agent)
+    this.hostedCache = undefined
+    await this.audit('agent.created', { agentId: name, mode: agent.mode, brain: agent.brain })
+    return ok({ ...(made.body as object), agent }, 201)
+  }
+
+  /**
+   * Change who answers an agent: another brain, or hosted <-> external. Switching keeps ONE answerer: to hosted revokes the agent's own
+   * key; to external makes a new key (returned once). A legacy agent with no profile is adopted here. */
+  async updateAgent(name: string, patch: { brain?: string | null | undefined; mode?: AgentMode | undefined }): Promise<Out> {
+    if ((await this.runsOf(name)).length === 0) return fail(404, 'not_found', `no agent named ${name}`)
+    const prof = (await this.d.store.agents.get(name)) ?? { name, mode: 'external' as const, brain: null, createdAt: this.d.clock().toISOString(), archived: false }
+    const running = await this.runningOf(name)
+    const next: AgentProfile = { ...prof }
+    let agentToken: string | undefined
+    if (patch.brain) { const bad = await this.brainProblem(patch.brain); if (bad) return bad }
+    if (patch.mode && patch.mode !== prof.mode) {
+      if (!running) return fail(409, 'agent_ended', `${name} has ended. Start it again first.`)
+      if (patch.mode === 'hosted') await this.d.tokens.revokeMandate(running.spec.id)
+      else agentToken = await this.d.tokens.issueAgent(running.spec.id, name)
+      next.mode = patch.mode
+    }
+    if (patch.brain !== undefined) next.brain = patch.brain
+    if (next.mode === 'external') next.brain = null
+    await this.d.store.agents.put(next)
+    this.hostedCache = undefined
+    await this.audit('agent.updated', { agentId: name, mode: next.mode, brain: next.brain })
+    return ok({ agent: next, ...(agentToken ? { agentToken, note: 'the agent token is shown once; only its hash is kept' } : {}) })
+  }
+
+  /** A fresh key for an agent that runs on the owner's own program (a lost key, or a leaked one). The old key stops working at once. */
+  async rotateAgentKey(name: string): Promise<Out> {
+    const prof = await this.d.store.agents.get(name)
+    if (prof && prof.mode === 'hosted') return fail(409, 'hosted', `${name} runs on your computer and has no key to replace.`)
+    const running = await this.runningOf(name)
+    if (!running) return fail(404, 'not_found', `${name} is not running, so there is no key to replace.`)
+    await this.d.tokens.revokeMandate(running.spec.id)
+    const agentToken = await this.d.tokens.issueAgent(running.spec.id, name)
+    await this.audit('agent.key_replaced', { agentId: name, mandateId: running.spec.id })
+    return ok({ agentToken, note: 'the agent token is shown once; only its hash is kept' })
+  }
+
+  /** Hide an ended agent from the owner's list (its chat and records stay), or bring it back. A running agent must be stopped first. */
+  async archiveAgent(name: string, archived: boolean): Promise<Out> {
+    if ((await this.runsOf(name)).length === 0) return fail(404, 'not_found', `no agent named ${name}`)
+    if (archived && (await this.runningOf(name))) return fail(409, 'agent_running', `${name} is still running. Stop it first.`)
+    const prof = await this.d.store.agents.get(name)
+    if (prof) await this.d.store.agents.setArchived(name, archived)
+    else await this.d.store.agents.put({ name, mode: 'external', brain: null, createdAt: this.d.clock().toISOString(), archived })
+    await this.audit(archived ? 'agent.archived' : 'agent.restored', { agentId: name })
+    return ok({ name, archived })
+  }
+
+  /** The runner says which brains it offers, and that it is alive. Not audited: it repeats every 15 seconds. */
+  async runnerHello(brains: BrainInfo[]): Promise<Out> {
+    await this.d.store.agents.setRunner({ brains, at: this.d.clock().toISOString() })
+    return ok({ ok: true })
+  }
+
+  /** What the phone shows when choosing who answers a new agent, and whether the owner's computer is answering at all right now. */
+  async listBrains(): Promise<Out> {
+    const h = await this.d.store.agents.runner()
+    const online = !!h && this.d.clock().getTime() - Date.parse(h.at) < RUNNER_ONLINE_MS
+    return ok({ brains: h?.brains ?? [], online, lastSeen: h?.at ?? null, runnerEnabled: this.d.tokens.runnerEnabled })
+  }
+
+  /** The runner asks for work from ANY hosted agent. Claims at most one task; says which agent, and which brain should answer it. */
+  async runnerNextTask(busy: readonly string[] = []): Promise<Out> {
+    // An agent the runner is already working for is left alone: its next message waits its turn, other agents' messages do not.
+    const hosted = await this.hostedMandates()
+    const task = await this.d.store.tasks.claimNextAny(hosted.map(h => h.mandateId).filter(id => !busy.includes(id)), this.d.clock().toISOString())
+    if (!task) return ok({ task: null })
+    const h = hosted.find(x => x.mandateId === task.mandateId)
+    await this.audit('task.claimed', { taskId: task.id, mandateId: task.mandateId })
+    return ok({ task, mandateId: task.mandateId, agentId: h?.agentId ?? null, brain: h?.brain ?? null })
   }
 
   /** For the owner's dashboard: every mandate with its money, children included. */
@@ -145,9 +283,12 @@ export class Gateway {
 
   async listMandates(): Promise<Out> {
     // Balances are read together, not one after another: on a hosted database each read is a 200-500 ms round trip.
-    const rows = await Promise.all((await this.d.mandates.all()).map(async m => {
+    const [all, profiles] = await Promise.all([this.d.mandates.all(), this.d.store.agents.list()])
+    const profile = new Map(profiles.map(p => [p.name, p]))
+    const rows = await Promise.all(all.map(async m => {
       const b = await this.d.ledger.balance(m.spec.id)
-      return { id: m.spec.id, agentId: m.spec.agentId, status: this.shownStatus(m), ...(m.spec.parentId ? { parentId: m.spec.parentId } : {}), validUntil: m.spec.validUntil, currency: m.spec.budget.currency, perPayment: m.spec.budget.perPayment, balance: b ? this.money(b) : null }
+      const p = m.spec.parentId ? undefined : profile.get(m.spec.agentId)
+      return { id: m.spec.id, agentId: m.spec.agentId, status: this.shownStatus(m), ...(p ? { mode: p.mode, brain: p.brain, archived: p.archived } : {}), ...(m.spec.parentId ? { parentId: m.spec.parentId } : {}), validUntil: m.spec.validUntil, currency: m.spec.budget.currency, perPayment: m.spec.budget.perPayment, balance: b ? this.money(b) : null }
     }))
     return ok({ mandates: rows })
   }
@@ -163,6 +304,7 @@ export class Gateway {
     const tree = await this.tree(id)
     await closeMandate(this.delegation, id, 'revoke')
     for (const m of tree) await this.d.tokens.revokeMandate(m)
+    this.hostedCache = undefined // a revoked agent must stop being served at once, not after the cache expires
     await this.audit('mandate.revoked', { mandateId: id, cascaded: tree.filter(x => x !== id) })
     return ok({ revoked: tree })
   }
@@ -579,15 +721,36 @@ export class Gateway {
   // A task is words, not money. Whatever the agent decides to buy still goes through /v1/authorize, the twelve checks and the owner's
   // approval. The agent only ever sees its own mandate's tasks: the mandate comes from its token, never from the request.
 
-  async createTask(mandateId: string, text: string): Promise<Out> {
+  async createTask(mandateId: string, text: string, attachmentIds: readonly string[] = []): Promise<Out> {
     const m = await this.d.mandates.get(mandateId)
     if (!m) return fail(404, 'not_found', `no mandate ${mandateId}`)
     if (this.shownStatus(m) !== 'active') return fail(409, 'agent_ended', 'This agent has ended and cannot take messages. Message an active agent.')
+    const refs = await this.d.store.attachments.refs(attachmentIds)
+    if (refs.length !== new Set(attachmentIds).size) return fail(400, 'unknown_attachment', 'One of the attached photos was not found. Attach it again.')
     const at = this.d.clock().toISOString()
-    const task = { id: `task_${uuid()}`, mandateId, status: 'queued' as const, createdAt: at, updatedAt: at, messages: [{ at, from: 'owner' as const, text }] }
+    const task = { id: `task_${uuid()}`, mandateId, status: 'queued' as const, createdAt: at, updatedAt: at, messages: [{ at, from: 'owner' as const, text, ...(refs.length ? { attachments: refs } : {}) }] }
     if (!(await this.d.store.tasks.create(task))) return fail(409, 'task_exists', 'try again')
     await this.audit('task.created', { taskId: task.id, mandateId, chars: text.length }) // the words stay out of the audit chain
     return ok({ task }, 201)
+  }
+
+  /** Store a photo or file from the owner, sealed. The audit log records that it arrived, never its name or contents. */
+  async uploadAttachment(a: { name: string; contentType: string; bytes: Buffer }): Promise<Out> {
+    if (!this.d.attachmentKey) return fail(503, 'attachments_off', 'Photos are off on this gateway: add GATEWAY_ATTACHMENT_KEY to .env (openssl rand -base64 32) and restart it.')
+    const ref = { id: `att_${uuid()}`, name: a.name, contentType: a.contentType, size: a.bytes.length }
+    await this.d.store.attachments.put({ ...ref, ...seal(this.d.attachmentKey, a.bytes), createdAt: this.d.clock().toISOString() })
+    await this.audit('attachment.stored', { attachmentId: ref.id, contentType: ref.contentType, size: ref.size })
+    return ok({ attachment: ref }, 201)
+  }
+
+  /** The owner's own attachment, opened. Agents have no route to this: sharing with a seller needs the owner's approval. */
+  async readAttachment(id: string): Promise<{ ok: true; contentType: string; bytes: Buffer } | { ok: false; out: Out }> {
+    if (!this.d.attachmentKey) return { ok: false, out: fail(503, 'attachments_off', 'Photos are off on this gateway.') }
+    const a = await this.d.store.attachments.get(id)
+    if (!a) return { ok: false, out: fail(404, 'not_found', `no attachment ${id}`) }
+    const bytes = open(this.d.attachmentKey, a)
+    if (!bytes) return { ok: false, out: fail(409, 'attachment_unreadable', 'This photo cannot be opened: it was changed, or the attachment key changed.') }
+    return { ok: true, contentType: a.contentType, bytes }
   }
 
   async listTasks(mandateId: string, limit: number): Promise<Out> {
@@ -627,8 +790,15 @@ export class Gateway {
     const shown = runs.map(m => ({ id: m.spec.id, status: this.shownStatus(m), validFrom: m.spec.validFrom, validUntil: m.spec.validUntil }))
     const running = shown.filter(r => r.status === 'active').sort((a, b) => b.validFrom.localeCompare(a.validFrom))[0]
     await this.closeAbandonedTasks()
-    const tasks = await this.d.store.tasks.listForMandates(shown.map(r => r.id), limit)
-    return ok({ agentId, runningMandateId: running?.id ?? null, runs: shown, tasks })
+    const [tasks, profile] = await Promise.all([this.d.store.tasks.listForMandates(shown.map(r => r.id), limit), this.d.store.agents.get(agentId)])
+    // `agent`: who answers this chat (hosted by the owner's computer with a brain, or the owner's own program). Absent for an older agent.
+    return ok({ agentId, runningMandateId: running?.id ?? null, runs: shown, tasks, ...(profile ? { agent: { mode: profile.mode, brain: profile.brain, archived: profile.archived } } : {}) })
+  }
+
+  /** The agent reads the chat of its OWN name (every run of it), to answer with context. Never another agent's. */
+  async chatHistory(agent: Agent, limit: number): Promise<Out> {
+    const runs = (await this.d.mandates.all()).filter(m => m.spec.agentId === agent.agentId && !m.spec.parentId).map(m => m.spec.id)
+    return ok({ tasks: await this.d.store.tasks.listForMandates(runs, limit) })
   }
 
   /** The agent asks for work. 200 with { task: null } when there is none, so polling is cheap and never an error. */

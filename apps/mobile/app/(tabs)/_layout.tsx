@@ -1,5 +1,7 @@
 import { NativeTabs } from 'expo-router/native-tabs'
+import { View } from 'react-native'
 import { useAlerts } from '../../src/state/alerts'
+import { SyncPill } from '../../src/ui/SyncPill'
 import { C } from '../../src/ui/theme'
 
 /**
@@ -14,6 +16,7 @@ import { C } from '../../src/ui/theme'
 export default function TabsLayout() {
   useAlerts()
   return (
+    <View style={{ flex: 1 }}>
     <NativeTabs tintColor={C.text} minimizeBehavior="onScrollDown">
       <NativeTabs.Trigger name="home">
         <NativeTabs.Trigger.Icon sf={{ default: 'house', selected: 'house.fill' }} />
@@ -32,5 +35,8 @@ export default function TabsLayout() {
         <NativeTabs.Trigger.Label>Account</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
     </NativeTabs>
+    {/* After switching address: "Loading your data from …" above the tab bar until fresh data has arrived. */}
+    <SyncPill />
+    </View>
   )
 }

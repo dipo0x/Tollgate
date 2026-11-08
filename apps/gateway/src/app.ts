@@ -1,3 +1,4 @@
+import { ATTACHMENT_TYPES, MAX_ATTACHMENT_BYTES } from './attachments.ts'
 import { Hono, type Context } from 'hono'
 import { bodyLimit } from 'hono/body-limit'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
@@ -12,6 +13,7 @@ import { dashboardAsset, dashboardFont, DASHBOARD_FONTS } from './dashboard.ts'
 type Env = { Variables: { who: Principal; requestId: string } }
 type Agent = Extract<Principal, { role: 'agent' }>
 
+const safeJson = (t: string): unknown => { try { return JSON.parse(t) } catch { return undefined } }
 const err = (status: Out['status'], code: string, message: string): Out => ({ status, body: { error: { code, message } } })
 const amount = z.string().regex(/^\d{1,15}(\.\d{1,6})?$/, 'must be a decimal with at most 6 places')
 
@@ -35,7 +37,21 @@ const HistoryBody = z.strictObject({
   id: z.string().min(1).max(128), kind: z.enum(['payment', 'job']), occurredAt: z.string().datetime(), title: z.string().min(1).max(200), amount, currency: z.string().min(1).max(32),
   network: z.string().min(1).max(32), txHash: z.string().max(128).optional(), explorer: z.string().url().max(300).optional(), status: z.string().min(1).max(64), note: z.string().min(1).max(500),
 })
-const TaskBody = z.strictObject({ text: z.string().trim().min(1, 'say what the agent should do').max(500) })
+const TaskBody = z.strictObject({
+  text: z.string().trim().max(500).default(''),
+  attachments: z.array(z.string().regex(/^att_[0-9a-f-]{36}$/)).max(4).default([]),
+}).refine(b => b.text.length > 0 || b.attachments.length > 0, { message: 'say what the agent should do, or attach a photo', path: ['text'] })
+const AttachmentBody = z.strictObject({
+  name: z.string().trim().min(1).max(120),
+  contentType: z.enum(ATTACHMENT_TYPES),
+  data: z.string().min(1).max(Math.ceil(MAX_ATTACHMENT_BYTES * 4 / 3) + 8).regex(/^[A-Za-z0-9+/]+={0,2}$/, 'must be base64'),
+})
+const BrainId = z.string().regex(/^[a-z0-9][a-z0-9-]{0,31}$/, 'a brain id is lowercase letters, numbers and dashes')
+const CreateAgentBody = z.strictObject({ mode: z.enum(['hosted', 'external']), brain: BrainId.optional(), mandate: z.unknown() })
+const AgentSettingsBody = z.strictObject({ brain: BrainId.nullable().optional(), mode: z.enum(['hosted', 'external']).optional() }).refine(b => b.brain !== undefined || b.mode !== undefined, { message: 'say what to change: brain or mode' })
+const NextBody = z.strictObject({ busy: z.array(z.string().max(128)).max(64).default([]) })
+const ArchiveBody = z.strictObject({ archived: z.boolean() })
+const HelloBody = z.strictObject({ brains: z.array(z.strictObject({ id: BrainId, label: z.string().min(1).max(40), detail: z.string().max(80) })).max(16) })
 const TaskReplyBody = z.strictObject({ text: z.string().trim().min(1).max(1000), status: z.enum(['working', 'done', 'failed']).optional(), decisionId: z.string().min(1).max(128).optional() })
 const JobBody = z.strictObject({ id: z.string().min(1).max(128), mandateId: z.string().min(1).max(128), goal: z.string().max(500), receivingAddress: z.string().min(1).max(256), price: amount, currency: z.string().min(1).max(32) })
 const wholeNumber = z.string().regex(/^\d{1,30}$/, 'must be a whole number written as a string')
@@ -74,7 +90,7 @@ export function createApp(deps: GatewayDeps) {
   const reads = gw.reads // owned by the Gateway, so its background jobs (recovery, expiry sweeps) can empty it too
   app.use('*', async (c, next) => {
     // An agent polling an empty inbox (every 2 s under pnpm live:app) changes nothing; that route empties the cache itself when it claims.
-    if (c.req.method === 'GET' || c.req.method === 'HEAD' || c.req.path === '/v1/tasks/next') return next()
+    if (c.req.method === 'GET' || c.req.method === 'HEAD' || c.req.path === '/v1/tasks/next' || c.req.path === '/v1/runner/tasks/next' || c.req.path === '/v1/runner/hello') return next()
     reads.invalidate()
     try { await next() } finally { reads.invalidate() }
   })
@@ -97,23 +113,46 @@ export function createApp(deps: GatewayDeps) {
   }
 
   // ---- helpers: who is calling, and what did they send -----------------------------------
-  const who = (c: Context<Env>) => deps.tokens.resolve(bearer(c.req.header('authorization')))
   // (resolve is async: an agent token is looked up in the store, so it still works after a restart)
+  /**
+   * Who is calling. The runner's key (the program on the owner's computer that answers hosted agents) is special: on its own it is
+   * a `runner`, good only for the /v1/runner routes. With `x-tollgate-mandate: <id>` it becomes THAT agent for this one call, but only
+   * if the mandate is running, original (not a hired child) and hosted. It can never become the operator, and never an agent the
+   * owner connected with its own key. So everything an agent route checks (its mandate, its budget, the twelve checks) still applies.
+   */
+  const authenticate = async (c: Context<Env>): Promise<{ p: Principal } | { out: Out }> => {
+    const p = await deps.tokens.resolve(bearer(c.req.header('authorization')))
+    if (!p) return { out: err(401, 'unauthorized', 'missing or invalid token') }
+    if (p.role !== 'runner') return { p }
+    const named = c.req.header('x-tollgate-mandate')
+    if (!named) return { p }
+    const a = await gw.hostedAgent(named)
+    return a ? { p: { role: 'agent', ...a } } : { out: err(403, 'not_hosted', 'the runner can only act for a running agent that is hosted on your computer') }
+  }
   const asOperator = (h: (c: Context<Env>) => Promise<Response> | Response) => async (c: Context<Env>) => {
-    const p = await who(c)
-    if (!p) return send(c, err(401, 'unauthorized', 'missing or invalid token'))
-    if (p.role !== 'operator') return send(c, err(403, 'forbidden', 'this needs the operator token'))
+    const r = await authenticate(c)
+    if ('out' in r) return send(c, r.out)
+    if (r.p.role !== 'operator') return send(c, err(403, 'forbidden', 'this needs the operator token'))
     return h(c)
   }
   const asAgent = (h: (c: Context<Env>, a: Agent) => Promise<Response> | Response) => async (c: Context<Env>) => {
-    const p = await who(c)
-    if (!p) return send(c, err(401, 'unauthorized', 'missing or invalid token'))
-    if (p.role !== 'agent') return send(c, err(403, 'forbidden', 'this needs an agent token'))
-    return h(c, p)
+    const r = await authenticate(c)
+    if ('out' in r) return send(c, r.out)
+    if (r.p.role !== 'agent') return send(c, err(403, 'forbidden', 'this needs an agent token'))
+    return h(c, r.p)
   }
   const asEither = (h: (c: Context<Env>, p: Principal) => Promise<Response> | Response) => async (c: Context<Env>) => {
-    const p = await who(c)
-    return p ? h(c, p) : send(c, err(401, 'unauthorized', 'missing or invalid token'))
+    const r = await authenticate(c)
+    if ('out' in r) return send(c, r.out)
+    // A runner that has not named an agent is neither the owner nor an agent: never fall through to the owner's branch.
+    if (r.p.role === 'runner') return send(c, err(403, 'forbidden', 'name the agent with x-tollgate-mandate'))
+    return h(c, r.p)
+  }
+  const asRunner = (h: (c: Context<Env>) => Promise<Response> | Response) => async (c: Context<Env>) => {
+    const r = await authenticate(c)
+    if ('out' in r) return send(c, r.out)
+    if (r.p.role !== 'runner') return send(c, err(403, 'forbidden', 'this needs the runner token'))
+    return h(c)
   }
   async function parse<S extends z.ZodType>(c: Context<Env>, schema: S): Promise<{ ok: true; data: z.infer<S> } | { ok: false; res: Response }> {
     let raw: unknown
@@ -203,11 +242,39 @@ export function createApp(deps: GatewayDeps) {
 
   // ---- jobs and earning ------------------------------------------------------------------
   app.post('/v1/jobs', asOperator(async c => { const b = await parse(c, JobBody); return b.ok ? send(c, await gw.createJob(b.data)) : b.res }))
-  app.post('/v1/agents/:mandateId/tasks', asOperator(async c => { const b = await parse(c, TaskBody); return b.ok ? send(c, await gw.createTask(P(c, 'mandateId'), b.data.text)) : b.res }))
+  app.post('/v1/agents/:mandateId/tasks', asOperator(async c => { const b = await parse(c, TaskBody); return b.ok ? send(c, await gw.createTask(P(c, 'mandateId'), b.data.text, b.data.attachments)) : b.res }))
+  // Photos and files the owner attaches in the chat. Owner only: no agent route reads them (sharing needs the owner's approval).
+  app.post('/v1/attachments', asOperator(async c => {
+    const b = await parse(c, AttachmentBody)
+    if (!b.ok) return b.res
+    const bytes = Buffer.from(b.data.data, 'base64')
+    if (bytes.length === 0 || bytes.length > MAX_ATTACHMENT_BYTES) return send(c, err(400, 'too_large', `A photo can be at most ${MAX_ATTACHMENT_BYTES / 1024 / 1024} MB.`))
+    return send(c, await gw.uploadAttachment({ name: b.data.name, contentType: b.data.contentType, bytes }))
+  }))
+  app.get('/v1/attachments/:id', asOperator(async c => {
+    const r = await gw.readAttachment(P(c, 'id'))
+    if (!r.ok) return send(c, r.out)
+    return c.body(new Uint8Array(r.bytes), 200, { 'content-type': r.contentType, 'cache-control': 'private, no-store', 'x-content-type-options': 'nosniff' })
+  }))
   // The chat is read live, never from the read cache: the agent replies through its own gateway, whose writes this one cannot see.
   app.get('/v1/agents/:mandateId/tasks', asOperator(async c => send(c, await gw.listTasks(P(c, 'mandateId'), Math.min(Number(c.req.query('limit') ?? 50) || 50, 200)))))
   app.get('/v1/conversations/:agentId', asOperator(async c => send(c, await gw.conversation(P(c, 'agentId'), Math.min(Number(c.req.query('limit') ?? 100) || 100, 300)))))
+  // ---- agents: a chat room per name, and who answers it ---------------------------------------
+  app.post('/v1/agents', asOperator(async c => { const b = await parse(c, CreateAgentBody); return b.ok ? send(c, await gw.createAgent({ mode: b.data.mode, brain: b.data.brain, mandate: b.data.mandate })) : b.res }))
+  app.post('/v1/agents/:name/settings', asOperator(async c => { const b = await parse(c, AgentSettingsBody); return b.ok ? send(c, await gw.updateAgent(P(c, 'name'), b.data)) : b.res }))
+  app.post('/v1/agents/:name/key', asOperator(async c => send(c, await gw.rotateAgentKey(P(c, 'name')))))
+  app.post('/v1/agents/:name/archive', asOperator(async c => { const b = await parse(c, ArchiveBody); return b.ok ? send(c, await gw.archiveAgent(P(c, 'name'), b.data.archived)) : b.res }))
+  // Not cached: it is one small row, and the runner's hello (every 15 s) must show at once.
+  app.get('/v1/brains', asOperator(async c => send(c, await gw.listBrains())))
+  // The runner (the owner's agent host): says which brains it offers, and collects messages for every hosted agent in one call.
+  app.post('/v1/runner/hello', asRunner(async c => { const b = await parse(c, HelloBody); return b.ok ? send(c, await gw.runnerHello(b.data.brains)) : b.res }))
+  app.post('/v1/runner/tasks/next', asRunner(async c => {
+    // The body is optional ("nobody is busy"); when it is there it must be exactly { busy: [mandate ids] }.
+    const raw = await c.req.text(); const b = NextBody.safeParse(raw.trim() ? safeJson(raw) : {})
+    if (!b.success) return send(c, err(400, 'invalid_request', `body: ${b.error.issues[0]?.message}`))
+    const o = await gw.runnerNextTask(b.data.busy); if ((o.body as { task?: unknown }).task) reads.invalidate(); return send(c, o) }))
   app.post('/v1/tasks/next', asAgent(async (c, a) => { const o = await gw.nextTask(a); if ((o.body as { task?: unknown }).task) reads.invalidate(); return send(c, o) }))
+  app.get('/v1/tasks/history', asAgent(async (c, a) => send(c, await gw.chatHistory(a, Math.min(Number(c.req.query('limit') ?? 50) || 50, 200)))))
   app.post('/v1/tasks/:id/alive', asAgent(async (c, a) => send(c, await gw.heartbeatTask(a, P(c, 'id')))))
   app.post('/v1/tasks/:id/reply', asAgent(async (c, a) => { const b = await parse(c, TaskReplyBody); return b.ok ? send(c, await gw.replyTask(a, P(c, 'id'), b.data)) : b.res }))
   app.get('/v1/history', asOperator(cached(async c => send(c, await gw.listHistory(Math.min(Number(c.req.query('limit') ?? 100) || 100, 500))))))
