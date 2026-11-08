@@ -1,79 +1,79 @@
-# Gateway API
+# API overview
 
-The gateway is the only component an agent talks to. All routes are JSON over HTTP, under `/v1`.
+The gateway is the only component an agent, the dashboard and the phone talk to. It is a JSON API over HTTP, mounted under `/v1`.
 
-## Who may call what
+## Base URL
 
-| Key | Held by | Can do |
+Every example in these docs uses a variable:
+
+```bash
+GW=https://gateway.example.com     # your gateway's address
+```
+
+| Where it runs | Base URL |
+| --- | --- |
+| Your own computer, default | `http://127.0.0.1:8787` |
+| Your computer, reachable by a phone on the same Wi-Fi | `http://192.168.x.x:8787` or `http://your-computer.local:8787` (`GATEWAY_HOST=0.0.0.0`) |
+| A server behind https | `https://gateway.example.com` |
+
+The path part never changes. Only the base differs. See [Deploying to a server](/deploy/).
+
+## Keys
+
+Send the key in every request except `GET /healthz`:
+
+```
+Authorization: Bearer <key>
+```
+
+| Key | Held by | Is for |
 | --- | --- | --- |
-| **Operator** | The owner (the dashboard and phone app) | Write mandates, approve, freeze, add shops, read everything |
-| **Agent** | One agent, tied to one mandate | Ask to pay, negotiate, report work and revenue, read its own chat |
-| **Runner** | The agent host on your computer (`pnpm live:app`) | Collect tasks for hosted agents |
+| **Operator** | The owner: the dashboard and the phone app | Writing mandates, approving, freezing, adding shops, reading everything. Set by `GATEWAY_OPERATOR_TOKEN` (at least 16 characters). |
+| **Agent** | One agent, tied to one mandate | Asking to pay, negotiating, reporting work and revenue, reading its own chat. Shown **once** when the mandate is created; only its hash is stored. |
+| **Runner** | The agent host on the owner's computer | Collecting tasks for hosted agents. Set by `GATEWAY_RUNNER_TOKEN` (at least 16 characters). |
 
-Send the key as `Authorization: Bearer <key>`. An agent key is shown once when the mandate is created; only its hash is stored. A hosted agent has no key of its own.
+**The runner is deliberately limited.** On its own it is good only for the `/v1/runner` routes. With the header `x-tollgate-mandate: <mandateId>` it acts as *that* agent for one call, but only if the mandate is running, is an original (not a hired child) and is a hosted agent. It can never become the operator, and never an agent that was connected with its own key. So every agent route still applies that agent's own mandate, budget and twelve checks.
 
-## Payments
+A hosted agent has no key of its own: nobody holds one, so nobody can leak one.
 
-| Route | Key | Does |
-| --- | --- | --- |
-| `POST /v1/authorize` | Agent | Runs the twelve checks on a bill. Returns `ALLOW`, `DENY` or `NEEDS_APPROVAL` and the evidence. Optional `negotiationId` holds the bill to an agreed deal. |
-| `POST /v1/payments/:decisionId/sign` | Agent | Asks the signer to sign for a stored `ALLOW`. Works once. |
-| `POST /v1/payments/:decisionId/reconcile` | Agent or operator | Settles or releases the payment according to 1Click's own status. The agent cannot report a payment as settled itself. |
-| `GET /v1/decisions`, `/v1/decisions/:id` | Operator | The decisions, with every check's evidence. |
-| `GET /v1/approvals` | Operator | Payments waiting for a person. |
-| `POST /v1/approvals/:id/approve`, `/reject` | Operator | Answer one, with a required reason. |
-| `POST /v1/freeze`, `/v1/unfreeze` | Operator | The kill switch. |
+A route accepts one kind of key, or two (written **Operator or agent** below). A wrong kind returns `403 forbidden`; a missing or unknown key returns `401 unauthorized`.
 
-## Mandates
+## Requests
 
-| Route | Key | Does |
-| --- | --- | --- |
-| `POST /v1/mandates` | Operator | Creates a mandate. Returns the agent key once. |
-| `GET /v1/mandates`, `/v1/mandates/:id` | Operator (agent for its own) | Lists or reads mandates and their money. |
-| `POST /v1/mandates/:id/revoke` | Operator | Stops the agent, its workers, and every key under them. |
-| `POST /v1/mandates/:id/delegate` | Agent or operator | Hires a worker with a smaller child mandate. |
+- Bodies are JSON with `Content-Type: application/json`.
+- Bodies over 64 KB are refused with `413 too_large`.
+- Request schemas are strict: **an unknown field is an error**, so a typo fails loudly instead of silently doing nothing.
+- Amounts are **strings** with at most 6 decimal places, like `"1.00"`. Never JSON numbers.
+- Times are ISO 8601 in UTC, like `2026-11-08T12:00:00Z`.
 
-## Shops
+## Responses
 
-| Route | Key | Does |
-| --- | --- | --- |
-| `POST /v1/services` | Operator | Registers a shop. It starts `unverified` and off. |
-| `POST /v1/services/:id/probe-result` | Operator | Records the verification level, the payee and the health. |
-| `POST /v1/services/:id/enable`, `/disable` | Operator | Switches a shop on or off. |
-| `GET /v1/services` | Operator | All shops. |
-| `GET /v1/services/planner` | Agent | The shops this agent may see: structured fields only. |
+Success returns the JSON shown on each route. Failure returns:
 
-## Agents and chat
+```json
+{ "error": { "code": "invalid_request", "message": "challenge.amount: must be a decimal with at most 6 places" } }
+```
 
-| Route | Key | Does |
-| --- | --- | --- |
-| `POST /v1/agents` | Operator | Creates an agent (a mandate and a chat room, hosted or your own). |
-| `POST /v1/agents/:name/settings`, `/key`, `/archive` | Operator | Change the brain or mode, get a new key, hide an ended agent. |
-| `GET /v1/brains` | Operator | The brains your computer can run. |
-| `POST /v1/agents/:mandateId/tasks` | Operator | Sends the agent a message, with optional attachments. |
-| `GET /v1/agents/:mandateId/tasks`, `/v1/conversations/:agentId` | Operator | The chat. |
-| `POST /v1/attachments`, `GET /v1/attachments/:id` | Operator | Upload or read a photo. Agents cannot read attachments. |
-| `POST /v1/tasks/next`, `/v1/tasks/:id/reply`, `/v1/tasks/:id/alive`, `GET /v1/tasks/history` | Agent | The four calls an agent of your own uses to answer a chat. |
-| `POST /v1/runner/hello`, `/v1/runner/tasks/next` | Runner | The agent host picks up work for hosted agents. |
+`code` is stable and meant for programs. `message` is for people. All codes are listed in [Error codes](/errors/).
 
-## Negotiation, hiring and earning
+A **refusal is not always an error status**. A payment the gateway declines to allow comes back as `200` with `"decision": "DENY"`, so an agent handles it like any other decision. A refused negotiation message is likewise a normal answer.
 
-| Route | Key | Does |
-| --- | --- | --- |
-| `POST /v1/negotiations/:id/offers` | Agent | Posts one offer, counter, accept or walk. The mandate's ceiling and round limit decide. |
-| `GET /v1/negotiations/:id` | Agent | The full log, refusals included. |
-| `POST /v1/deliverable` | Worker | A hired worker hands in its work for the acceptance check. |
-| `POST /v1/jobs` | Operator | Creates a job with a receiving address the owner chose. |
-| `POST /v1/jobs/:id/revenue` | Agent | Reports a customer receipt. Credited only if settled, fresh, right asset, right payee, enough, and never seen. |
-| `GET /v1/jobs`, `/v1/jobs/:id` | Operator (agent for its own) | Spend, revenue and net per job. |
+## Caching
 
-## Audit and status
+The owner's read routes (`GET /v1/decisions`, `/v1/mandates`, `/v1/status` and similar) are cached for a few seconds (`GATEWAY_READ_CACHE_MS`, default 5000). Any write empties the cache before it runs and again after, so a screen never shows a page from before a change the gateway made. Agent reads, and the chat routes, are never cached.
 
-| Route | Key | Does |
-| --- | --- | --- |
-| `GET /v1/audit` | Operator | The append-only audit entries. |
-| `GET /v1/audit/verify` | Operator | Recomputes the hash chain and reports whether it is intact. |
-| `GET /v1/status`, `/v1/pairing` | Operator | Counters for the dashboard; the addresses a phone can reach. |
-| `GET /healthz` | None | Whether the gateway is up and whether it is frozen. |
+## Logging
 
-Request and reply bodies for the common flows are on the [Quickstart](/quickstart/) and [Spend, negotiate, hire, earn](/economy/) pages. Unknown fields in a request are rejected, so a typo fails loudly.
+The gateway logs method, path, status and timing. It never logs headers or bodies, so a key or a payment request cannot reach a log.
+
+## Pages
+
+| Page | Covers |
+| --- | --- |
+| [Payments](/api-payments/) | authorize, sign, reconcile, decisions, approvals, freeze |
+| [Mandates](/api-mandates/) | create, read, revoke, delegate |
+| [Shops](/api-shops/) | register, probe, enable, list |
+| [Agents and chat](/api-agents/) | agents, tasks, replies, attachments, runner |
+| [Negotiate, hire, earn](/api-economy/) | negotiations, deliverables, jobs, revenue |
+| [Audit and status](/api-ops/) | audit, verify, status, pairing, health |
+| [Error codes](/errors/) | every code, with the fix |

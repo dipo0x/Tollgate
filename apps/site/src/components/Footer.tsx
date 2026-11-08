@@ -27,8 +27,8 @@ export default function Footer({ home = true }: { home?: boolean }) {
             <a href={to('#economy')}>Agent economy</a>
             <a href={to('#phone')}>Phone app</a>
             <a href={to('#setup')}>Setup</a>
-            <a href="/docs/">Docs</a>
-            <a href="/docs/#dashboard">Dashboard</a>
+            <a href="https://docs.trytollgate.xyz/">Docs</a>
+            <a href="https://docs.trytollgate.xyz/dashboard/">Dashboard</a>
             <a href="https://www.npmjs.com/package/trytollgate" target="_blank" rel="noopener noreferrer">npm: trytollgate</a>
           </nav>
           <nav className="ft-col" aria-label="Proof">

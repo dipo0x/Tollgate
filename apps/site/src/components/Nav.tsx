@@ -9,7 +9,7 @@ const LINKS = [
   ['Agent economy', '#economy'],
   ['Phone', '#phone'],
   ['Setup', '#setup'],
-  ['Docs', '/docs/'],
+  ['Docs', 'https://docs.trytollgate.xyz/'],
   ['Benchmark', '#bench'],
   ['FAQ', '#faq'],
 ] as const
@@ -58,7 +58,7 @@ export default function Nav({ home = true }: { home?: boolean }) {
         </a>
         <nav className="nav-links" aria-label="Primary">
           {LINKS.map(([label, href]) => (
-            <a key={href} href={to(href)} {...(!home && href === '/docs/' ? { 'aria-current': 'page' as const } : {})}><span data-t={label}>{label}</span></a>
+            <a key={href} href={to(href)} ><span data-t={label}>{label}</span></a>
           ))}
         </nav>
         <div className="nav-cta">

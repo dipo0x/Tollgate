@@ -77,13 +77,13 @@ prints a table.
 
 ## What the dashboard looks like
 
-This is the owner's dashboard you will open in Step 3 (shown with the demo's simulated data):
+This is the owner's dashboard you will open in Step 3. These screenshots are from the project's own running gateway, not the offline demo, so your numbers will differ:
 
 ![Overview: budget, spend, outcomes and what stopped payments](images/dashboard-overview.jpg)
 
 Click any decision to see the twelve checks and their evidence, as below.
 
-![One blocked payment, with all twelve checks and their evidence](images/dashboard-decision-checks.jpg)
+![One decision, rejected by the owner, with all twelve checks and their evidence](images/dashboard-decision-checks.jpg)
 
 > **Optional: let a model on your own computer run the agent.** `pnpm demo --llm` lets a local model decide whether to buy, how to haggle and what
 > to charge for the report it sells. It needs [Ollama](https://ollama.com) running and one model: `ollama pull qwen2.5:7b` (a one-time download of about

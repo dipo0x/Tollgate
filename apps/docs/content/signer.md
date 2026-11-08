@@ -29,6 +29,34 @@ GATEWAY (trusted)                          SIGNER (separate process, 127.0.0.1)
 | Key file mode 600, git-ignored | The key is never in the repository or in logs. |
 | Service-token authentication | Only the gateway may ask. |
 
+## The route
+
+`POST /v1/sign` is the only route that signs. Only the gateway may call it, with `Authorization: Bearer <SIGNER_SERVICE_TOKEN>`. Bodies over 8 KB are refused. `GET /healthz` returns public identities only (the address, and the NEAR account and public key if it pays from NEAR).
+
+Request: `{ "decisionId", "bind": { … }, "tx": { … } }`. The `tx` holds only a nonce and fee fields (or, on NEAR, a nonce and a block hash or height), all bounded by the signer.
+
+## Refusals
+
+A refusal is an HTTP error with `{ "error": { "code", "message", "field"? } }`. Nothing was signed.
+
+| Code | Status | Meaning |
+| --- | --- | --- |
+| `unauthorized` | 401 | Missing or wrong service token. |
+| `unknown_decision` | 404 | No stored decision with that id. |
+| `already_signed` | 409 | The one-time claim was already taken. |
+| `frozen` | 423 | The kill switch is on. |
+| `not_allowed` | 403 | The stored decision is not an `ALLOW`. |
+| `mandate_inactive` | 403 | The mandate is revoked or expired. |
+| `no_bind` | 403 | The decision has no bound payment. |
+| `bind_mismatch` | 403 | A field in the request differs from the stored decision. |
+| `expired` | 403 | The bill's time ran out. |
+| `unsupported_asset` | 403 | Not a chain and token this signer is set up for. |
+| `invalid_amount`, `invalid_recipient` | 403 | Not a payable amount or address. |
+| `over_signer_cap` | 403 | Above the signer's own `SIGNER_MAX_PER_TX`. |
+| `bad_tx_params` | 403 | Gas or fees above the signer's limits. |
+| `invalid_json`, `invalid_request` | 400 | Unreadable or wrongly shaped body. |
+| `too_large` | 413 | Body over 8 KB. |
+
 ## Rails
 
 Two rails exist:

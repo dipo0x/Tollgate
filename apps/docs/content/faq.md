@@ -55,3 +55,47 @@ One real payment of 0.206712 USDC on NEAR mainnet, one of 0.05 USDC to a market 
 ## How do I know the docs are honest?
 
 Every number traces to a recorded result, simulated parts are labelled, and the [Limits](/limits/) page lists what is not done. If a result has not been measured, it is not stated.
+
+## Do I have to use localhost?
+
+No. `127.0.0.1` is only the default, so a first run is private to your computer. The gateway can run on a server behind https, and every example here uses `$GW` for your gateway's address. The one rule that never changes is that the **signer stays on loopback beside the gateway**. See [Deploying](/deploy/).
+
+## Can I deploy it?
+
+Yes. The gateway and signer run together in one service (`render.yaml` and `scripts/start-hosted.mjs` do this), with Postgres and an https front. Packaging a hosted agent host is on the [Roadmap](/roadmap/).
+
+## What do I give the phone if my gateway is on a server?
+
+Its https address and your owner key. See [Pairing](/phone/#pairing-a-gateway-that-is-not-on-your-wi-fi).
+
+## Where is my money while an agent works?
+
+In the signer's account, which you funded. The mandate's budget is a cap on what an agent may draw; the money does not move until a payment is signed. See [Going live](/going-live/).
+
+## Why was my payment blocked?
+
+Open the decision (phone or dashboard). The check named under "Stopped by" and its evidence say exactly why. Each check is explained in [The twelve checks](/checks/).
+
+## What happens if the gateway goes down?
+
+Nothing is paid: a payment cannot be signed without the gateway's stored `ALLOW`. Money already signed and sent cannot be pulled back. After a restart the gateway recovers; a bill it already allowed resumes rather than paying twice.
+
+## Can two people use one gateway?
+
+There is one owner key. Anyone who has it is the owner. Separate owners need separate gateways today.
+
+## What do I do if I lose the owner key?
+
+Set a new `GATEWAY_OPERATOR_TOKEN` in the gateway's environment and restart it. Re-pair the phone with the new one. Agent keys are separate and keep working.
+
+## How do I rotate an agent's key?
+
+`POST /v1/agents/:name/key` ([API](/api-agents/)). The old key stops at once.
+
+## Does the phone hold my wallet?
+
+No. It holds the owner key to your gateway, in the iOS Keychain. There is no recovery phrase on it.
+
+## Is the audit log secret?
+
+It records what happened, never keys or full bodies. Read it with `GET /v1/audit`; verify it with `GET /v1/audit/verify`.

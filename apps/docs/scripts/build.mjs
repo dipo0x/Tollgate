@@ -23,26 +23,46 @@ export const NAV = [
     { slug: '', title: 'Introduction', src: 'content/index.md', desc: 'What Tollgate is, who it is for, and where to start.' },
     { slug: 'concepts', title: 'Core ideas', src: 'content/concepts.md', desc: 'Mandate, shop, check, decision, approval and signer, in plain words.' },
     { slug: 'quickstart', title: 'Quickstart', src: '../../docs/GETTING-STARTED.md', files: ['GETTING-STARTED.md'], desc: 'Run a gateway, write a mandate, and watch a payment get checked.' },
+    { slug: 'life-of-a-payment', title: 'Life of a payment', src: 'content/life-of-a-payment.md', desc: 'One payment, from the agent asking to the money moving, step by step.' },
   ] },
-  { section: 'Concepts', pages: [
+  { section: 'Guides', pages: [
     { slug: 'shops', title: 'Shops', src: 'content/shops.md', desc: 'What a shop is, where shops come from, and how to add one.' },
     { slug: 'mandates', title: 'Mandates', src: '../../docs/MANDATES.md', files: ['MANDATES.md'], desc: 'The rulebook for one agent, field by field.' },
-    { slug: 'checks', title: 'The twelve checks', src: 'content/checks.md', desc: 'What runs on every payment, and what each check protects.' },
-  ] },
-  { section: 'Agents', pages: [
     { slug: 'chat-agents', title: 'Chat agents', src: 'content/chat-agents.md', desc: 'What the agent in your chat can do, photos, voice and what it cannot.' },
     { slug: 'bring-your-own-agent', title: 'Bring your own agent', src: '../../docs/bring-your-own-agent.md', files: ['bring-your-own-agent.md'], desc: 'Plug in Claude, Grok, a local model, or a script.' },
     { slug: 'economy', title: 'Spend, negotiate, hire, earn', src: '../../docs/AGENT-ECONOMY.md', files: ['AGENT-ECONOMY.md'], desc: 'The four things an agent does with money, and the exact calls.' },
     { slug: 'reference-services', title: 'Reference services', src: '../../docs/SERVICES.md', files: ['SERVICES.md'], desc: 'The merchant, seller and worker we run, and what is real about them.' },
+    { slug: 'deploy', title: 'Deploying to a server', src: 'content/deploy.md', desc: 'Running Tollgate somewhere other than your laptop: addresses, https, the signer and the database.' },
+    { slug: 'going-live', title: 'Going live with real money', src: 'content/going-live.md', desc: 'Funding the signer, running live, and what to check before any real payment.' },
   ] },
-  { section: 'Apps', pages: [
-    { slug: 'phone', title: 'Phone app', src: 'content/phone.md', desc: 'Approve, freeze, chat and add agents from your phone.' },
-    { slug: 'dashboard', title: 'Dashboard', src: 'content/dashboard.md', desc: 'The owner dashboard the gateway serves.' },
+  { section: 'Phone app', pages: [
+    { slug: 'phone', title: 'Overview and pairing', src: 'content/phone.md', desc: 'What the phone app is, the rules it keeps, and how to pair it.' },
+    { slug: 'phone-screens', title: 'Every screen', src: 'content/phone-screens.md', desc: 'Each screen of the app: what it shows and what you can do there.' },
+    { slug: 'phone-troubleshooting', title: 'Troubleshooting', src: 'content/phone-troubleshooting.md', desc: 'Pairing, Face ID, network and build problems, with the fix.' },
   ] },
-  { section: 'Build with Tollgate', pages: [
-    { slug: 'sdk', title: 'SDK', src: '../../packages/sdk/README.md', files: ['packages/sdk/README.md'], desc: 'trytollgate: wrap fetch so a 402 goes through the gateway.' },
-    { slug: 'api', title: 'Gateway API', src: 'content/api.md', desc: 'Every route, who may call it, and what it does.' },
-    { slug: 'signer', title: 'Signer', src: 'content/signer.md', desc: 'The only process that holds a key, and what it refuses.' },
+  { section: 'Dashboard', pages: [
+    { slug: 'dashboard', title: 'Overview and sign-in', src: 'content/dashboard.md', desc: 'The owner dashboard the gateway serves, and how to open it.' },
+    { slug: 'dashboard-pages', title: 'Every page', src: 'content/dashboard-pages.md', desc: 'Overview, decisions, approvals, mandates, jobs, services and audit.' },
+  ] },
+  { section: 'API reference', pages: [
+    { slug: 'api', title: 'Overview', src: 'content/api.md', desc: 'Base URL, keys, conventions, and who may call what.' },
+    { slug: 'api-payments', title: 'Payments', src: 'content/api-payments.md', desc: 'Authorize, sign, reconcile, decisions, approvals and the kill switch.' },
+    { slug: 'api-mandates', title: 'Mandates', src: 'content/api-mandates.md', desc: 'Create, read, revoke and delegate mandates.' },
+    { slug: 'api-shops', title: 'Shops', src: 'content/api-shops.md', desc: 'Register, probe, enable and list shops.' },
+    { slug: 'api-agents', title: 'Agents and chat', src: 'content/api-agents.md', desc: 'Agents, tasks, replies, attachments and the runner.' },
+    { slug: 'api-economy', title: 'Negotiate, hire, earn', src: 'content/api-economy.md', desc: 'Negotiations, deliverables, jobs and revenue.' },
+    { slug: 'api-ops', title: 'Audit and status', src: 'content/api-ops.md', desc: 'Audit log, verification, status, pairing and health.' },
+    { slug: 'errors', title: 'Error codes', src: 'content/errors.md', desc: 'Every error the gateway and signer return, and what to do.' },
+  ] },
+  { section: 'Code reference', pages: [
+    { slug: 'sdk', title: 'SDK: install and use', src: '../../packages/sdk/README.md', files: ['packages/sdk/README.md'], desc: 'trytollgate: wrap fetch so a 402 goes through the gateway.' },
+    { slug: 'sdk-reference', title: 'SDK: full reference', src: 'content/sdk-reference.md', desc: 'Every option, call, error and rail in the SDK.' },
+    { slug: 'checks', title: 'The twelve checks', src: 'content/checks.md', desc: 'What each check asks, what it records, and how it fails.' },
+    { slug: 'data-model', title: 'Data model', src: 'content/data-model.md', desc: 'Mandate, challenge, decision, ledger and audit shapes.' },
+    { slug: 'signer', title: 'Signer', src: 'content/signer.md', desc: 'The only process that holds a key, its route and its refusals.' },
+    { slug: 'configuration', title: 'Configuration', src: 'content/configuration.md', desc: 'Every environment variable, with defaults and limits.' },
+    { slug: 'commands', title: 'Commands', src: 'content/commands.md', desc: 'Every pnpm script, and what it does.' },
+    { slug: 'repo-map', title: 'Repository map', src: 'content/repo-map.md', desc: 'Where each part lives in the code.' },
   ] },
   { section: 'Security', pages: [
     { slug: 'architecture', title: 'Architecture', src: '../../docs/ARCHITECTURE.md', files: ['ARCHITECTURE.md'], desc: 'Components, trust zones and design decisions.' },
@@ -110,7 +130,7 @@ function render(md) {
       const name = String(href).replace(/^(\.\.?\/)*(docs\/)?images\//, '')
       if (!/^[\w.-]+\.(png|jpe?g|svg|webp)$/.test(name)) return ''
       usedImages.add(name)
-      return `<img src="/images/${name}" alt="${esc(text)}"${title ? ` title="${esc(title)}"` : ''} loading="lazy">`
+      return `<a href="/images/${name}" target="_blank" rel="noopener"><img src="/images/${name}" alt="${esc(text)}"${title ? ` title="${esc(title)}"` : ''} loading="lazy"></a>`
     },
     code({ text, lang }) {
       const l = (lang ?? '').split(/\s/)[0]
@@ -174,7 +194,6 @@ function layout(p, body, toc, idx) {
 ${body}
     </article>
     ${pager}
-    <footer class="foot">These pages describe what the repository does today. Anything simulated says so, and anything not built is on the <a href="/roadmap/">roadmap</a> or in <a href="/limits/">Limits</a>. Built ${BUILT}.</footer>
   </main>
   ${tocHtml}
 </div>

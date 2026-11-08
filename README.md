@@ -45,7 +45,7 @@ apps/
   workers/          hired worker agents  (not built yet; the demo plays the worker inline)
   mock-merchants/   fake sellers, fake directory, fake 1Click — benchmark and offline runs
   site/             tollgate marketing homepage  (React 19, Vite, GSAP, Three.js)
-  docs/             documentation site for docs.trytollgate.xyz  (static pages built from markdown; `pnpm docs`)
+  docs/             documentation site for docs.trytollgate.xyz  (static pages built from markdown; `pnpm docs:dev`)
 packages/
   core/             check pipeline C01-C12, budget ledger, hash-chained audit log
   sdk/              TypeScript SDK: routes an HTTP 402 challenge through the gateway
@@ -84,14 +84,14 @@ passed on live data; the run stopped until the owner said yes; the signer signed
 
 ## The dashboard
 
-Screenshots of the owner's dashboard (`/dashboard`, served by the gateway), taken from `pnpm demo --serve`. **Everything in them is the demo's simulated data**: the merchants, the customer and the chain are simulated, and the timestamps are the demo's fixed clock, not the time it ran.
+Screenshots of the owner's dashboard (`/dashboard`, served by the gateway), taken on 2026-11-08 from the project's own running gateway and its own database, not from the offline demo. The data is what that gateway holds: the payments are the live runs described above (one real 0.206712 USDC payment on NEAR, one 0.05 USDC purchase from a market seller, and some payments the owner rejected or let expire), the "127.0.0.1" shop is our own reference merchant, and agents named `spend-agent`/`near-agent` are ours. Nothing was edited.
 
 | | |
 | --- | --- |
-| ![Overview: budget, spend, outcomes and what stopped payments](docs/images/dashboard-overview.jpg) | ![One blocked payment, with all twelve checks and their evidence](docs/images/dashboard-decision-checks.jpg) |
-| **Overview.** Money spent, held and remaining, the last 12 outcomes, and which checks stopped payments. The kill switch is bottom left. | **One decision.** A 0.42 USDC request stopped by C07 (price), with each of the twelve checks and the evidence behind it. |
-| ![Mandates: the research agent and the worker it hired](docs/images/dashboard-mandates.jpg) | ![Audit: the hash-chained record, with a verify button](docs/images/dashboard-audit.jpg) |
-| **Mandates.** The agent's rules and money, and the worker it hired with a smaller budget carved out of its own. | **Audit.** Every event, hash-chained so an edit to any past entry breaks every hash after it, with a button that verifies the chain. |
+| ![Overview: budget, spend, outcomes and what stopped payments](docs/images/dashboard-overview.jpg) | ![One decision, with all twelve checks and their evidence](docs/images/dashboard-decision-checks.jpg) |
+| **Overview.** Money spent, held and remaining, the last 12 outcomes, and which checks stopped payments. The kill switch is bottom left. | **One decision.** A 0.20 USDC request the owner rejected from the phone, with a risk score of 60 and each of the twelve checks and the evidence behind it. |
+| ![Mandates: each agent's run, its limits and its money](docs/images/dashboard-mandates.jpg) | ![Audit: the hash-chained record, with a verify button](docs/images/dashboard-audit.jpg) |
+| **Mandates.** One card per run: status (active, expired or revoked), what was spent, held and left, the per-payment limit and the end time. | **Audit.** Every event, hash-chained so an edit to any past entry breaks every hash after it, with a button that verifies the chain. |
 
 ## Quick start
 

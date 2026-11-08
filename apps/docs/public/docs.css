@@ -117,3 +117,7 @@ a:hover{text-decoration:underline;text-underline-offset:3px}
   .anchor{display:none}
 }
 @media (prefers-reduced-motion:reduce){.side{transition:none!important}}
+
+/* Screenshots: kept to a modest size so they illustrate the text instead of filling the page. Click opens the full image. */
+.prose p>a>img,.prose p>img{display:block;width:auto;max-width:min(100%,460px);max-height:300px;object-fit:contain;margin:.4em 0 1.2em;border:1px solid var(--ln);border-radius:12px;background:var(--s1)}
+.prose p>a>img{display:block;width:auto;max-width:min(100%,460px);max-height:300px;object-fit:contain;border:1px solid var(--ln);border-radius:12px}

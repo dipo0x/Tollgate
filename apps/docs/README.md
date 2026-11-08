@@ -4,7 +4,7 @@ The documentation site, for `docs.trytollgate.xyz`. Plain static HTML, one CSS f
 dependency apart from `marked` at build time.
 
 ```bash
-pnpm docs             # builds and serves http://127.0.0.1:4173
+pnpm docs:dev           # builds and serves http://127.0.0.1:4173
 pnpm --filter @tollgate/docs build   # writes apps/docs/dist
 pnpm --filter @tollgate/docs test    # every link, anchor, image and page checked
 ```
@@ -21,7 +21,7 @@ pnpm --filter @tollgate/docs test    # every link, anchor, image and page checke
 
 The build is a folder, so any static host works. With Vercel:
 
-1. Import the repository, set the root to the repository root and use `apps/docs/vercel.json`.
+1. Import the repository and set the **Root Directory** to `apps/docs` (Vercel reads `vercel.json` only from the root directory). Leave "Include source files outside of the Root Directory" on, because the build reads `../../docs/*.md`.
 2. Add the domain `docs.trytollgate.xyz` to the project.
 3. At the DNS provider for `trytollgate.xyz`, add the record the host shows (for Vercel, a `CNAME` for `docs` pointing at `cname.vercel-dns.com`).
 4. Open `https://docs.trytollgate.xyz/` and check the sitemap at `/sitemap.xml`.

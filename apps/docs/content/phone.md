@@ -37,7 +37,20 @@ The Tollgate app is the owner's side of the gate. It holds **no wallet key**: th
 2. In the app, choose **Get started** and scan the code.
 3. Turn on Face ID when asked.
 
-The phone and the gateway need the same Wi-Fi, or https in front of the gateway. If pairing fails, the app says why and shows how to fix it: wrong address, a different network, or a gateway that is not running.
+The phone and the gateway need the same Wi-Fi, or https in front of the gateway.
+
+### Pairing a gateway that is not on your Wi-Fi
+
+When the gateway runs on a server, there is no home-network address to scan. Do this instead:
+
+1. Make sure the gateway answers at an https address: `curl "$GW/healthz"` returns `{"ok":true,…}`. See [Deploying](/deploy/).
+2. In the app, choose **Get started**, then **Type an address**.
+3. Enter `https://gateway.example.com` (your address) and the **owner key** (`GATEWAY_OPERATOR_TOKEN`).
+4. Turn on Face ID.
+
+You can also open `$GW/dashboard`, press **Pair a phone** and scan the code from there. To move an already-paired phone to a new address, use **Account → Change gateway address**: your key, Face ID, agents and chats stay.
+
+The app accepts https anywhere, and plain http only for local or private addresses, so a public gateway must have https. If pairing fails, the app says why and shows how to fix it: wrong address, a different network, or a gateway that is not running.
 
 ## Add an agent from the phone
 

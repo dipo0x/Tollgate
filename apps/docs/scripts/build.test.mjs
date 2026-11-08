@@ -27,6 +27,7 @@ test('every internal link lands on a built page and an existing anchor', () => {
       const [path, hash] = href.split('#')
       const target = path === '' ? url : path
       if (target.startsWith('/fonts') || target === '/favicon.svg') continue
+      if (target.startsWith('/images/')) { assert.ok(existsSync(join(DIST, target)), `${url} links to ${href}, which was not copied`); continue }
       assert.ok(html.has(target), `${url} links to ${href}, which is not a page`)
       if (hash) assert.ok(ids(html.get(target)).has(hash), `${url} links to ${href}, but #${hash} does not exist`)
     }

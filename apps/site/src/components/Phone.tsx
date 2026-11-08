@@ -84,7 +84,7 @@ export default function Phone() {
             <p className="fine ph-status">iPhone app, built with Expo. Today it runs from the source in Expo Go or the iOS simulator; it is not in the App Store yet. Alerts are raised by the app itself while it runs, not push, and Face ID needs a development build — in Expo Go the phone asks for your passcode instead. The phone and the gateway need the same Wi-Fi, or https in front of the gateway.</p>
             <div className="ph-cta">
               <RollButton href="#setup" label="Set it up" tone="solid" className="ink" />
-              <RollButton href="/docs/#phone-app" label="Pair a phone" />
+              <RollButton href="https://docs.trytollgate.xyz/phone/" label="Pair a phone" />
             </div>
           </div>
         </div>
