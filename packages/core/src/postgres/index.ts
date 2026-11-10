@@ -58,7 +58,7 @@ export async function openPostgres(opts: PostgresOptions): Promise<PostgresHandl
     throw err
   }
   const db = drizzle(sql)
-  const stopWarm = keepWarm(sql, Math.min(2, opts.max ?? 10))
+  const stopWarm = keepWarm(sql, Math.min(4, opts.max ?? 10))
   return {
     sql, db, ledger: new PostgresLedger(db, opts.clock), mandates: new PostgresMandateStore(db),
     revenue: new PostgresRevenueStore(db), pins: new PostgresPins(db), audit: new PostgresAuditStore(db, opts.clock),
@@ -73,6 +73,7 @@ export async function openPostgres(opts: PostgresOptions): Promise<PostgresHandl
  */
 export function keepWarm(sql: { unsafe: (q: string) => PromiseLike<unknown> }, n: number, everyMs = 20_000): () => void {
   const beat = () => { for (let i = 0; i < n; i++) Promise.resolve(sql.unsafe('select 1')).catch(() => {}) }
+  beat() // open them now, so the first request after a start does not pay for the connections
   const t = setInterval(beat, everyMs)
   t.unref?.() // never keeps a process (or a test run) alive on its own
   return () => clearInterval(t)

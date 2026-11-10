@@ -19,7 +19,7 @@ const JSON_LINES = [
   '    "perPayment": "0.50", "maxPaymentsPerMinute": 3 },',
   '  "allowedHosts": ["api.example.com",',
   '                   "data.example.org"],',
-  '  "allowedOriginNetworks": ["eip155:42161"],',
+  '  "allowedOriginNetworks": ["near"],',
   '  "allowedAssets": ["USDC"],',
   '  "payee": { "mode": "pin-on-first-approval" },',
   '  "price": { "tolerancePct": 3,',

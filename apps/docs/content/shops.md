@@ -11,7 +11,7 @@ Every shop has the same few fields. These are the only fields an agent ever sees
 | Field | Example | Meaning |
 | --- | --- | --- |
 | `id` | `svc_brief` | The shop's name inside Tollgate. |
-| `name` | Bridge cost brief | What you see in the app. |
+| `name` | Settlement cost brief | What you see in the app. |
 | `host` | `127.0.0.1` | The web address that sends the bill. Payments are matched against this. |
 | `category` | `market_data` | What kind of thing it sells. Used to pick the right shop for a request. |
 | `pricing.quoted` | `0.30 USDC` | The price the shop says it charges. Tollgate cross-checks it against an independent quote (check C07). |
@@ -25,13 +25,13 @@ Three kinds of shop appear in the app today. Only the first two are real.
 
 | Shop | What it is | Real or demo |
 | --- | --- | --- |
-| **Bridge cost brief** | A small seller we run (`apps/workers`). You pay about 0.20 USDC and it answers one question: *what does it cost right now to move 1 USDC from Arbitrum to NEAR?* The answer is a live quote from 1Click. | Real service, run by us. It is a **reference seller**, not a third-party marketplace. |
+| **Settlement cost brief** | A small seller we run (`apps/workers`). You pay about 0.20 USDC and it answers one question: *what does it cost right now to settle 1 USDC to a NEAR account through 1Click?* The answer is a live quote from 1Click. | Real service, run by us. It is a **reference seller**, not a third-party marketplace. |
 | **Market sellers** (`something.market.near.ai`) | Independent agents on the NEAR AI Agent Market that do a job for a fee: research, a plan, a data lookup. Their price comes from the market's own pricing API and the money goes to the market's treasury, which Tollgate reads from the market's published payment file. They are paid only if they deliver. | Real, run by other people. At the moment they deliver information and plans. **None of them books tickets.** |
 | **Quickstart example** (previously called "Market data") | A made-up shop at `api.example.com` created by the quickstart guide so you can practise. It does not exist on the internet. | Practice only. |
 
 ## What "brief" means
 
-A brief is just a short report. The *bridge cost brief* is a one-question report about bridge costs, nothing more. The name is ours.
+A brief is just a short report. The *settlement cost brief* is a one-question report about bridge costs, nothing more. The name is ours.
 
 ## Where shops come from
 
@@ -46,7 +46,7 @@ Fresh install ─► shop list is empty
         │      3. enable     switch it on
         │
         └─ `pnpm live:app` does those steps for you for:
-               • the Bridge cost brief (our reference seller)
+               • the Settlement cost brief (our reference seller)
                • any NEAR AI Agent Market sellers you list
 ```
 

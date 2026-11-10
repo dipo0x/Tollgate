@@ -3,7 +3,7 @@ import './faq.css'
 
 const QA: [string, ReactNode][] = [
   ['Is Tollgate a wallet?', 'No. Tollgate sits in front of a wallet and decides whether a payment request should be signed at all. It is not a custody product, and it never holds user funds.'],
-  ['Which wallets does it work with?', 'It is wallet-agnostic by design: a verification layer in front of whatever signs. The first supported path is an EVM-origin USDC payment, settled through NEAR Intents over the Machine Payments Protocol. More origins follow.'],
+  ['Which wallets does it work with?', 'It is wallet-agnostic by design: a verification layer in front of whatever signs. The supported path is USDC on NEAR: the signer pays from a NEAR account, settled through NEAR Intents (1Click) over the Machine Payments Protocol, or to a NEAR AI Agent Market seller over x402.'],
   ['What happens if a check fails or times out?', 'Tollgate fails closed. Any error, timeout or ambiguous answer becomes a DENY or a request for your approval. It never becomes an ALLOW.'],
   ['Can the model talk its way past a decision?', 'No. The model can propose what to buy and what to offer. Decisions are made by code over structured data, and third-party listing text never reaches the model prompt.'],
   ['How is this different from a spending cap?', 'A cap limits how much a bad payment can cost. Tollgate checks the request itself: the payee, the price against an independent quote, the deposit address, the refund target and replays. Use both.'],

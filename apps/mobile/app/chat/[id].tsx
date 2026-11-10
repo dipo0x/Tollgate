@@ -10,7 +10,7 @@ import { GatewayError, type AttachmentRefT, type Decision, type TaskT } from '..
 import { useGateway } from '../../src/state/session'
 import { useNow, usePoll } from '../../src/state/usePoll'
 import { loaders } from '../../src/state/loaders'
-import { answeredBy } from '../../src/lib/format'
+import { answeredBy, money } from '../../src/lib/format'
 import { presenceOf } from '../../src/lib/presence'
 import { Glass } from '../../src/ui/Glass'
 import { Circle, Dot, ErrorNote, Glyph, Icon, T } from '../../src/ui/kit'
@@ -28,7 +28,7 @@ type Line = { key: string; from: 'owner' | 'agent'; text: string; at: string; de
 type Staged = { ref: AttachmentRefT; uri: string }
 const MAX_PHOTO_BYTES = 5 * 1024 * 1024
 
-const SUGGESTIONS = ['What can you buy for me?', 'How much budget is left?', 'Buy the bridge cost brief']
+const SUGGESTIONS = ['What can you buy for me?', 'How much budget is left?', 'Buy the settlement cost brief']
 
 export default function Chat() {
   const { id } = useLocalSearchParams<{ id: string }>()
@@ -61,7 +61,7 @@ export default function Chat() {
   const notListening = state === 'offline' || state === 'stalled' || data?.mode === 'hosted' && data.hostOnline === false
   // A hosted agent is answered by the owner's computer: when that is not answering agents at all, say so instead of "Online".
   const hostDown = data?.mode === 'hosted' && data.hostOnline === false
-  const presence = !data ? '' : !data.active ? 'Not running' : hostDown ? 'Computer offline' : state === 'offline' ? 'Offline' : state === 'stalled' ? 'Not answering' : thinking ? 'Thinking…' : 'Online'
+  const presence = !data ? '' : !data.active ? 'Not running' : hostDown ? 'Computer offline' : state === 'offline' ? 'Offline' : state === 'stalled' ? 'Not answering' : thinking ? 'Thinking…' : state === 'busy' ? 'Busy' : 'Online'
 
   useEffect(() => { setTimeout(() => scroll.current?.scrollToEnd({ animated: true }), 60) }, [lines.length, thinking])
 
@@ -185,6 +185,12 @@ export default function Chat() {
               <Animated.View entering={FadeIn} style={{ marginTop: 14, padding: 14, borderRadius: R.card, backgroundColor: C.card, gap: 6 }}>
                 <T v="bodyStrong" style={{ fontSize: 15 }}>{data?.agent ?? 'Your agent'} is offline</T>
                 <T v="sub">{data?.mode === 'external' ? 'Your message is saved. Your own agent isn’t connected: open the agent’s page for its key and steps.' : 'Your message is saved and gets an answer as soon as your computer answers agents again. On your computer: pnpm live:app'}</T>
+              </Animated.View>
+            ) : null}
+            {state === 'busy' ? (
+              <Animated.View entering={FadeIn} style={{ marginTop: 14, padding: 14, borderRadius: R.card, backgroundColor: C.card, gap: 6 }}>
+                <T v="bodyStrong" style={{ fontSize: 15 }}>{data?.agent ?? 'Your agent'} is still on your last message</T>
+                <T v="sub">It answers one message at a time. If a payment is waiting for your yes, approve or reject it in Tollgate (Home) and your next message is answered straight after.</T>
               </Animated.View>
             ) : null}
             {state === 'stalled' ? (
@@ -339,7 +345,7 @@ function PaymentCard({ id, d, pending, rejected, onOpen }: { id: string; d: Deci
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}><Dot color={s.color} /><T v="small" style={{ fontSize: 13, color: s.color === C.text3 ? C.text2 : s.color }}>{s.label}</T></View>
       </View>
       <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6 }}>
-        <T style={{ fontFamily: F.bold, fontSize: 30, letterSpacing: -0.5 }}>{d?.amount ? Number(d.amount).toFixed(2) : '—'}</T>
+        <T style={{ fontFamily: F.bold, fontSize: 30, letterSpacing: -0.5 }}>{money(d?.amount)}</T>
         <T v="sub">{d?.currency ?? 'USDC'}</T>
       </View>
       {d ? <T v="sub" lines={1}>{d.host}{d.purpose ? ` · ${d.purpose}` : ''}</T> : null}

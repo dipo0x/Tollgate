@@ -48,7 +48,7 @@ const SCENARIOS: Scenario[] = [
   { name: 'Everything within the rules', rule: 'the everyday mandate', mandate: base('m_ok'), expect: 'ALLOW' },
   { name: 'Price above the per-payment limit', rule: 'perPayment 0.10 (the item costs ~0.20)', mandate: { ...base('m_cap'), budget: { currency: 'USDC', total: '1.00', perPayment: '0.10' } }, expect: 'DENY C09' },
   { name: 'More than the whole budget', rule: 'total 0.15', mandate: { ...base('m_total'), budget: { currency: 'USDC', total: '0.15', perPayment: '0.50' } }, expect: 'DENY C09' },
-  { name: 'Paying from a network the owner did not allow', rule: 'only Arbitrum allowed; the request is from NEAR', mandate: { ...base('m_net'), allowedOriginNetworks: ['eip155:42161'] }, expect: 'DENY C04' },
+  { name: 'Paying from a network the owner did not allow', rule: 'only a made-up network allowed; the request is from NEAR', mandate: { ...base('m_net'), allowedOriginNetworks: ['elsewhere'] }, expect: 'DENY C04' },
   { name: 'A website the owner did not allow', rule: 'allowedHosts: other.example.com only', mandate: { ...base('m_host'), allowedHosts: ['other.example.com'] }, expect: 'DENY C02' },
   { name: 'Mandate not valid yet', rule: 'validFrom one hour from now', mandate: { ...base('m_future'), validFrom: iso(new Date(now.getTime() + 3_600_000)), validUntil: iso(new Date(now.getTime() + 7_200_000)) }, expect: 'DENY C01' },
   { name: 'Above the owner\'s approval threshold', rule: 'approval.above 0.05', mandate: { ...base('m_appr'), approval: { above: '0.05', riskAbove: 90, firstPayeeRequiresApproval: false } }, expect: 'NEEDS_APPROVAL C12' },

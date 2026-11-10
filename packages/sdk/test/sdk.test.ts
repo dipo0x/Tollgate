@@ -1,8 +1,11 @@
-import { decodeFunctionData, erc20Abi, keccak256, parseTransaction, type Hex } from 'viem'
+import { createHash } from 'node:crypto'
+import { decodeSignedTransaction } from '@near-js/transactions'
 import { describe, expect, it } from 'vitest'
-import { AUTO, bootWithSigner, challenge, RECIPIENT, record } from '@tollgate/gateway/test/helpers.ts'
-import { ApprovalRequired, createTollgate, GatewayError, httpRpcRail, PaymentDenied, PaymentFailed, type Rail } from '../src/index.ts'
+import { AUTO, bootWithSigner, challenge, RECIPIENT, record, TX } from '@tollgate/gateway/test/helpers.ts'
+import { ApprovalRequired, createTollgate, GatewayError, PaymentDenied, PaymentFailed, type Rail } from '../src/index.ts'
 
+/** A stand-in for the hash the network would report: any stable string derived from the signed bytes. */
+const hashOf = (signedTx: string) => createHash('sha256').update(signedTx).digest('hex')
 const GATEWAY = 'http://gateway.local'
 const MERCHANT = 'https://merchant.example.com'
 
@@ -11,8 +14,8 @@ async function setup(opts: { mandate?: Record<string, unknown>; merchant?: (req:
   const g = bootWithSigner()
   const { token } = await g.setup({ mandate: opts.mandate ?? AUTO })
   // A refund must go back to whoever pays (check C08), so the merchant's challenge and 1Click's record name the signer's address.
-  const ch = (id: string, to: string = RECIPIENT) => challenge(id, to, { refundTo: g.backend.address })
-  const rec = (over: Parameters<typeof record>[1] = {}) => record(RECIPIENT, { refundTo: g.backend.address, ...over })
+  const ch = (id: string, to: string = RECIPIENT) => challenge(id, to, { refundTo: g.near.accountId })
+  const rec = (over: Parameters<typeof record>[1] = {}) => record(RECIPIENT, { refundTo: g.near.accountId, ...over })
   g.oneClick.add(rec())
 
   const merchantSaw: { url: string; headers: Record<string, string> }[] = []
@@ -29,10 +32,10 @@ async function setup(opts: { mandate?: Record<string, unknown>; merchant?: (req:
   }) as typeof fetch
 
   const rail = { params: 0, sent: [] as string[], failParams: false, failSend: false } as Rail & { params: number; sent: string[]; failParams: boolean; failSend: boolean }
-  rail.txParams = async () => { rail.params++; if (rail.failParams) throw new Error('rpc down'); return { nonce: 5, gas: '100000', maxFeePerGas: '100000000', maxPriorityFeePerGas: '10000000' } }
-  rail.send = async (_chain, signedTx) => { if (rail.failSend) throw new Error('broadcast failed'); rail.sent.push(signedTx); return keccak256(signedTx as Hex) }
+  rail.txParams = async () => { rail.params++; if (rail.failParams) throw new Error('rpc down'); return { nonce: '5', blockHash: TX.blockHash } }
+  rail.send = async (_chain, signedTx) => { if (rail.failSend) throw new Error('broadcast failed'); rail.sent.push(signedTx); return hashOf(signedTx) }
 
-  const make = (over: Record<string, unknown> = {}) => createTollgate({ gatewayUrl: GATEWAY, agentToken: token, mandateId: 'mnd_1', payer: g.backend.address, rail, purpose: 'buy a dataset', fetch: router, ...over })
+  const make = (over: Record<string, unknown> = {}) => createTollgate({ gatewayUrl: GATEWAY, agentToken: token, mandateId: 'mnd_1', payer: g.near.accountId, rail, purpose: 'buy a dataset', fetch: router, ...over })
   return { g, token, ch, rec, tg: make(), make, rail, merchantSaw, gatewayCalls, get merchantCalls() { return merchantCalls } }
 }
 
@@ -45,15 +48,14 @@ describe('a 402 is paid for you, once, and only if the gateway allows it', () =>
 
     // What was sent to the chain really pays the stored recipient the stored amount.
     expect(h.rail.sent).toHaveLength(1)
-    const tx = parseTransaction(h.rail.sent[0] as Hex)
-    const call = decodeFunctionData({ abi: erc20Abi, data: tx.data as Hex })
-    expect((call.args as [string, bigint])[0].toLowerCase()).toBe(RECIPIENT)
-    expect((call.args as [string, bigint])[1]).toBe(250_000n)
-    expect(tx.nonce).toBe(5)
+    const tx = decodeSignedTransaction(Buffer.from(h.rail.sent[0]!, 'base64')).transaction
+    const pay = tx.actions.map(a => a.functionCall!).find(a => a.methodName === 'ft_transfer')!
+    expect(JSON.parse(Buffer.from(pay.args).toString())).toEqual({ receiver_id: RECIPIENT, amount: '250000' })
+    expect(tx.nonce).toBe(5n)
 
     // The retry carried proof of payment.
     const proof = JSON.parse(h.merchantSaw[1]?.headers['x-payment-proof'] ?? '{}')
-    expect(proof).toMatchObject({ challengeId: 'c1', depositAddress: RECIPIENT, txHash: keccak256(h.rail.sent[0] as Hex) })
+    expect(proof).toMatchObject({ challengeId: 'c1', depositAddress: RECIPIENT, txHash: hashOf(h.rail.sent[0]!) })
     // The decision and the signature are in the audit chain, which verifies.
     expect((await h.g.deps.audit.all()).map(e => e.type)).toEqual(expect.arrayContaining(['decision', 'payment.signed']))
     expect((await h.g.op('GET', '/v1/audit/verify')).json).toMatchObject({ ok: true })
@@ -99,7 +101,7 @@ describe('what the gateway says no to', () => {
   })
 
   it('a challenge for a different payee than 1Click knows is refused (C06), and the SDK pays nothing', async () => {
-    const h = await setup({ merchant: (_r, _n, ch) => new Response(JSON.stringify({ challenge: ch('c9', '0x00000000000000000000000000000000000000ff') }), { status: 402 }) })
+    const h = await setup({ merchant: (_r, _n, ch) => new Response(JSON.stringify({ challenge: ch('c9', 'ff'.repeat(32)) }), { status: 402 }) })
     const err = await h.tg.fetch(`${MERCHANT}/data`).catch(e => e)
     expect(err).toBeInstanceOf(PaymentDenied); expect((err as PaymentDenied).failedCheck).toBe('C06')
     expect(h.rail.sent).toHaveLength(0)
@@ -140,26 +142,6 @@ describe('B04: a legitimate retry after a 503 pays once', () => {
     expect(h.rail.sent[1]).toBe(h.rail.sent[0]) // the SAME bytes: the network sees one payment, whatever is sent twice
     expect((await h.g.op('GET', '/v1/mandates/mnd_1')).json.balance).toMatchObject({ committed: '0.250000' }) // held once, not twice
     expect(h.g.store.claims.size).toBe(1) // the key signed once
-  })
-})
-
-describe('httpRpcRail', () => {
-  it('reads a nonce and fees, and treats "already known" as success when the same transaction is sent again', async () => {
-    const calls: string[] = []
-    const fake = (async (_u: string, init: RequestInit) => {
-      const { method } = JSON.parse(String(init.body)); calls.push(method)
-      const result: Record<string, unknown> = { eth_getTransactionCount: '0x7', eth_maxPriorityFeePerGas: '0x5f5e100', eth_getBlockByNumber: { baseFeePerGas: '0x5f5e100' } }
-      if (method === 'eth_sendRawTransaction') return new Response(JSON.stringify({ error: { message: 'already known' } }))
-      return new Response(JSON.stringify({ result: result[method] }))
-    }) as unknown as typeof fetch
-    const rail = httpRpcRail({ 'eip155:42161': 'http://rpc.local' }, fake)
-    expect(await rail.txParams('0xabc', 'eip155:42161')).toEqual({ nonce: 7, gas: '100000', maxPriorityFeePerGas: '100000000', maxFeePerGas: '300000000' })
-    expect(await rail.send('eip155:42161', '0x02aa')).toBe(keccak256('0x02aa'))
-    await expect(httpRpcRail({}, fake).send('eip155:1', '0x02')).rejects.toThrow(/no RPC endpoint/)
-  })
-  it('any other broadcast error is still an error', async () => {
-    const fake = (async () => new Response(JSON.stringify({ error: { message: 'insufficient funds for gas' } }))) as unknown as typeof fetch
-    await expect(httpRpcRail({ 'eip155:42161': 'http://rpc.local' }, fake).send('eip155:42161', '0x02aa')).rejects.toThrow(/insufficient funds/)
   })
 })
 

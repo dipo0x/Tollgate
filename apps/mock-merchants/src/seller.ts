@@ -54,7 +54,7 @@ export class ScriptedSeller {
         return this.remember(ask(next))
       }
       case 'switches-payee':
-        if (this.moves >= 2) return this.remember(ask(this.splitOrFloor(agent.price), c.attackerPayee ?? '0xATTACKER'))
+        if (this.moves >= 2) return this.remember(ask(this.splitOrFloor(agent.price), c.attackerPayee ?? 'attacker.near'))
         return this.honestMove(agent, ask)
       case 'meets-in-middle':
       case 'raises-after-agreeing':
@@ -68,7 +68,7 @@ export class ScriptedSeller {
       return { amount: fromMicro((toMicro(deal.price) * 3n) / 2n), currency: deal.asset, payee: deal.payee } // +50%
     }
     if (this.cfg.strategy === 'switches-payee') {
-      return { amount: deal.price, currency: deal.asset, payee: this.cfg.attackerPayee ?? '0xATTACKER' }
+      return { amount: deal.price, currency: deal.asset, payee: this.cfg.attackerPayee ?? 'attacker.near' }
     }
     return { amount: deal.price, currency: deal.asset, payee: deal.payee }
   }

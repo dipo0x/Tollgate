@@ -11,7 +11,7 @@ import { createNearKeyFile, loadNearKeyFile, NEAR_USDC, nearBackend, ONE_YOCTO, 
 import type { Bind, StoredDecision } from '../src/policy.ts'
 import { signPayment } from '../src/sign.ts'
 import { MemorySignerStore } from '../src/store.ts'
-import { freshBackend, limits, mandate, NOW } from './fixtures.ts'
+import { limits, mandate, NOW } from './fixtures.ts'
 
 // A real-looking 1Click NEAR deposit address (an implicit account), and a valid 32-byte block hash.
 const DEPOSIT = '6ccbfe88ce0d615631d41dd81b48518f0ea27e60b8805d363159b4ab6bbb46f3'
@@ -24,7 +24,7 @@ function nworld(o: { withNear?: boolean; nearLimits?: boolean; decision?: Stored
   store.mandates.set('mnd_1', mandate())
   const secret = KeyPair.fromRandom('ed25519').toString()
   const near = nearBackend(secret)
-  const deps = { store, backend: freshBackend(), clock: () => NOW, limits: limits(o.nearLimits === false ? {} : { nearTokens: { 'near:USDC': NEAR_USDC } }), ...(o.withNear === false ? {} : { near }) }
+  const deps = { store, clock: () => NOW, limits: o.nearLimits === false ? { maxPerTx: 1_000_000n } : limits(), ...(o.withNear === false ? {} : { near }) }
   return { store, near, secret, deps }
 }
 const req = (over: { bind?: Partial<Bind>; tx?: Record<string, unknown> } = {}) => ({ decisionId: 'dec_n', bind: nbind(over.bind ?? {}), tx: { nonce: 123_456_789_012_345n, blockHash: BLOCK, ...(over.tx ?? {}) } as never })
@@ -35,7 +35,7 @@ describe('NEAR: what gets signed is the stored decision, nothing else', () => {
     const r = await signPayment(deps, req())
     expect(r.ok).toBe(true)
     if (!r.ok) return
-    expect(r.chainId).toBe(0)
+    expect(r).not.toHaveProperty('chainId')
     expect(r.from).toBe(near.accountId)
     const signed = decodeSignedTransaction(Buffer.from(r.signedTx, 'base64'))
     const tx = signed.transaction
@@ -89,7 +89,7 @@ describe('NEAR: refusals', () => {
     const w = nworld({ decision: nstored({ bind: nbind({ amount: '1.50' }) }) })
     expect(await refuse(w, req({ bind: { amount: '1.50' } }))).toMatchObject({ reason: 'over_signer_cap' })
   })
-  it('bad tx params: zero nonce, a block hash that is not 32 bytes, or EVM fields', async () => {
+  it('bad tx params: zero nonce, a block hash that is not 32 bytes, or gas and fee fields', async () => {
     expect(await refuse(nworld(), req({ tx: { nonce: 0n } }))).toMatchObject({ reason: 'bad_tx_params' })
     expect(await refuse(nworld(), req({ tx: { blockHash: 'abc' } }))).toMatchObject({ reason: 'bad_tx_params' })
     expect(await refuse(nworld(), { decisionId: 'dec_n', bind: nbind(), tx: { nonce: 1, gas: 100000n, maxFeePerGas: 1n, maxPriorityFeePerGas: 1n } } as never)).toMatchObject({ reason: 'bad_tx_params' })
@@ -119,7 +119,7 @@ describe('NEAR over HTTP', () => {
     const res = await app.request('/v1/sign', { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${TOKEN}` }, body: JSON.stringify(body) })
     const text = await res.text()
     expect(res.status).toBe(200)
-    expect(JSON.parse(text)).toMatchObject({ decisionId: 'dec_n', chainId: 0, from: w.near.accountId })
+    expect(JSON.parse(text)).toMatchObject({ decisionId: 'dec_n', from: w.near.accountId })
     const secretPart = w.secret.split(':')[1] as string
     expect(text + JSON.stringify(health) + logs.join('')).not.toContain(secretPart)
   })

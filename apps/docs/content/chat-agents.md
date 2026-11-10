@@ -2,7 +2,7 @@
 
 In the phone app, an agent is a **chat room with a name and a budget**. You text it in plain language and it works inside its mandate.
 
-> **Plain version.** You tell your assistant "get me the bridge cost brief". It looks at which shops it may pay, asks Tollgate for permission, and tells you "I'd like to pay 0.20 USDC, approve it?". You approve with Face ID. Only then does money move.
+> **Plain version.** You tell your assistant "get me the settlement cost brief". It looks at which shops it may pay, asks Tollgate for permission, and tells you "I'd like to pay 0.20 USDC, approve it?". You approve with Face ID. Only then does money move.
 
 ## What the agent can do
 
@@ -30,7 +30,7 @@ The agent has a short list of tools. It has no others.
 Only the reference seller negotiates today. Market sellers publish one fixed price.
 
 ```
-You: "buy the bridge cost brief, and haggle"
+You: "buy the settlement cost brief, and haggle"
  ├─ agent asks the seller for its opening price          (say 0.30)
  ├─ code builds the legal moves with prices already set  accept / counter lower / offer your maximum / walk
  ├─ the brain picks a MOVE NAME (it never writes a price)

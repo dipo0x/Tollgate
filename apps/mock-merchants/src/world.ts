@@ -1,6 +1,5 @@
 import { Hono } from 'hono'
-import { decodeFunctionData, erc20Abi, keccak256, parseTransaction, recoverTransactionAddress, type Hex } from 'viem'
-import { MockChain } from './chain.ts'
+import { decodeTransfer, MockChain, SIM_BLOCK_HASH } from './chain.ts'
 import { FakeOneClickServer } from './fake-oneclick.ts'
 import { createMerchant, type MerchantBehavior } from './merchant.ts'
 
@@ -9,7 +8,7 @@ import { createMerchant, type MerchantBehavior } from './merchant.ts'
  * processes over real HTTP:
  *
  *   /1click/*      a simulated 1Click (point the gateway's ONECLICK_BASE_URL here)
- *   /rpc           a simulated chain node: JSON-RPC that "mines" the signed USDC transfers the SDK sends
+ *   /rpc           a simulated NEAR node: JSON-RPC that "mines" the signed USDC transfers the SDK sends
  *   /data          merchants, picked by the `x-virtual-host` header (an agent that cannot resolve merchant.example.com sends it, like a hosts-file entry)
  *   /_control/*    set up merchants and read back what actually moved
  *
@@ -22,7 +21,7 @@ export function createWorld() {
   const chain = new MockChain(oc)
   const merchants = new Map<string, ReturnType<typeof createMerchant>>()
   const transfers: Transfer[] = []
-  const senderCounts = new Map<string, number>()
+  const senderNonces = new Map<string, bigint>()
   const app = new Hono()
 
   app.route('/1click', oc.app)
@@ -33,26 +32,23 @@ export function createWorld() {
     const fail = (message: string, code = -32000) => c.json({ jsonrpc: '2.0', id: body?.id ?? null, error: { code, message } })
     if (!body?.method) return fail('invalid request', -32600)
     switch (body.method) {
-      case 'eth_chainId': return reply('0xa4b1')
-      case 'eth_getTransactionCount': return reply('0x' + (senderCounts.get(String(body.params?.[0]).toLowerCase()) ?? 0).toString(16))
-      case 'eth_maxPriorityFeePerGas': return reply('0x5f5e100')
-      case 'eth_getBlockByNumber': return reply({ number: '0x1', baseFeePerGas: '0x5f5e100' })
-      case 'eth_sendRawTransaction': {
-        const raw = String(body.params?.[0]) as Hex
-        if (!/^0x[0-9a-fA-F]+$/.test(raw)) return fail('invalid transaction')
-        if (chain.sent.includes(raw)) return fail('already known') // a real node says this when the same bytes arrive twice
-        try {
-          const from = (await recoverTransactionAddress({ serializedTransaction: raw as never })).toLowerCase()
-          const tx = parseTransaction(raw)
-          await chain.send('eip155:42161', raw)
-          senderCounts.set(from, (senderCounts.get(from) ?? 0) + 1)
-          const call = tx.data ? decodeFunctionData({ abi: erc20Abi, data: tx.data }) : undefined
-          if (call?.functionName === 'transfer') {
-            const [to, amount] = call.args as [string, bigint]
-            transfers.push({ txHash: keccak256(raw), from, to: to.toLowerCase(), amount: amount.toString(), destination: oc.quotes.get(to.toLowerCase())?.destination })
-          }
-          return reply(keccak256(raw))
-        } catch (e) { return fail(`invalid transaction: ${(e as Error).message}`) }
+      case 'query': {
+        // The one read the SDK rail makes: the access key's current nonce, and the block it was read at.
+        const p = body.params as { request_type?: string; account_id?: string } | undefined
+        if (p?.request_type !== 'view_access_key') return fail(`query ${p?.request_type} not supported by the simulated node`, -32601)
+        return reply({ nonce: Number(senderNonces.get(String(p.account_id)) ?? 0n), block_hash: SIM_BLOCK_HASH, block_height: 1000 })
+      }
+      case 'send_tx': {
+        const raw = String((body.params as { signed_tx_base64?: unknown } | undefined)?.signed_tx_base64)
+        let t
+        try { t = decodeTransfer(raw) } catch (e) { return fail(`invalid transaction: ${(e as Error).message}`) }
+        const again = chain.sent.includes(raw) // a real node answers the same way when the same bytes arrive twice
+        if (!again) {
+          await chain.send('near', raw)
+          senderNonces.set(t.from, t.nonce)
+          if (t.to !== undefined && t.amount !== undefined) transfers.push({ txHash: t.hash, from: t.from, to: t.to, amount: t.amount.toString(), destination: oc.quotes.get(t.to)?.destination })
+        }
+        return reply({ transaction: { hash: t.hash }, status: { SuccessValue: '' }, receipts_outcome: [] })
       }
       default: return fail(`method ${body.method} not supported by the simulated node`, -32601)
     }

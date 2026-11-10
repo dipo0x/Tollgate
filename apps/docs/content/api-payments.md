@@ -26,7 +26,7 @@ Key: **agent**. Runs the [twelve checks](/checks/) on a bill and returns a decis
   "state": "allowed",
   "risk": 35,
   "checks": [ { "id": "C01", "name": "Mandate valid", "result": "pass", "evidence": { "mandateId": "mnd_research", "version": 1 } } ],
-  "bind": { "chain": "near", "asset": "USDC", "amount": "0.206712", "to": "0xDEPOSIT…", "expiresAt": "2026-11-08T12:10:00Z", "nonce": "9c1e…" }
+  "bind": { "chain": "near", "asset": "USDC", "amount": "0.206712", "to": "6ccbfe88…", "expiresAt": "2026-11-08T12:10:00Z", "nonce": "9c1e…" }
 }
 ```
 
@@ -60,11 +60,10 @@ Key: **agent**. Asks the signer to sign for a stored `ALLOW`.
 { "tx": { "nonce": "123456", "blockHash": "9xQeWvG816bUx9EPjHmaT23yvVM2ZWbrrpZb9PusVFin" } }
 ```
 
-`tx` is one of three shapes, depending on the rail:
+`tx` is one of two shapes, depending on the payment:
 
 | Rail | Shape | Notes |
 | --- | --- | --- |
-| EVM | `{ "nonce": 0, "gas": "100000", "maxFeePerGas": "…", "maxPriorityFeePerGas": "…" }` | `nonce` is an integer (0 to 4294967295). The rest are whole numbers written as strings. The signer bounds them. |
 | NEAR | `{ "nonce": "…", "blockHash": "<base58, 32–44 chars>" }` | `nonce` is a string because it can exceed 2^53. |
 | x402 on NEAR | `{ "nonce": "…", "blockHeight": "…" }` | A signed delegate action, valid from that height. |
 

@@ -7,7 +7,9 @@ import type { Config } from './config.ts'
 import type { GatewayDeps } from './gateway.ts'
 import { lanAddresses, localName } from './network.ts'
 import { Services } from './services.ts'
+import { nearRail } from './near-rpc.ts'
 import { HttpSignerClient } from './signer.ts'
+import { Withdrawals } from './withdraw.ts'
 import { memoryStore, postgresStore, type GatewayStore } from './store/index.ts'
 
 /** The recorded 1Click responses that live in the core package. Offline mode answers only from these. */
@@ -24,6 +26,26 @@ export function makeLogger(level: Config['LOG_LEVEL']): GatewayDeps['log'] {
 
 type Durable = Pick<GatewayDeps, 'mandates' | 'ledger' | 'revenue' | 'pins' | 'audit'> & { store: GatewayStore }
 
+/**
+ * The signer, and with it the owner's way to take money back out. Withdrawals read the chain through NEAR_RPC_URL (never a key), ask the
+ * signer to sign (it alone knows the destination), and keep back whatever payments in flight still need.
+ */
+function withSigner(cfg: Config, durable: Durable): Pick<GatewayDeps, 'signer' | 'withdrawals'> {
+  const signer = new HttpSignerClient({ url: cfg.SIGNER_URL as string, token: cfg.SIGNER_SERVICE_TOKEN as string })
+  const held = async () => {
+    const all = await durable.mandates.all()
+    const bs = await Promise.all(all.map(m => durable.ledger.balance(m.spec.id)))
+    return bs.reduce((sum, b) => sum + (b ? b.proposed + b.committed : 0n), 0n)
+  }
+  return {
+    signer,
+    withdrawals: new Withdrawals({
+      signer, rail: nearRail(cfg.NEAR_RPC_URL ?? 'https://free.rpc.fastnear.com'), audit: durable.audit, held,
+      lock: (key, fn) => durable.store.locks.run(key, fn), explorer: h => `https://nearblocks.io/txns/${h}`, log: makeLogger(cfg.LOG_LEVEL),
+    }),
+  }
+}
+
 function assemble(cfg: Config, durable: Durable, over: Partial<GatewayDeps>): GatewayDeps {
   const clock = over.clock ?? (() => new Date())
   return {
@@ -39,7 +61,7 @@ function assemble(cfg: Config, durable: Durable, over: Partial<GatewayDeps>): Ga
     info: { mode: cfg.TOLLGATE_OFFLINE ? 'offline' : 'live', network: { host: cfg.GATEWAY_HOST, port: cfg.PORT } } as const,
     lanAddresses,
     localName,
-    ...(cfg.SIGNER_URL && cfg.SIGNER_SERVICE_TOKEN ? { signer: new HttpSignerClient({ url: cfg.SIGNER_URL, token: cfg.SIGNER_SERVICE_TOKEN }) } : {}),
+    ...(cfg.SIGNER_URL && cfg.SIGNER_SERVICE_TOKEN ? withSigner(cfg, durable) : {}),
     clock,
     approvalTtlMs: cfg.APPROVAL_TTL_MINUTES * 60_000,
     readCacheMs: cfg.GATEWAY_READ_CACHE_MS,

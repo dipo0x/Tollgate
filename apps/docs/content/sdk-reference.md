@@ -6,21 +6,21 @@ The package is `trytollgate` on npm. For a walk-through see [SDK](/sdk/). This p
 npm install trytollgate
 ```
 
-One runtime dependency: `viem`. Node 22+ (it uses `fetch`).
+No runtime dependencies. Node 22+ (it uses `fetch`).
 
 ## createTollgate(options)
 
 Returns an object with `fetch`. It is a drop-in for `fetch` that pays a 402 through the gateway.
 
 ```ts
-import { createTollgate, httpRpcRail } from 'trytollgate'
+import { createTollgate, nearRpcRail } from 'trytollgate'
 
 const tollgate = createTollgate({
   gatewayUrl: process.env.TOLLGATE_URL!,      // your gateway: http://127.0.0.1:8787 locally, https://gateway.example.com deployed
   agentToken: process.env.TOLLGATE_AGENT_TOKEN!,
   mandateId: 'mnd_1',
-  payer: '0xYourSignerPublicAddress',
-  rail: httpRpcRail({ 'eip155:42161': 'https://arb1.arbitrum.io/rpc' }),
+  payer: 'your-signer-account.near',
+  rail: nearRpcRail({ rpcUrl: 'https://free.rpc.fastnear.com', publicKey: 'ed25519:…' }), // the signer's PUBLIC key, from its /healthz
 })
 const res = await tollgate.fetch('https://merchant.example.com/data')
 ```
@@ -84,7 +84,6 @@ A rail fetches what a payment needs and sends the signed result.
 
 | Export | For | Options |
 | --- | --- | --- |
-| `httpRpcRail(rpcByChain)` | EVM chains over JSON-RPC | `{ 'eip155:42161': 'https://…' }` |
 | `nearRpcRail({ rpcUrl, publicKey })` | NEAR | The signer's **public** key, from the signer's `/healthz`. |
 
 Using a rail with a funded key spends real money. That is the owner's decision.

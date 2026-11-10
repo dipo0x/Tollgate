@@ -114,7 +114,7 @@ describe('attack catalogue (offline, through the whole pipeline)', () => {
     ['A03', 'fake deposit address: unknown to 1Click', () => ctx({ adapters: world(null).adapters }), 'C06'],
     ['A04', 'quote and challenge disagree on the amount', () => ctx({ adapters: world(record({ amountIn: '0.300000' })).adapters }), 'C06'],
     ['A05', 'asset swap: a token the mandate does not allow', () => ctx({ rawChallenge: challenge({ currency: 'USDT' }) }), 'C04'],
-    ['A05', 'network swap: a chain the mandate does not allow', () => ctx({ rawChallenge: challenge({ originNetwork: 'eip155:1' }) }), 'C04'],
+    ['A05', 'network swap: a chain the mandate does not allow', () => ctx({ rawChallenge: challenge({ originNetwork: 'ethereum' }) }), 'C04'],
     ['A06', 'refund hijack: refundTo points at a third party (1Click agrees with the merchant)', () => {
       const w = world(record({ refundTo: '0xTHIEF' }))
       return ctx({ adapters: w.adapters, rawChallenge: challenge({ refundTo: '0xTHIEF' }) })

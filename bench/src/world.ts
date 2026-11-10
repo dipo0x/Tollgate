@@ -31,8 +31,8 @@ export function expand(s: Scenario, scenarioIndex: number, payer: string): Concr
     seq++
     const host = a.host ?? GOOD_HOST
     const challenge: Record<string, unknown> = {
-      id: `${s.id}-${seq}`, method: 'nearintents', recipient: `0x${hex(scenarioIndex + 1, 8)}${hex(seq, 32)}`, amount: '0.250000', currency: 'USDC',
-      originNetwork: 'eip155:42161', refundTo: payer, expires: '2026-11-06T10:05:00Z', ...(a.challenge ?? {}),
+      id: `${s.id}-${seq}`, method: 'nearintents', recipient: `${hex(scenarioIndex + 1, 8)}${hex(seq, 56)}`, amount: '0.250000', currency: 'USDC',
+      originNetwork: 'near', refundTo: payer, expires: '2026-11-06T10:05:00Z', ...(a.challenge ?? {}),
     }
     const match = {
       status: 'PENDING_DEPOSIT', depositAddress: challenge['recipient'], originAsset: challenge['currency'], amountIn: challenge['amount'], destination: payeeOf(host),
@@ -55,7 +55,7 @@ export function expand(s: Scenario, scenarioIndex: number, payer: string): Concr
 export function mandateFor(s: Scenario, id = 'mnd_bench'): Record<string, unknown> {
   return {
     id, version: 1, principal: 'owner@example.com', agentId: 'bench-agent', validFrom: '2026-11-05T00:00:00Z', validUntil: '2026-11-12T00:00:00Z',
-    budget: { currency: 'USDC', total: '5.00', perPayment: '1.00' }, allowedHosts: ['merchant.example.com', 'data.example.com'], allowedOriginNetworks: ['eip155:42161'], allowedAssets: ['USDC'],
+    budget: { currency: 'USDC', total: '5.00', perPayment: '1.00' }, allowedHosts: ['merchant.example.com', 'data.example.com'], allowedOriginNetworks: ['near'], allowedAssets: ['USDC'],
     payee: { mode: 'registry' }, price: { tolerancePct: 3, onExceed: 'needs_approval' }, approval: { above: '1.00', riskAbove: 90, firstPayeeRequiresApproval: false },
     refund: { mustBePayerOrPinned: true }, ...(s.mandate ?? {}),
   }

@@ -16,7 +16,7 @@ try { process.loadEnvFile(`${ROOT}.env`) } catch { /* rely on the environment */
 const need = (k: string) => { const v = process.env[k]; if (!v) { console.error(`${k} is not set in .env`); process.exit(2) } return v }
 const KEY = need('NEAR_1CLICK_API_KEY'), PAYEE = need('MERCHANT_NEAR_ACCOUNT'), DEAL = need('WORKERS_DEAL_SECRET')
 const REC = ownerRecord(), DB = REC.db, MANDATE = `mnd_near_${REC.run}`
-const NEAR_KEY = `${ROOT}.signer-near-key`, EVM_KEY = `${ROOT}.signer-key`
+const NEAR_KEY = `${ROOT}.signer-near-key`
 // FastNEAR: the same chain, answered in ~0.3 s. rpc.mainnet.near.org is throttled (3.5-19 s a call, measured 8 Nov). NEAR_RPC_URL overrides.
 const RPC = process.env['NEAR_RPC_URL'] ?? 'https://free.rpc.fastnear.com'
 const CONFIRM_FILE = process.env['CONFIRM_FILE'] ?? `${ROOT}.near-pay-confirm`
@@ -46,7 +46,7 @@ try {
   procs.push(start('services', 'apps/workers', 'src/server.ts', { WORKERS_PORT: String(SP), NEAR_1CLICK_API_KEY: KEY, MERCHANT_NEAR_ACCOUNT: PAYEE, WORKERS_DEAL_SECRET: DEAL, WORKERS_PRICE_OPENING: PRICE }, tmp)); await waitFor(`${SVC}/healthz`, 'the merchant')
   // The gateway first: it creates the database schema the signer reads the stored decisions from.
   procs.push(start('gateway', 'apps/gateway', 'src/server.ts', { PORT: String(GP), DATABASE_URL: DB, ...REC.schemaEnv, GATEWAY_OPERATOR_TOKEN: OP, TOLLGATE_OFFLINE: 'false', NEAR_1CLICK_API_KEY: KEY, SIGNER_URL: SIGNER, SIGNER_SERVICE_TOKEN: SVC_TOKEN, CHECK_TIMEOUT_MS: '10000', LOG_LEVEL: 'silent' }, tmp)); await waitFor(`${GW}/healthz`, 'the gateway')
-  procs.push(start('signer', 'apps/signer', 'src/server.ts', { SIGNER_PORT: String(KP), SIGNER_SERVICE_TOKEN: SVC_TOKEN, SIGNER_KEY_FILE: EVM_KEY, DATABASE_URL: DB, ...REC.schemaEnv, SIGNER_CHAINS: 'near', SIGNER_NEAR_KEY_FILE: NEAR_KEY, SIGNER_MAX_PER_TX: '0.25', LOG_LEVEL: 'info' }, tmp))
+  procs.push(start('signer', 'apps/signer', 'src/server.ts', { SIGNER_PORT: String(KP), SIGNER_SERVICE_TOKEN: SVC_TOKEN, DATABASE_URL: DB, ...REC.schemaEnv, SIGNER_CHAINS: 'near', SIGNER_NEAR_KEY_FILE: NEAR_KEY, SIGNER_MAX_PER_TX: '0.25', LOG_LEVEL: 'info' }, tmp))
   await waitFor(`${SIGNER}/healthz`, 'the signer')
   const near = (await call('GET', `${SIGNER}/healthz`)).json.near as { accountId: string; publicKey: string }
 
@@ -67,7 +67,7 @@ try {
     const first = await call('GET', `${SVC}/data`, undefined, undefined, { 'x-payer': near.accountId })
     if (first.status !== 402) throw new Error(`merchant answered ${first.status}: ${JSON.stringify(first.json)}`)
     ch = first.json.challenge
-    d = (await call('POST', `${GW}/v1/authorize`, agent, { mandateId: MANDATE, host: '127.0.0.1', purpose: 'buy the bridge cost brief', challenge: ch, payer: near.accountId })).json
+    d = (await call('POST', `${GW}/v1/authorize`, agent, { mandateId: MANDATE, host: '127.0.0.1', purpose: 'buy the settlement cost brief', challenge: ch, payer: near.accountId })).json
     console.log(`\nDECISION (attempt ${attempt}): ${d.decision}${d.failedCheck ? ` (stopped by ${d.failedCheck})` : ''}`)
     for (const c of d.checks ?? []) console.log(`  ${c.id} ${String(c.name).padEnd(24)} ${c.result}${c.result === 'pass' ? '' : '  ' + JSON.stringify(c.evidence)}`)
     const timedOut = (d.checks ?? []).some((c: any) => /timed out/.test(JSON.stringify(c.evidence ?? {})))

@@ -25,7 +25,7 @@ export const SCENARIOS: readonly Scenario[] = [
     expected: { naive: paid(), stock: paid(), tollgate: blockedBy('C06') } },
   { id: 'A05', kind: 'attack', title: 'Asset swap', defendedBy: 'C04', attempts: [{ challenge: { currency: 'DAI' }, oneClick: { originAsset: 'DAI', destinationAsset: 'DAI' } }],
     expected: { naive: paid(), stock: { outcome: 'blocked' }, tollgate: blockedBy('C04') } },
-  { id: 'A06', kind: 'attack', title: 'Refund hijack', defendedBy: 'C08', attempts: [{ challenge: { refundTo: '0xbad0000000000000000000000000000000000bad' } }],
+  { id: 'A06', kind: 'attack', title: 'Refund hijack', defendedBy: 'C08', attempts: [{ challenge: { refundTo: 'attacker-refund.near' } }],
     expected: { naive: paid(), stock: paid(), tollgate: blockedBy('C08') } },
   { id: 'A07', kind: 'attack', title: 'Expired challenge', defendedBy: 'C03', attempts: [{ challenge: { expires: '2026-11-06T09:00:00Z' } }],
     expected: { naive: paid(), stock: paid(), tollgate: blockedBy('C03') } },

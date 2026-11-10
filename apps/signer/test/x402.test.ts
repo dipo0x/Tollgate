@@ -9,7 +9,7 @@ import { MAX_DELEGATE_TTL_BLOCKS, NEAR_USDC, nearBackend, ONE_YOCTO, X402_CHAIN 
 import type { Bind, StoredDecision } from '../src/policy.ts'
 import { signPayment } from '../src/sign.ts'
 import { MemorySignerStore } from '../src/store.ts'
-import { freshBackend, limits, mandate, NOW } from './fixtures.ts'
+import { limits, mandate, NOW } from './fixtures.ts'
 
 // The market's real treasury (GET https://market.near.ai/.well-known/x402, 2026-11-07).
 const TREASURY = 'ea667f5f496e60033bf8075cce4793efdeba28d74d116ef95848324347f539fc'
@@ -22,7 +22,7 @@ function xworld(o: { decision?: StoredDecision; maxPerTx?: bigint; tokens?: bool
   const store = new MemorySignerStore().putDecision(o.decision ?? xstored())
   store.mandates.set('mnd_1', mandate())
   const near = nearBackend(KeyPair.fromRandom('ed25519').toString())
-  const deps = { store, backend: freshBackend(), clock: () => NOW, near, limits: limits({ ...(o.tokens === false ? {} : { nearTokens: { [`${X402_CHAIN}:USDC`]: NEAR_USDC } }), ...(o.maxPerTx !== undefined ? { maxPerTx: o.maxPerTx } : {}) }) }
+  const deps = { store, clock: () => NOW, near, limits: limits({ ...(o.tokens === false ? {} : { nearTokens: { [`${X402_CHAIN}:USDC`]: NEAR_USDC } }), ...(o.maxPerTx !== undefined ? { maxPerTx: o.maxPerTx } : {}) }) }
   return { store, near, deps }
 }
 const req = (over: { bind?: Partial<Bind>; tx?: Record<string, unknown> } = {}) => ({ decisionId: 'dec_x', bind: xbind(over.bind ?? {}), tx: { nonce: 42n, blockHeight: HEIGHT, ...(over.tx ?? {}) } as never })
@@ -107,8 +107,8 @@ describe('x402 on NEAR: the signer signs a delegate action built from the stored
     const app = createSignerApp(deps, 's'.repeat(40))
     const res = await app.request('/v1/sign', { method: 'POST', headers: { authorization: `Bearer ${'s'.repeat(40)}`, 'content-type': 'application/json' }, body: JSON.stringify({ decisionId: 'dec_x', bind: xbind(), tx: { nonce: '42', blockHeight: String(HEIGHT) } }) })
     expect(res.status).toBe(200)
-    const body = await res.json() as { chainId: number; signedTx: string }
-    expect(body.chainId).toBe(0)
+    const body = await res.json() as { signedTx: string }
+    expect(body).not.toHaveProperty('chainId')
     expect(decode(body.signedTx).delegateAction.receiverId).toBe(NEAR_USDC.contract)
   })
 })

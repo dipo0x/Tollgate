@@ -36,6 +36,7 @@
     "live:near": "pnpm --filter @tollgate/e2e live:near",
     "live:mandate": "pnpm --filter @tollgate/e2e live:mandate",
     "spend": "pnpm --silent --filter @tollgate/e2e spend",
+    "attack-demo": "pnpm --silent --filter @tollgate/e2e attack-demo",
     "live:app": "pnpm --filter trytollgate build && pnpm --silent --filter @tollgate/e2e live:app",
     "mobile": "pnpm --filter @tollgate/mobile ios",
     "live:market": "pnpm --filter @tollgate/e2e live:market"

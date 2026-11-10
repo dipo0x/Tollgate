@@ -5,10 +5,8 @@ import { Hono } from 'hono'
  * lookup, dry quote), so the real `HttpOneClick` client can be pointed at it. It is a test double, not the live service: what it says
  * is whatever the scenario tells it to say.
  */
-export const USDC_ARB = 'nep141:arb-0xaf88d065e77c8cc2239327c5edb3a432268e5831.omft.near'
 export const USDC_NEAR = 'nep141:17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1'
 const TOKENS = [
-  { assetId: USDC_ARB, decimals: 6, blockchain: 'arb', symbol: 'USDC' },
   { assetId: USDC_NEAR, decimals: 6, blockchain: 'near', symbol: 'USDC' },
 ]
 
@@ -44,7 +42,7 @@ export class FakeOneClickServer {
       return c.json({
         correlationId: 'fake', status: q.status, updatedAt: new Date(0).toISOString(),
         quoteResponse: {
-          quoteRequest: { dry: false, swapType: 'EXACT_OUTPUT', originAsset: USDC_ARB, destinationAsset: USDC_NEAR, amount: q.amountOut.toString(), recipient: q.destination, refundTo: q.refundTo, deadline: q.deadline },
+          quoteRequest: { dry: false, swapType: 'EXACT_OUTPUT', originAsset: USDC_NEAR, destinationAsset: USDC_NEAR, amount: q.amountOut.toString(), recipient: q.destination, refundTo: q.refundTo, deadline: q.deadline },
           quote: { depositAddress: q.depositAddress, amountIn: q.amountIn.toString(), amountOut: q.amountOut.toString(), deadline: q.deadline },
         },
       })
@@ -61,7 +59,7 @@ export class FakeOneClickServer {
 
   /** A merchant asks for a quote and gets a fresh deposit address. `rateBps` lets a dishonest merchant take a worse rate than ours. */
   createQuote(o: { amountOut: bigint; destination: string; refundTo: string; deadline: string; rateBps?: bigint }): FakeQuote {
-    const depositAddress = `0x${(++this.counter).toString(16).padStart(8, '0')}${'ab'.repeat(16)}`
+    const depositAddress = `${(++this.counter).toString(16).padStart(8, '0')}${'ab'.repeat(28)}`
     const q: FakeQuote = { depositAddress, status: 'PENDING_DEPOSIT', amountIn: (o.amountOut * (o.rateBps ?? this.rateBps)) / 10_000n, amountOut: o.amountOut, destination: o.destination, refundTo: o.refundTo, deadline: o.deadline }
     this.quotes.set(depositAddress, q)
     return q

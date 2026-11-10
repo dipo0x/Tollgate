@@ -1,27 +1,28 @@
 import { z } from 'zod'
-import { tokensFor } from './chains.ts'
-import { NEAR_CHAIN, NEAR_USDC, X402_CHAIN } from './near.ts'
+import { isNearAccount, NEAR_CHAIN, NEAR_USDC, X402_CHAIN } from './near.ts'
 import { parseAmount, type Limits } from './policy.ts'
 
 export const ConfigSchema = z.object({
   SIGNER_PORT: z.coerce.number().int().min(1).max(65535).default(8788),
   /** What the gateway must present. Compared as a digest. Never logged. */
   SIGNER_SERVICE_TOKEN: z.string().min(32, 'SIGNER_SERVICE_TOKEN must be at least 32 characters'),
-  /** A file holding the only key, readable by its owner alone. Make one with `pnpm --filter @tollgate/signer keygen`. */
-  SIGNER_KEY_FILE: z.string().min(1).default('.signer-key'),
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required: the signer reads the stored decision from the database'),
   DATABASE_SCHEMA: z.string().regex(/^[a-z_][a-z0-9_]{0,62}$/, 'DATABASE_SCHEMA must be a lowercase identifier').optional(),
-  /** Chains it will pay on, comma separated: CAIP-2 EVM ids, `near` (1Click from NEAR) and/or `near:mainnet` (x402, NEAR AI Agent Market). Default: Arbitrum only. */
-  SIGNER_CHAINS: z.string().default('eip155:42161'),
+  /** Networks it will pay on, comma separated: `near` (1Click from NEAR) and/or `near:mainnet` (x402, NEAR AI Agent Market). */
+  SIGNER_CHAINS: z.string().default('near,near:mainnet'),
   /** Its OWN cap per payment, in USDC. Independent of any mandate: a compromised gateway still cannot move more than this. */
   SIGNER_MAX_PER_TX: z.string().default('1.00'),
-  SIGNER_MAX_GAS: z.coerce.bigint().min(21_000n).default(200_000n),
-  /** Wei. */
-  SIGNER_MAX_FEE_PER_GAS: z.coerce.bigint().min(1n).default(2_000_000_000n),
-  /** Only read when SIGNER_CHAINS includes `near`. Make one with `pnpm --filter @tollgate/signer keygen-near`. */
+  /** The only key. Make one with `pnpm --filter @tollgate/signer keygen-near`. */
   SIGNER_NEAR_KEY_FILE: z.string().min(1).default('.signer-near-key'),
   /** The named NEAR account the key belongs to (e.g. agent.yourname.near). Empty: the key's own implicit account. */
   SIGNER_NEAR_ACCOUNT: z.string().optional(),
+  /**
+   * The ONE NEAR account the owner's money may be withdrawn to. Set here, on the signer's own computer, and nowhere else: the
+   * gateway, the app and any token can ask for an amount but can never name a destination. Empty: withdrawals are off.
+   */
+  SIGNER_WITHDRAW_TO: z.string().optional().transform(v => v || undefined),
+  /** The most one withdrawal may move, in USDC. Empty: no cap (the money can only go to SIGNER_WITHDRAW_TO). */
+  SIGNER_MAX_WITHDRAW: z.string().optional().transform(v => v || undefined),
   LOG_LEVEL: z.enum(['silent', 'info']).default('info'),
 })
 export type Config = z.infer<typeof ConfigSchema>
@@ -42,10 +43,18 @@ export function limitsFrom(c: Config): Limits {
   const maxPerTx = parseAmount(c.SIGNER_MAX_PER_TX, 6)
   if (maxPerTx === undefined) throw new Error('SIGNER_MAX_PER_TX must be a positive decimal with at most 6 places')
   const chains = c.SIGNER_CHAINS.split(',').map(s => s.trim()).filter(Boolean)
+  const unknown = chains.filter(x => x !== NEAR_CHAIN && x !== X402_CHAIN)
+  if (unknown.length) throw new Error(`SIGNER_CHAINS can only hold near and near:mainnet, not ${unknown.join(', ')}`)
   const near = chains.includes(NEAR_CHAIN), x402 = chains.includes(X402_CHAIN)
   const nearTokens = { ...(near ? { [`${NEAR_CHAIN}:USDC`]: NEAR_USDC } : {}), ...(x402 ? { [`${X402_CHAIN}:USDC`]: NEAR_USDC } : {}) }
+  if (c.SIGNER_WITHDRAW_TO !== undefined && !isNearAccount(c.SIGNER_WITHDRAW_TO)) throw new Error('SIGNER_WITHDRAW_TO must be a NEAR account id')
+  const maxWithdraw = c.SIGNER_MAX_WITHDRAW === undefined ? undefined : parseAmount(c.SIGNER_MAX_WITHDRAW, 6)
+  if (c.SIGNER_MAX_WITHDRAW !== undefined && maxWithdraw === undefined) throw new Error('SIGNER_MAX_WITHDRAW must be a positive decimal with at most 6 places')
+  // Withdrawals need the NEAR key, so they exist only when this signer pays from NEAR.
+  const withdraw = c.SIGNER_WITHDRAW_TO !== undefined && (near || x402) ? { withdraw: { to: c.SIGNER_WITHDRAW_TO, token: NEAR_USDC, ...(maxWithdraw !== undefined ? { max: maxWithdraw } : {}) } } : {}
   return {
-    tokens: tokensFor(chains.filter(x => x !== NEAR_CHAIN && x !== X402_CHAIN)), maxPerTx, maxGas: c.SIGNER_MAX_GAS, maxFeePerGas: c.SIGNER_MAX_FEE_PER_GAS,
+    ...withdraw,
+    maxPerTx,
     ...(near || x402 ? { nearTokens } : {}),
   }
 }

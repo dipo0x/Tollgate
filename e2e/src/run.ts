@@ -2,8 +2,8 @@ import { createHash, randomBytes } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 import { join } from 'node:path'
 import postgres from 'postgres'
-import { ApprovalRequired, createTollgate, GatewayError, httpRpcRail, PaymentDenied, PaymentFailed } from 'trytollgate'
-import { createKeyFile } from '@tollgate/signer/src/backend.ts'
+import { ApprovalRequired, createTollgate, GatewayError, nearRpcRail, PaymentDenied, PaymentFailed } from 'trytollgate'
+import { createNearKeyFile } from '@tollgate/signer/src/near.ts'
 import { freePort, makeTmp, readLog, removeTmp, ROOT, start, waitFor, type Proc } from './harness.ts'
 
 /**
@@ -37,11 +37,12 @@ const OP = `e2e-operator-${randomBytes(16).toString('hex')}`
 const SVC = `e2e-signer-service-${randomBytes(16).toString('hex')}`
 const [W, G, S] = [await freePort(), await freePort(), await freePort()]
 const GW = `http://127.0.0.1:${G}`, WORLD = `http://127.0.0.1:${W}`, SIGNER = `http://127.0.0.1:${S}`
-const signerAddress = createKeyFile(join(tmp, 'signer.key')).toLowerCase()
+const signerKey = createNearKeyFile(join(tmp, 'signer.key'))
+const signerAddress = signerKey.accountId
 const procs: Proc[] = []
 
 const gwEnv = { PORT: String(G), DATABASE_URL: DB, DATABASE_SCHEMA: schema, GATEWAY_OPERATOR_TOKEN: OP, TOLLGATE_OFFLINE: 'false', NEAR_1CLICK_API_KEY: 'e2e-simulated-1click-key', ONECLICK_BASE_URL: `${WORLD}/1click`, SIGNER_URL: SIGNER, SIGNER_SERVICE_TOKEN: SVC, LOG_LEVEL: 'info' }
-const sgEnv = { SIGNER_PORT: String(S), SIGNER_SERVICE_TOKEN: SVC, SIGNER_KEY_FILE: join(tmp, 'signer.key'), DATABASE_URL: DB, DATABASE_SCHEMA: schema, SIGNER_MAX_PER_TX: '1.00', LOG_LEVEL: 'info' }
+const sgEnv = { SIGNER_PORT: String(S), SIGNER_SERVICE_TOKEN: SVC, SIGNER_NEAR_KEY_FILE: join(tmp, 'signer.key'), DATABASE_URL: DB, DATABASE_SCHEMA: schema, SIGNER_MAX_PER_TX: '1.00', LOG_LEVEL: 'info' }
 const startGateway = () => start('gateway', 'apps/gateway', 'src/server.ts', gwEnv, tmp)
 const startSigner = () => start('signer', 'apps/signer', 'src/server.ts', sgEnv, tmp)
 
@@ -73,7 +74,7 @@ const agentFetch: typeof fetch = (input, init) => {
   return fetch(input, init)
 }
 let agentToken = ''
-const sdk = (extra: Record<string, unknown> = {}) => createTollgate({ gatewayUrl: GW, agentToken, mandateId: 'mnd_research', payer: signerAddress, rail: httpRpcRail({ 'eip155:42161': `${WORLD}/rpc` }), purpose: 'research for the weekly brief', fetch: agentFetch, ...extra })
+const sdk = (extra: Record<string, unknown> = {}) => createTollgate({ gatewayUrl: GW, agentToken, mandateId: 'mnd_research', payer: signerAddress, rail: nearRpcRail({ rpcUrl: `${WORLD}/rpc`, publicKey: signerKey.publicKey }), purpose: 'research for the weekly brief', fetch: agentFetch, ...extra })
 type Outcome = { kind: 'paid' | 'denied' | 'held' | 'failed' | 'gateway-error'; check?: string; reason?: string; stage?: string; mayHavePaid?: boolean; status?: number }
 async function buy(client: ReturnType<typeof sdk>, host = 'merchant.example.com'): Promise<Outcome> {
   try { const res = await client.fetch(`https://${host}/data`); return { kind: 'paid', status: res.status } }
@@ -95,8 +96,8 @@ async function main() {
   procs.push(start('world', 'apps/mock-merchants', 'src/world-server.ts', { WORLD_PORT: String(W) }, tmp)); await waitFor(`${WORLD}/_control/health`, 'the simulated world')
   const gw = startGateway(); procs.push(gw); await waitFor(`${GW}/healthz`, 'the gateway')
   procs.push(startSigner()); await waitFor(`${SIGNER}/healthz`, 'the signer')
-  const sh = await (await fetch(`${SIGNER}/healthz`)).json() as { address: string }
-  check('the signer is up and holds exactly the key made for this run', sh.address.toLowerCase() === signerAddress, sh.address)
+  const sh = await (await fetch(`${SIGNER}/healthz`)).json() as { near?: { accountId: string } }
+  check('the signer is up and holds exactly the key made for this run', sh.near?.accountId === signerAddress, sh.near?.accountId)
   const st = await op('GET', '/v1/status')
   check('the gateway keeps its state in Postgres, with a signer attached, and is not frozen', st.json.storage === 'postgres' && st.json.signer === true && st.json.frozen === false)
   check('without the operator token, the owner\'s data is refused', (await api('nope', 'GET', '/v1/mandates')).status === 401)
@@ -110,7 +111,7 @@ async function main() {
   const now = Date.now(), iso = (ms: number) => new Date(ms).toISOString()
   const mandate = await op('POST', '/v1/mandates', {
     id: 'mnd_research', version: 1, principal: 'owner@example.com', agentId: 'research-agent', validFrom: iso(now - 864e5), validUntil: iso(now + 7 * 864e5),
-    budget: { currency: 'USDC', total: '5.00', perPayment: '1.00' }, allowedHosts: ['merchant.example.com', 'premium.example.com'], allowedOriginNetworks: ['eip155:42161'], allowedAssets: ['USDC'],
+    budget: { currency: 'USDC', total: '5.00', perPayment: '1.00' }, allowedHosts: ['merchant.example.com', 'premium.example.com'], allowedOriginNetworks: ['near'], allowedAssets: ['USDC'],
     payee: { mode: 'registry' }, price: { tolerancePct: 3, onExceed: 'needs_approval' }, approval: { above: '0.50', riskAbove: 90, firstPayeeRequiresApproval: false }, refund: { mustBePayerOrPinned: true },
   })
   agentToken = mandate.json.agentToken as string

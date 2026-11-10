@@ -3,9 +3,9 @@ import { toMicro, verifyChain } from '@tollgate/core'
 import { loadConfig } from '../src/config.ts'
 import { boot, challenge, mandateBody, OPERATOR, record, T0 } from './helpers.ts'
 
-const D1 = '0xdep0000000000000000000000000000000000001'
-const D2 = '0xdep0000000000000000000000000000000000002'
-const D3 = '0xdep0000000000000000000000000000000000003'
+const D1 = 'dec0de0000000000000000000000000000000000000000000000000000000001'
+const D2 = 'dec0de0000000000000000000000000000000000000000000000000000000002'
+const D3 = 'dec0de0000000000000000000000000000000000000000000000000000000003'
 
 describe('authentication and request hygiene', () => {
   it('health needs no token', async () => {
@@ -86,7 +86,7 @@ describe('authorize: the payment lifecycle', () => {
     const g = boot(); const { token } = await g.setup(); g.oneClick.add(record(D1)).add(record(D2))
     const first = await g.authorize(token, challenge('c1', D1))
     const approved = await g.op('POST', `/v1/approvals/${first.json.decisionId}/approve`, { reason: 'known supplier' })
-    expect(approved.json).toMatchObject({ decision: 'ALLOW', state: 'allowed', bind: { to: D1, amount: '0.250000', asset: 'USDC', chain: 'eip155:42161' } })
+    expect(approved.json).toMatchObject({ decision: 'ALLOW', state: 'allowed', bind: { to: D1, amount: '0.250000', asset: 'USDC', chain: 'near' } })
     expect(approved.json.bind.nonce).toBeTruthy()
     expect((await g.op('GET', '/v1/mandates/mnd_1')).json.balance).toMatchObject({ committed: '0.250000', remaining: '4.750000' })
     expect((await g.authorize(token, challenge('c2', D2))).json).toMatchObject({ decision: 'ALLOW', state: 'allowed' }) // payee is pinned now

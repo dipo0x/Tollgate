@@ -1,7 +1,7 @@
 import { router } from 'expo-router'
 import { useCallback, useState } from 'react'
 import { Pressable, View } from 'react-native'
-import { kindOf, KIND_LABEL, when, type Kind } from '../../src/lib/format'
+import { kindOf, KIND_LABEL, money, when, type Kind } from '../../src/lib/format'
 import { useGateway } from '../../src/state/session'
 import { useNow, usePoll } from '../../src/state/usePoll'
 import { loaders } from '../../src/state/loaders'
@@ -44,7 +44,7 @@ export default function Activity() {
                 <T v="sub" lines={1}>{d.agentId} · {when(d.createdAt, now)}{d.failedCheck ? ` · ${d.failedCheck}` : ''}</T>
               </View>
               <View style={{ alignItems: 'flex-end', gap: 2 }}>
-                <T v="bodyStrong" style={{ fontVariant: ['tabular-nums'] }}>{d.amount ? (k === 'paid' ? `−${d.amount}` : d.amount) : ''}</T>
+                <T v="bodyStrong" style={{ fontVariant: ['tabular-nums'] }}>{d.amount ? (k === 'paid' ? `−${money(d.amount)}` : money(d.amount)) : ''}</T>
                 <T v="sub" style={{ color: tone }}>{KIND_LABEL[k]}</T>
               </View>
             </Pressable>

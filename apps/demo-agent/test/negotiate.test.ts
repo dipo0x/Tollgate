@@ -23,7 +23,7 @@ function memoryTalk() {
   }
 }
 const seller = (strategy: SellerStrategy, opening: string, floor: string) =>
-  new ScriptedSeller({ strategy, asset: 'USDC', payee: 'merchant.near', opening, floor, attackerPayee: '0xATTACKER' })
+  new ScriptedSeller({ strategy, asset: 'USDC', payee: 'merchant.near', opening, floor, attackerPayee: 'attacker.near' })
 const run = (s: ScriptedSeller, useLlm = false) =>
   runNegotiation({ item: 'the daily market brief', asset: 'USDC', payee: 'merchant.near', ownerCeiling: '0.30', maxRounds: 4, useLlm, seller: s, talk: memoryTalk() })
 const moves = (m: { move: string }[]) => m.map(x => x.move)

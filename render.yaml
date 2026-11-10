@@ -28,8 +28,8 @@ projects:
               - { key: TOLLGATE_OFFLINE, value: "true" }
               - { key: SIGNER_URL, value: "http://127.0.0.1:8788" }
               - { key: SIGNER_PORT, value: "8788" }
-              - { key: SIGNER_KEY_FILE, value: "/tmp/signer-key" }
-              - { key: SIGNER_CHAINS, value: "eip155:42161" }
+              - { key: SIGNER_NEAR_KEY_FILE, value: "/tmp/signer-key" }
+              - { key: SIGNER_CHAINS, value: "near" }
               - { key: SIGNER_MAX_PER_TX, value: "1.00" }
               - { key: SIGNER_SERVICE_TOKEN, generateValue: true }   # shared by the two programs inside this service; nobody types it
               - { key: GATEWAY_OPERATOR_TOKEN, generateValue: true } # read it in the Render dashboard: it is the sign-in token

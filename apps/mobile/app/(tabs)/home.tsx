@@ -20,7 +20,11 @@ export default function Home() {
   const { data, error, loading, refresh } = usePoll(load, 4000, 'home')
 
   const active = (data?.mandates ?? []).filter(m => m.status === 'active' && !m.parentId)
-  const left = active.reduce((s, m) => s + Number(m.balance?.remaining ?? 0), 0)
+  // Agents' budgets are permission to spend, not money. What can really be spent is never more than the payment account holds.
+  const budgets = active.reduce((s, m) => s + Number(m.balance?.remaining ?? 0), 0)
+  const held = data?.funds ? Number(data.funds.available) : null
+  const left = held === null || !Number.isFinite(held) ? budgets : Math.min(budgets, held)
+  const capped = held !== null && Number.isFinite(held) && budgets > held
   const agents = [...new Set(active.map(m => m.agentId))]
   const waiting = (data?.approvals ?? []).filter(a => a.status === 'pending')
   const recent = (data?.decisions ?? []).filter(d => kindOf(d) !== 'waiting').slice(0, 3)
@@ -55,6 +59,7 @@ export default function Home() {
               <T style={{ fontFamily: F.semibold, fontSize: 52, letterSpacing: -1.6, fontVariant: ['tabular-nums'] }}>{money(left.toFixed(6))}</T>
               <T v="sub" style={{ fontSize: 17 }}>USDC</T>
             </View>
+            {capped ? <T v="small">Your agents may spend up to {money(budgets.toFixed(6))}, but the payment account holds {money(held.toFixed(6))}.</T> : null}
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                 <Dot color={frozen ? C.red : C.green} /><T v="sub" style={{ fontSize: 15, color: frozen ? C.red : C.text2 }}>{frozen ? 'Frozen' : 'Payments on'}</T>
@@ -80,7 +85,7 @@ export default function Home() {
                   <T v="bodyStrong" lines={1}>{a.decision.purpose || a.decision.host}</T>
                   <T v="sub" lines={1}>{frozen ? 'Locked while frozen' : `${a.decision.agentId} · expires in ${timeLeft(a.expiresAt, now)}`}</T>
                 </View>
-                <T v="bodyStrong" style={{ fontVariant: ['tabular-nums'] }}>{a.decision.amount ?? '—'}</T>
+                <T v="bodyStrong" style={{ fontVariant: ['tabular-nums'] }}>{money(a.decision.amount)}</T>
                 <Icon name="chev" size={16} color={C.text3} width={2} />
               </Card>
             </Pressable>
@@ -97,7 +102,7 @@ export default function Home() {
                 <Pressable key={d.decisionId} onPress={() => router.push(`/decision/${encodeURIComponent(d.decisionId)}`)} style={{ flexDirection: 'row', alignItems: 'center', gap: 14, padding: 14, borderTopWidth: i ? 1 : 0, borderTopColor: C.sep }}>
                   <KindIcon kind={k} size={36} />
                   <View style={{ flex: 1, gap: 2 }}><T lines={1}>{d.purpose || d.host}</T><T v="sub" lines={1}>{when(d.createdAt, now)} · {KIND_LABEL[k].toLowerCase()}</T></View>
-                  <T style={{ fontVariant: ['tabular-nums'], color: k === 'paid' ? C.text : C.text2 }}>{k === 'paid' ? `−${d.amount ?? ''}` : d.amount ?? ''}</T>
+                  <T style={{ fontVariant: ['tabular-nums'], color: k === 'paid' ? C.text : C.text2 }}>{k === 'paid' ? `−${money(d.amount)}` : d.amount ?? ''}</T>
                 </Pressable>
               )
             })}

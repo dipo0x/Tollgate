@@ -76,6 +76,12 @@ export class PostgresPins implements PinStore {
   }
 }
 
+/** Postgres says 23505 when a unique key is taken. The driver's error may be wrapped by drizzle, so look one level down too. */
+function isUniqueViolation(e: unknown): boolean {
+  const code = (x: unknown) => (x && typeof x === 'object' ? (x as { code?: unknown }).code : undefined)
+  return code(e) === '23505' || code((e as { cause?: unknown } | null)?.cause) === '23505'
+}
+
 const AUDIT_LOCK = 7_461_001 // any fixed number: "the audit log is being extended"
 
 const auditFromRow = (r: typeof auditEntries.$inferSelect): AuditEntry => ({ seq: r.seq, ts: r.ts, type: r.type, payload: r.payload ?? null, prevHash: r.prevHash, hash: r.hash })
@@ -85,19 +91,71 @@ export class PostgresAuditStore implements AuditStore {
   private readonly clock: () => Date
   constructor(db: Db, clock: () => Date = () => new Date()) { this.db = db; this.clock = clock }
 
-  /**
-   * One writer at a time, across every process: the transaction takes a database lock, reads the last entry, chains
-   * the new one to it, and writes it. Two gateways appending at once therefore extend ONE chain in turn.
-   */
+  /** The last entry this process wrote or read: what the next entry chains to, without asking the database first. */
+  private cached: { seq: number; hash: string } | undefined
+  /** In this process, appends go one at a time, so each sees the head the one before it left. */
+  private queue: Promise<unknown> = Promise.resolve()
+
   async append(type: string, payload: unknown): Promise<AuditEntry> {
-    return this.db.transaction(async tx => {
-      await tx.execute(sql`SELECT pg_advisory_xact_lock(${AUDIT_LOCK})`)
-      const [last] = await tx.select().from(auditEntries).orderBy(desc(auditEntries.seq)).limit(1)
-      const base = { seq: (last?.seq ?? 0) + 1, ts: this.clock().toISOString(), type, payload, prevHash: last?.hash ?? GENESIS_HASH }
+    return (await this.appendMany([{ type, payload }]))[0] as AuditEntry
+  }
+
+  /**
+   * Fast path, ONE round trip: chain the new entries to the head this process last saw and insert them in a single statement. That is
+   * safe without a lock because `seq` is the primary key: if any other writer already took that number the insert is refused whole,
+   * and the slow path below runs. A new entry can therefore only ever extend the true head, never fork the chain or leave a gap.
+   * Slow path: the transaction takes a database lock, reads the last entry, chains to it and writes, so two gateways appending at
+   * once extend ONE chain in turn.
+   */
+  appendMany(items: readonly { type: string; payload: unknown }[]): Promise<AuditEntry[]> {
+    const run = this.queue.then(() => this.write(items))
+    this.queue = run.catch(() => undefined)
+    return run
+  }
+
+  private chain(items: readonly { type: string; payload: unknown }[], from: { seq: number; hash: string }): AuditEntry[] {
+    const out: AuditEntry[] = []
+    let prev = from
+    for (const it of items) {
+      const base = { seq: prev.seq + 1, ts: this.clock().toISOString(), type: it.type, payload: it.payload, prevHash: prev.hash }
       const entry: AuditEntry = { ...base, hash: hashEntry(base) }
-      await tx.insert(auditEntries).values({ seq: entry.seq, ts: entry.ts, type, payload: entry.payload as never, prevHash: entry.prevHash, hash: entry.hash })
-      return entry
-    })
+      out.push(entry); prev = { seq: entry.seq, hash: entry.hash }
+    }
+    return out
+  }
+
+  private rows = (es: AuditEntry[]) => es.map(e => ({ seq: e.seq, ts: e.ts, type: e.type, payload: e.payload as never, prevHash: e.prevHash, hash: e.hash }))
+
+  private async write(items: readonly { type: string; payload: unknown }[]): Promise<AuditEntry[]> {
+    if (items.length === 0) return []
+    if (this.cached) {
+      const entries = this.chain(items, this.cached)
+      try {
+        await this.db.insert(auditEntries).values(this.rows(entries))
+        const last = entries[entries.length - 1] as AuditEntry
+        this.cached = { seq: last.seq, hash: last.hash }
+        return entries
+      } catch (e) {
+        this.cached = undefined
+        if (!isUniqueViolation(e)) throw e // anything else (a dropped connection): fail closed, the caller is told it was not recorded
+      }
+    }
+    for (let attempt = 0; ; attempt++) {
+      try {
+        const entries = await this.db.transaction(async tx => {
+          await tx.execute(sql`SELECT pg_advisory_xact_lock(${AUDIT_LOCK})`)
+          const [last] = await tx.select().from(auditEntries).orderBy(desc(auditEntries.seq)).limit(1)
+          const made = this.chain(items, { seq: last?.seq ?? 0, hash: last?.hash ?? GENESIS_HASH })
+          await tx.insert(auditEntries).values(this.rows(made))
+          return made
+        })
+        const last = entries[entries.length - 1] as AuditEntry
+        this.cached = { seq: last.seq, hash: last.hash }
+        return entries
+      } catch (e) {
+        if (!isUniqueViolation(e) || attempt >= 5) throw e // a fast-path writer in another process took our number: read the head again
+      }
+    }
   }
 
   async all() { return (await this.db.select().from(auditEntries).orderBy(asc(auditEntries.seq))).map(auditFromRow) }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { Claim, SignerStore } from '../src/store.ts'
 
-const claim = (id: string, nonce: string, over: Partial<Claim> = {}): Claim => ({ decisionId: id, nonce, mandateId: 'm1', chain: 'eip155:42161', asset: 'USDC', amount: '0.250000', to: '0xabc', at: '2026-11-06T10:00:00.000Z', ...over })
+const claim = (id: string, nonce: string, over: Partial<Claim> = {}): Claim => ({ decisionId: id, nonce, mandateId: 'm1', chain: 'near', asset: 'USDC', amount: '0.250000', to: 'abc.near', at: '2026-11-06T10:00:00.000Z', ...over })
 
 /** The claim table is what makes "a decision is never signed twice" true. One suite for every implementation. */
 export function claimContract(label: string, make: () => Promise<{ store: SignerStore; cleanup: () => Promise<void> }>) {

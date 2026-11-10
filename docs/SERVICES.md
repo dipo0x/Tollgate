@@ -32,7 +32,7 @@ a signed token, so a restart loses nothing.
 5. The merchant does **not** take the agent's word that it paid. It asks 1Click for the deposit's status and delivers only on `SUCCESS` for a
    deposit that pays *this* merchant at least the price.
 
-The delivered data is real too: what it costs right now to move 1 USDC from Arbitrum to NEAR, from a live 1Click quote.
+The delivered data is real too: what it costs right now to settle 1 USDC to a NEAR account, from a live 1Click quote.
 
 ### 2. Negotiate: the seller (`/negotiate`)
 

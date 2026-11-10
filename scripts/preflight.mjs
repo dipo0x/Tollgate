@@ -36,7 +36,7 @@ let env = new Map()
 if (!existsSync(envPath)) bad('there is no .env file', 'Run: pnpm onboard    (it creates .env with generated secrets)')
 else {
   env = parseEnv(readFileSync(envPath, 'utf8'))
-  const need = [['DATABASE_URL', 1], ['GATEWAY_OPERATOR_TOKEN', 16], ['SIGNER_SERVICE_TOKEN', 32], ['SIGNER_URL', 1], ['SIGNER_KEY_FILE', 1]]
+  const need = [['DATABASE_URL', 1], ['GATEWAY_OPERATOR_TOKEN', 16], ['SIGNER_SERVICE_TOKEN', 32], ['SIGNER_URL', 1], ['SIGNER_NEAR_KEY_FILE', 1]]
   const missing = need.filter(([k, min]) => isPlaceholder(env.get(k)) || (env.get(k) ?? '').length < min)
   missing.length ? bad(`.env is missing or has a too-short value for: ${missing.map(m => m[0]).join(', ')}`, 'Run: pnpm onboard    (it fills these in without touching anything you already set)') : ok('.env has every required setting')
   if (!quick && (statSync(envPath).mode & 0o077) !== 0) warn('.env can be read by other users on this computer', 'Run: chmod 600 .env')
@@ -44,8 +44,8 @@ else {
 
 // 3b. lines from older versions of .env.example that are wrong or dangerous
 if (existsSync(envPath) && !quick) {
-  for (const k of ['SIGNER_PRIVATE_KEY', 'EVM_PRIVATE_KEY', 'NEAR_PRIVATE_KEY']) {
-    if (!isPlaceholder(env.get(k))) warn(`.env holds a private key setting (${k}). Nothing reads it, and keys should not live in a text file`, `Delete that line from .env. The signer uses the key FILE named by SIGNER_KEY_FILE.`)
+  for (const k of ['SIGNER_PRIVATE_KEY', 'NEAR_PRIVATE_KEY']) {
+    if (!isPlaceholder(env.get(k))) warn(`.env holds a private key setting (${k}). Nothing reads it, and keys should not live in a text file`, `Delete that line from .env. The signer uses the key FILE named by SIGNER_NEAR_KEY_FILE.`)
   }
   const base = env.get('ONECLICK_BASE_URL')
   if (!isPlaceholder(base) && !['127.0.0.1', 'localhost', '[::1]'].includes((() => { try { return new URL(base).hostname } catch { return '' } })())) {
@@ -55,7 +55,7 @@ if (existsSync(envPath) && !quick) {
 }
 
 // 4. the signer's key
-const keyRaw = env.get('SIGNER_KEY_FILE')
+const keyRaw = env.get('SIGNER_NEAR_KEY_FILE')
 if (keyRaw && !isPlaceholder(keyRaw)) {
   const keyPath = isAbsolute(keyRaw) ? keyRaw : `${root}/${keyRaw}`
   if (!existsSync(keyPath)) bad(`the signer's key file is missing (${keyPath})`, 'Run: pnpm onboard    (it makes the key and prints only its public address)')

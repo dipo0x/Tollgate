@@ -50,7 +50,7 @@ const mandate = {
   id: `mnd_${run}`, version: 1, principal: 'you@example.com', agentId: 'research-agent',
   validFrom: iso(now), validUntil: iso(new Date(now.getTime() + 7 * 86_400_000)),
   budget: { currency: 'USDC', total: '20.00', perPayment: '1.00' },
-  allowedHosts: [host], allowedOriginNetworks: ['eip155:42161'], allowedAssets: ['USDC'],
+  allowedHosts: [host], allowedOriginNetworks: ['near'], allowedAssets: ['USDC'],
   payee: { mode: 'registry' }, price: { tolerancePct: 3, onExceed: 'needs_approval' },
   approval: { above: '1.00', riskAbove: 90, firstPayeeRequiresApproval: true }, refund: { mustBePayerOrPinned: true },
 }
@@ -64,7 +64,7 @@ console.log('budget:', JSON.stringify(m.ledger ?? m.balance ?? {}))
 
 // 6. A merchant answered 402 with this payment request. Ask the gateway whether to pay it.
 const challenge = { id: `ch_${run}`, method: 'nearintents', recipient: 'deposit-address', amount: '0.30', currency: 'USDC',
-  originNetwork: 'eip155:42161', refundTo: '0xYourSignerPublicAddress', expires: iso(new Date(now.getTime() + 10 * 60_000)) }
+  originNetwork: 'near', refundTo: 'your-signer-account.near', expires: iso(new Date(now.getTime() + 10 * 60_000)) }
 const d = await call('POST', '/v1/authorize', agentToken, { mandateId: mandate.id, host, purpose: 'buy market data', challenge })
 console.log(`\nauthorize -> ${d.status} ${d.body?.decision}`)
 for (const c of d.body?.checks ?? []) if (c.result !== 'pass') console.log(`  ${c.id} ${c.name}: ${c.result}  ${JSON.stringify(c.evidence)}`)

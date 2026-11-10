@@ -50,7 +50,7 @@ tollgate/
 | `app.ts` | The `/v1/sign` route and its refusals. |
 | `policy.ts` | The rules a request must satisfy; the signer's own limits. |
 | `config.ts` | Settings. |
-| `chains.ts`, `near.ts` | EVM and NEAR transfer building. |
+| `near.ts` | NEAR transfer building (the `ft_transfer`, the x402 delegate action). |
 
 ### packages/core/src
 | Path | Role |

@@ -1,4 +1,3 @@
-import { encodeFunctionData, erc20Abi, getAddress, isAddress, type Hex } from 'viem'
 import { isNearAccount, MAX_DELEGATE_TTL_BLOCKS, MIN_DELEGATE_TTL_BLOCKS, validBlockHash, type NearDelegateParams, type NearToken, type NearTxParams } from './near.ts'
 
 /**
@@ -21,32 +20,26 @@ export type StoredDecision = {
 
 export type MandateState = { status: 'active' | 'revoked'; validUntil: string }
 
-/** What the caller may choose: only how the transaction is paid for on chain. All bounded by the signer's own limits. */
-export type TxParams = { nonce: number; gas: bigint; maxFeePerGas: bigint; maxPriorityFeePerGas: bigint }
-
-export type SignRequest = { decisionId: string; bind: Bind; tx: TxParams | NearTxParams | NearDelegateParams }
-
-export type Token = { chainId: number; contract: Hex; decimals: number }
+/** What the caller may choose: only how the transaction is paid for on chain (the access key's nonce, and a block hash or height). */
+export type SignRequest = { decisionId: string; bind: Bind; tx: NearTxParams | NearDelegateParams }
 
 /** The signer's own rules. They do not come from the request, the gateway or the database. */
 export type Limits = {
-  /** (chain id in CAIP-2 form, asset symbol) -> token. Anything not listed cannot be paid. */
-  tokens: Readonly<Record<string, Token>>
   /** The most a single payment may move, in the token's smallest unit. A second cap, independent of the mandate's. */
   maxPerTx: bigint
-  maxGas: bigint
-  maxFeePerGas: bigint
-  /** ("near", asset) -> NEP-141 token. Absent: this signer does not pay from NEAR. */
+  /** ("near" or "near:mainnet", asset) -> NEP-141 token. Anything not listed cannot be paid. */
   nearTokens?: Readonly<Record<string, NearToken>>
+  /**
+   * Taking the owner's money back OUT. `to` is the one NEAR account withdrawals may go to: it comes from this signer's own settings
+   * (SIGNER_WITHDRAW_TO) and from nowhere else, so no request, gateway or token can name another. `max` caps one withdrawal
+   * (absent: no cap, because the money can only go to the owner). Absent `withdraw`: this signer refuses every withdrawal.
+   */
+  withdraw?: { to: string; token: NearToken; max?: bigint }
 }
 
 export type Refusal =
   | 'unknown_decision' | 'not_allowed' | 'mandate_inactive' | 'frozen' | 'no_bind' | 'bind_mismatch' | 'expired'
-  | 'unsupported_asset' | 'invalid_amount' | 'over_signer_cap' | 'invalid_recipient' | 'bad_tx_params' | 'already_signed'
-
-export type Checked =
-  | { ok: true; bind: Bind; mandateId: string; tx: { chainId: number; to: Hex; data: Hex; value: 0n; nonce: number; gas: bigint; maxFeePerGas: bigint; maxPriorityFeePerGas: bigint; type: 'eip1559' }; amount: bigint; recipient: Hex }
-  | { ok: false; reason: Refusal; detail: string; field?: string }
+  | 'unsupported_asset' | 'invalid_amount' | 'over_signer_cap' | 'invalid_recipient' | 'bad_tx_params' | 'already_signed' | 'withdraw_off'
 
 export const tokenKey = (chain: string, asset: string) => `${chain}:${asset}`
 
@@ -92,38 +85,6 @@ export function checkCommon(req: SignRequest, stored: StoredDecision | undefined
   const expires = Date.parse(bind.expiresAt)
   if (!Number.isFinite(expires) || expires <= now.getTime()) return no('expired', 'the decision has expired')
   return { ok: true, bind, mandateId: stored.mandateId }
-}
-
-export function check(req: SignRequest, stored: StoredDecision | undefined, mandate: MandateState | undefined, frozen: boolean, now: Date, limits: Limits): Checked {
-  const common = checkCommon(req, stored, mandate, frozen, now)
-  if (!common.ok) return common
-  const { bind } = common
-  if (!('gas' in req.tx)) return no('bad_tx_params', 'an EVM payment needs nonce, gas and fees')
-
-  // From here on, only the stored bind is used.
-  const token = limits.tokens[tokenKey(bind.chain, bind.asset)]
-  if (!token) return no('unsupported_asset', `${bind.asset} on ${bind.chain} is not something this signer will pay`)
-  if (!isAddress(bind.to, { strict: false })) return no('invalid_recipient', 'the recipient is not an address')
-  const recipient = getAddress(bind.to.toLowerCase()) as Hex
-  if (/^0x0{40}$/i.test(recipient) || recipient.toLowerCase() === token.contract.toLowerCase()) return no('invalid_recipient', 'the recipient is the zero address or the token contract itself')
-  const amount = parseAmount(bind.amount, token.decimals)
-  if (amount === undefined) return no('invalid_amount', 'the amount is not a positive decimal the token can express')
-  if (amount > limits.maxPerTx) return no('over_signer_cap', "the amount is over this signer's own per-payment cap")
-
-  const t = req.tx
-  const okTx = Number.isInteger(t.nonce) && t.nonce >= 0 && t.nonce <= 0xffffffff
-    && t.gas >= 21_000n && t.gas <= limits.maxGas
-    && t.maxFeePerGas > 0n && t.maxFeePerGas <= limits.maxFeePerGas
-    && t.maxPriorityFeePerGas >= 0n && t.maxPriorityFeePerGas <= t.maxFeePerGas
-  if (!okTx) return no('bad_tx_params', 'the nonce, gas or fee is outside what this signer allows')
-
-  return {
-    ok: true, amount, recipient, bind, mandateId: common.mandateId,
-    tx: {
-      type: 'eip1559', chainId: token.chainId, to: token.contract, value: 0n, nonce: t.nonce, gas: t.gas, maxFeePerGas: t.maxFeePerGas, maxPriorityFeePerGas: t.maxPriorityFeePerGas,
-      data: encodeFunctionData({ abi: erc20Abi, functionName: 'transfer', args: [recipient, amount] }),
-    },
-  }
 }
 
 /** "0.25" and "0.250000" are the same amount. Anything that is not a decimal is never the same. */
@@ -184,4 +145,27 @@ export function checkNear(req: SignRequest, stored: StoredDecision | undefined, 
     return no('bad_tx_params', 'a NEAR payment needs a positive access-key nonce and a 32-byte base58 block hash')
   }
   return { ok: true, bind, mandateId: common.mandateId, token, to: bind.to, amount, tx: { nonce: t.nonce, blockHash: t.blockHash } }
+}
+
+export type WithdrawRequest = { withdrawalId: string; amount: string; tx: NearTxParams }
+export type CheckedWithdraw = { ok: true; token: NearToken; to: string; amount: bigint; tx: NearTxParams } | No
+
+/**
+ * A withdrawal is the owner moving their own money back out. It is NOT a payment, so it has no stored decision or mandate; the
+ * rules that protect it are different and stricter in one way: the recipient is fixed in this signer's settings. The request
+ * supplies only an amount and how the transaction is paid for (the key's nonce and a block hash). The kill switch does NOT stop
+ * it: when something has gone wrong, getting the money home must stay possible, and home is the only place it can go.
+ */
+export function checkWithdraw(req: WithdrawRequest, limits: Limits): CheckedWithdraw {
+  const w = limits.withdraw
+  if (!w) return no('withdraw_off', 'this signer has no withdrawal account set (SIGNER_WITHDRAW_TO)')
+  if (!/^wd_[a-z0-9]{8,40}$/.test(req.withdrawalId)) return no('bad_tx_params', 'the withdrawal id is not one the gateway makes')
+  const amount = parseAmount(req.amount, w.token.decimals)
+  if (amount === undefined) return no('invalid_amount', 'the amount is not a positive decimal the token can express')
+  if (w.max !== undefined && amount > w.max) return no('over_signer_cap', "the amount is over this signer's own per-withdrawal cap")
+  const t = req.tx
+  if (typeof t.nonce !== 'bigint' || t.nonce <= 0n || t.nonce >= 2n ** 64n || !validBlockHash(t.blockHash)) {
+    return no('bad_tx_params', 'a NEAR transaction needs a positive access-key nonce and a 32-byte base58 block hash')
+  }
+  return { ok: true, token: w.token, to: w.to, amount, tx: { nonce: t.nonce, blockHash: t.blockHash } }
 }

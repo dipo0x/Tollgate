@@ -6,7 +6,7 @@ import { baseDecode, baseEncode } from '@near-js/utils'
 
 /**
  * Paying FROM NEAR. The agent's money sits in a NEAR account; a payment is a NEP-141 `ft_transfer` of USDC on NEAR to the
- * deposit address 1Click issued. Same rule as the EVM path: everything in the transaction comes from the STORED decision
+ * deposit address 1Click issued. Everything in the transaction comes from the STORED decision
  * and from constants here. The caller supplies only the access-key nonce and a recent block hash.
  */
 
@@ -47,7 +47,7 @@ export function buildTransfer(o: { signerId: string; publicKey: string; token: N
 
 /**
  * x402 on NEAR (the NEAR AI Agent Market). The market does not want a transaction: it wants a NEP-366 SIGNED DELEGATE ACTION,
- * which its relayer submits (and pays gas for) only when the hired agent delivers. Same rule as above: everything in it comes
+ * which its relayer submits (and pays gas for) only when the hired agent delivers. Everything in it comes
  * from the stored decision and the constants here. The caller supplies only the next access-key nonce and the current block height.
  */
 export const X402_CHAIN = 'near:mainnet'

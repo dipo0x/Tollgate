@@ -12,9 +12,13 @@ A place your agent is allowed to pay, with a name, host, category and price. See
 
 No. A fresh install has none. `pnpm live:app` registers the demo shop and any market sellers you list. You can add your own.
 
-## What is the "bridge cost brief"?
+## What is the "settlement cost brief"?
 
-A small seller we run. For about 0.20 USDC it tells you what it costs right now to move 1 USDC from Arbitrum to NEAR, using a live 1Click quote. It is a reference seller for demonstrating real payments, not a third-party marketplace.
+A small seller we run. For about 0.20 USDC it tells you what it costs right now to settle 1 USDC to a NEAR account through 1Click, using a live quote. It is a reference seller for demonstrating real payments, not a third-party marketplace.
+
+## How do I get my money back out?
+
+Account → **Withdraw to your account**. Choose an amount (or **Max**), confirm with Face ID, and the USDC is sent from the signer's NEAR account to the account you set as `SIGNER_WITHDRAW_TO`. Two things protect it: the phone never names the destination (it is fixed on the signer's computer, so a stolen phone or key cannot redirect your money), and USDC already promised to payments in progress stays behind. It works even when payments are frozen. API: [POST /v1/withdrawals](/api-ops/#post-v1withdrawals).
 
 ## Is Tollgate a wallet?
 

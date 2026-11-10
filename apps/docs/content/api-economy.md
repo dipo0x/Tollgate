@@ -12,12 +12,12 @@ Key: **agent**. `:id` is a name you choose for this negotiation.
 
 | Body | Meaning |
 | --- | --- |
-| `{ "from": "seller" \| "agent", "kind": "offer" \| "counter", "price": "0.15", "asset": "USDC", "payee": "0xDEPOSIT…" }` | A price message. |
+| `{ "from": "seller" \| "agent", "kind": "offer" \| "counter", "price": "0.15", "asset": "USDC", "payee": "6ccbfe88…" }` | A price message. |
 | `{ "from": …, "kind": "accept" }` | Accepts the last price. |
 | `{ "from": …, "kind": "walk" }` | Ends the talks with no deal. |
 
 ```json
-{ "ok": true, "status": "agreed", "rounds": 2, "deal": { "price": "0.15", "asset": "USDC", "payee": "0xDEPOSIT…" } }
+{ "ok": true, "status": "agreed", "rounds": 2, "deal": { "price": "0.15", "asset": "USDC", "payee": "6ccbfe88…" } }
 ```
 
 A refused message is a normal `200` with `"ok": false` and a `reason` (for example a price above the ceiling, or too many rounds). `status` is `open`, `agreed` or `closed`. The seller then signs a deal token (HMAC, valid 10 minutes) and the agent bills for the agreed price.
@@ -71,7 +71,7 @@ Key: **operator**.
 Key: **agent** (the seller). Reports a customer's payment. The gateway verifies it against the job, not against what the agent says.
 
 ```json
-{ "id": "dep_123", "status": "SUCCESS", "amount": "0.20", "currency": "USDC", "payee": "0xMYADDRESS", "payerRef": "customer-1", "settledAt": "2026-11-08T12:00:00Z" }
+{ "id": "dep_123", "status": "SUCCESS", "amount": "0.20", "currency": "USDC", "payee": "my-account.near", "payerRef": "customer-1", "settledAt": "2026-11-08T12:00:00Z" }
 ```
 
 **Response 200:** `{ "credited": true, "amount": "0.200000", "receiptId": "dep_123" }`, or `{ "credited": false, "reason": "…", "detail": "…" }`.

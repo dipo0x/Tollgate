@@ -1,7 +1,7 @@
 // `pnpm sandbox:agent [behaviour]`: a tiny agent that buys one thing, using the Tollgate SDK, against the running sandbox.
 // This is also the smallest real example of using the SDK. Read it: the part that matters is the `createTollgate` call and `tollgate.fetch`.
 import { readFileSync } from 'node:fs'
-import { ApprovalRequired, createTollgate, GatewayError, httpRpcRail, PaymentDenied, PaymentFailed } from 'trytollgate'
+import { ApprovalRequired, createTollgate, GatewayError, nearRpcRail, PaymentDenied, PaymentFailed } from 'trytollgate'
 
 let box
 try { box = JSON.parse(readFileSync(new URL('../../.sandbox.json', import.meta.url), 'utf8')) } catch {
@@ -25,7 +25,7 @@ const toTheSandbox = (input, init) => {
 // ---- the part that matters: this is the whole integration -------------------------------------------------------------------------
 const tollgate = createTollgate({
   gatewayUrl: box.gateway, agentToken: box.agentToken, mandateId: box.mandateId, payer: box.payer,
-  rail: httpRpcRail({ 'eip155:42161': `${box.world}/rpc` }), fetch: toTheSandbox, purpose: 'buy the market brief',
+  rail: nearRpcRail({ rpcUrl: `${box.world}/rpc`, publicKey: box.publicKey }), fetch: toTheSandbox, purpose: 'buy the market brief',
   // In phone mode every purchase waits for the owner's phone: keep asking for up to five minutes instead of giving up.
   ...(box.phone ? { approval: { wait: true, pollMs: 2000, timeoutMs: 5 * 60_000 } } : {}),
 })

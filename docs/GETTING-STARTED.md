@@ -255,7 +255,7 @@ curl -s -X POST $GW/v1/services/svc_data/enable -H "Authorization: Bearer $TOKEN
 ```
 
 **4. Create the mandate.** Every field here is required. Read them as: *this agent may spend up to 20 USDC in total, at most 1 per payment, only at
-`api.example.com`, only in USDC on Arbitrum; a person must approve anything above 1 USDC and any first payment to a new payee.*
+`api.example.com`, only in USDC on NEAR; a person must approve anything above 1 USDC and any first payment to a new payee.*
 
 ```bash
 curl -s -X POST $GW/v1/mandates -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d @- <<JSON
@@ -263,7 +263,7 @@ curl -s -X POST $GW/v1/mandates -H "Authorization: Bearer $TOKEN" -H "Content-Ty
   "id": "mnd_1", "version": 1, "principal": "you@example.com", "agentId": "research-agent",
   "validFrom": "$FROM", "validUntil": "$TO",
   "budget": { "currency": "USDC", "total": "20.00", "perPayment": "1.00" },
-  "allowedHosts": ["api.example.com"], "allowedOriginNetworks": ["eip155:42161"], "allowedAssets": ["USDC"],
+  "allowedHosts": ["api.example.com"], "allowedOriginNetworks": ["near"], "allowedAssets": ["USDC"],
   "payee": { "mode": "registry" },
   "price": { "tolerancePct": 3, "onExceed": "needs_approval" },
   "approval": { "above": "1.00", "riskAbove": 90, "firstPayeeRequiresApproval": true },
@@ -296,14 +296,14 @@ You should see the mandate and its money (`"total":"20.000000"`, `"remaining":"2
 The whole integration is the part of `e2e/examples/agent.mjs` between the dashes. It is this:
 
 ```js
-import { createTollgate, httpRpcRail } from 'trytollgate'
+import { createTollgate, nearRpcRail } from 'trytollgate'
 
 const tollgate = createTollgate({
   gatewayUrl: 'http://127.0.0.1:8787',          // where your gateway runs
   agentToken: process.env.TOLLGATE_AGENT_TOKEN, // from Step 5 (shown once when the mandate was created)
   mandateId: 'mnd_1',                           // the rules this agent works under
-  payer: '0xTheSignersPublicAddress',           // printed by `pnpm onboard`
-  rail: httpRpcRail({ 'eip155:42161': 'https://arb1.arbitrum.io/rpc' }),
+  payer: 'the-signers-near-account',            // printed by `pnpm onboard`
+  rail: nearRpcRail({ rpcUrl: 'https://free.rpc.fastnear.com', publicKey: 'THE_PUBLIC_KEY_PRINTED_BY_ONBOARD' }),
 })
 const res = await tollgate.fetch('https://api.example.com/data')   // a 402 is handled for you
 ```
@@ -329,30 +329,24 @@ go run e2e/examples/agent.go bad-rate          # -> BLOCKED by C07
 ```
 
 The loop they implement is the whole integration, in five steps: (1) ask the merchant, which answers 402 with a payment request; (2) `POST /v1/authorize` with that
-request and read `decision`; (3) only on `ALLOW`, `POST /v1/payments/{decisionId}/sign` with the nonce and fees from your RPC; (4) broadcast the returned `signedTx` yourself
-(`eth_sendRawTransaction`), because Tollgate signs but never sends; (5) ask the merchant again with an `x-payment-proof` header. Any language that can send HTTP can do it.
+request and read `decision`; (3) only on `ALLOW`, `POST /v1/payments/{decisionId}/sign` with the key's next nonce and a recent block hash from your RPC; (4) broadcast the returned `signedTx` yourself
+(`send_tx`), because Tollgate signs but never sends; (5) ask the merchant again with an `x-payment-proof` header. Any language that can send HTTP can do it.
 These files were run against the sandbox in Python and Go, both ways: paying an honest merchant and being blocked by cheating ones. They have not been run against a
 real merchant or real money.
 
-### Paying from NEAR instead of Arbitrum
+### The NEAR account the signer pays from
 
-The signer can also pay from a NEAR account, in NEAR's native USDC. From the repo root:
+`pnpm onboard` makes the key (`.signer-near-key`, mode 600) and prints the PUBLIC account to fund. To make one by hand:
 
 ```bash
-pnpm --filter @tollgate/signer keygen-near     # makes .signer-near-key (mode 600); prints the PUBLIC account and key only
+pnpm --filter @tollgate/signer keygen-near     # prints the PUBLIC account and key only
 ```
 
-Then in `.env` set `SIGNER_CHAINS=eip155:42161,near`, allow `near` in the mandate (`"allowedOriginNetworks": ["near"]`), and in the agent use the NEAR rail:
-
-```js
-import { createTollgate, nearRpcRail } from 'trytollgate'
-const tollgate = createTollgate({ /* gateway, token, mandate as above */ payer: 'THE_NEAR_ACCOUNT_PRINTED_ABOVE',
-  rail: nearRpcRail({ rpcUrl: 'https://rpc.mainnet.near.org', publicKey: 'THE_PUBLIC_KEY_PRINTED_ABOVE' }) })
-```
+The mandate allows the network with `"allowedOriginNetworks": ["near"]`, and the agent uses the NEAR rail shown in Step 6.
 
 A NEAR payment is one transaction to the USDC contract: `storage_deposit` (registers the deposit address if needed; refunded if not) and
 `ft_transfer` of exactly the approved amount. It has been run once with real money (3 Nov 2026, 0.206712 USDC, [transaction](https://nearblocks.io/txns/389TS16z3FKSkuiWnrLcWpSzU5R6DjpEio2rW84FLr1X); reproduce with `pnpm live:near`). Fund the account
-(a little NEAR for gas and the USDC it may spend) only when you decide to try it with real money. `nearRpcRail` needs SDK 0.2.0 or later.
+(a little NEAR for gas and the USDC it may spend) only when you decide to try it with real money. 
 
 ## Step 7. Check that it all works
 
@@ -386,7 +380,7 @@ Find your message in the left column.
 | `npm warn Unknown project config "shamefully-hoist"` | You ran `npm`. The warning is harmless. | Use `pnpm` instead of `npm`. |
 | You ran `pnpm setup` or `pnpm doctor` and something odd happened | Those are built-in pnpm commands, not Tollgate's. | Use `pnpm onboard` and `pnpm preflight`. If `pnpm setup` changed your shell, see pnpm's docs on `PNPM_HOME`. |
 | `The signer cannot start: its settings are incomplete.` / `SIGNER_SERVICE_TOKEN: is not set` | `.env` is missing a setting. | `pnpm onboard`, then `pnpm preflight`. |
-| `Cannot load the signing key` | The key file is missing, or other users can read it. | `pnpm onboard` makes it. If it exists but is readable by others: `chmod 600 .signer-key`. |
+| `Cannot load the signing key` | The key file is missing, or other users can read it. | `pnpm onboard` makes it. If it exists but is readable by others: `chmod 600 .signer-near-key`. |
 | `The gateway cannot start: its settings are incomplete or invalid.` | `.env` is missing or has a wrong value. | `pnpm onboard`, then `pnpm preflight`. |
 | `DATABASE_URL is not set` | No database address in `.env`. | `pnpm onboard` (writes the local one), then `pnpm db:up`. |
 | `Could not connect to the database` | The database is not running, or the address or password is wrong. | Start Docker Desktop, run `pnpm db:up`, then `pnpm preflight`. If you changed `POSTGRES_PASSWORD` after the database was first created, run `pnpm db:reset` (this deletes the local data) and `pnpm db:up` again. |

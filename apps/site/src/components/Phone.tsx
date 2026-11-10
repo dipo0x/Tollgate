@@ -31,7 +31,7 @@ const RULES: [string, string, string][] = [
 const DEVICES: [string, string, string, string][] = [
   ['Home', 'ph-side', '/phone/home.jpg', 'Tollgate app home screen: 1.00 USDC left to spend, payments on and live, one agent running, one payment of 0.202021 USDC waiting, and recent paid payments.'],
   ['Approve', 'ph-main', '/phone/approve.jpg', 'Tollgate app approve screen: spend-agent wants to pay 0.202021 USDC for the cost brief, 11 of 12 checks passed, with Hold to approve and Reject.'],
-  ['Chat', 'ph-side', '/phone/chat.jpg', 'Tollgate app chat with spend-agent: the owner asks it to buy the bridge cost brief, the agent asks to pay 0.202021 USDC, and a payment card waits for review.'],
+  ['Chat', 'ph-side', '/phone/chat.jpg', 'Tollgate app chat with spend-agent: the owner asks it to buy the settlement cost brief, the agent asks to pay 0.202021 USDC, and a payment card waits for review.'],
 ]
 
 export default function Phone() {

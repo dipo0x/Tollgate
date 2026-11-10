@@ -53,12 +53,12 @@ describe('fixtures on disk', () => {
 
 describe('HttpOneClick against a stub of the API', () => {
   const tokens = [
-    { assetId: 'nep141:arb-usdc', decimals: 6, blockchain: 'arb', symbol: 'USDC', price: 1, priceUpdatedAt: 'x' },
+    { assetId: 'nep141:wrap.near', decimals: 24, blockchain: 'near', symbol: 'wNEAR', price: 5, priceUpdatedAt: 'x' },
     { assetId: 'nep141:near-usdc', decimals: 6, blockchain: 'near', symbol: 'USDC', price: 1, priceUpdatedAt: 'x' },
   ]
   const statusBody = (over: Record<string, unknown> = {}) => ({
     status: 'PENDING_DEPOSIT',
-    quoteResponse: { quoteRequest: { originAsset: 'nep141:arb-usdc', destinationAsset: 'nep141:near-usdc', recipient: 'merchant.near', refundTo: '0xpayer' }, quote: { depositAddress: '0xdep', amountIn: '251000', amountOut: '250000' } },
+    quoteResponse: { quoteRequest: { originAsset: 'nep141:near-usdc', destinationAsset: 'nep141:near-usdc', recipient: 'merchant.near', refundTo: '0xpayer' }, quote: { depositAddress: '0xdep', amountIn: '251000', amountOut: '250000' } },
     ...over,
   })
   const client = (handler: (url: string, init?: RequestInit) => Response | Promise<Response>) => {
@@ -74,7 +74,7 @@ describe('HttpOneClick against a stub of the API', () => {
     const { c } = client(() => json(200, statusBody()))
     expect(await c.status('0xdep')).toEqual({ found: true, record: {
       status: 'PENDING_DEPOSIT', depositAddress: '0xdep', originAsset: 'USDC', amountIn: '0.251000', destination: 'merchant.near',
-      destinationAsset: 'USDC', amountOut: '0.250000', refundTo: '0xpayer', originAssetId: 'nep141:arb-usdc', destinationAssetId: 'nep141:near-usdc',
+      destinationAsset: 'USDC', amountOut: '0.250000', refundTo: '0xpayer', originAssetId: 'nep141:near-usdc', destinationAssetId: 'nep141:near-usdc',
     } })
   })
   it('sends the key only in a header, never in the URL', async () => {
@@ -99,17 +99,17 @@ describe('HttpOneClick against a stub of the API', () => {
   })
   it('asks for a DRY, exact-output quote in base units, and reads our price back as a decimal', async () => {
     const { c, calls } = client(() => json(200, { quote: { amountIn: '251000' } }))
-    expect(await c.dryQuote({ originAsset: 'USDC', originNetwork: 'eip155:42161', destinationAsset: 'USDC', destination: 'merchant.near', amountOut: '0.250000', refundTo: '0xpayer' })).toEqual({ amountIn: '0.251000' })
+    expect(await c.dryQuote({ originAsset: 'USDC', originNetwork: 'near', destinationAsset: 'USDC', destination: 'merchant.near', amountOut: '0.250000', refundTo: '0xpayer' })).toEqual({ amountIn: '0.251000' })
     const post = calls.find(x => x.url.endsWith('/v0/quote'))!
     expect(JSON.parse(String(post.init?.body))).toMatchObject({
-      dry: true, swapType: 'EXACT_OUTPUT', originAsset: 'nep141:arb-usdc', destinationAsset: 'nep141:near-usdc', amount: '250000',
+      dry: true, swapType: 'EXACT_OUTPUT', originAsset: 'nep141:near-usdc', destinationAsset: 'nep141:near-usdc', amount: '250000',
       recipient: 'merchant.near', refundTo: '0xpayer', depositType: 'ORIGIN_CHAIN', deadline: '2026-11-06T11:00:00.000Z',
     })
   })
   it('a failed or unusable quote throws', async () => {
-    await expect(client(() => json(400, { message: 'Internal server error' })).c.dryQuote({ originAsset: 'USDC', originNetwork: 'eip155:42161', destinationAsset: 'USDC', destination: 'm', amountOut: '1' })).rejects.toThrow(/HTTP 400/)
-    await expect(client(() => json(200, { quote: {} })).c.dryQuote({ originAsset: 'USDC', originNetwork: 'eip155:42161', destinationAsset: 'USDC', destination: 'm', amountOut: '1' })).rejects.toThrow(/amountIn/)
-    await expect(client(() => json(200, {})).c.dryQuote({ originAsset: 'DOGE', originNetwork: 'eip155:42161', destinationAsset: 'USDC', destination: 'm', amountOut: '1' })).rejects.toThrow(/does not list/)
+    await expect(client(() => json(400, { message: 'Internal server error' })).c.dryQuote({ originAsset: 'USDC', originNetwork: 'near', destinationAsset: 'USDC', destination: 'm', amountOut: '1' })).rejects.toThrow(/HTTP 400/)
+    await expect(client(() => json(200, { quote: {} })).c.dryQuote({ originAsset: 'USDC', originNetwork: 'near', destinationAsset: 'USDC', destination: 'm', amountOut: '1' })).rejects.toThrow(/amountIn/)
+    await expect(client(() => json(200, {})).c.dryQuote({ originAsset: 'DOGE', originNetwork: 'near', destinationAsset: 'USDC', destination: 'm', amountOut: '1' })).rejects.toThrow(/does not list/)
   })
   it('loads the token list once, and tries again after a failure', async () => {
     let n = 0, fail = true
@@ -121,8 +121,8 @@ describe('HttpOneClick against a stub of the API', () => {
   })
   it('catalog lookup by symbol and network', () => {
     const cat = new TokenCatalog(tokens)
-    expect(cat.find('USDC', 'eip155:42161')?.assetId).toBe('nep141:arb-usdc')
-    expect(cat.find('USDC', 'eip155:999999')).toBeUndefined()
+    expect(cat.find('USDC', 'near')?.assetId).toBe('nep141:near-usdc')
+    expect(cat.find('USDC', 'elsewhere')).toBeUndefined()
   })
 })
 
@@ -168,16 +168,16 @@ describe('the checks, end to end, offline, against the committed fixtures', () =
   const spec = MandateSchema.parse({
     id: 'mnd_1', version: 1, principal: 'ada@example.com', agentId: 'agent-1', validFrom: '2026-11-05T00:00:00Z', validUntil: '2026-11-12T00:00:00Z',
     budget: { currency: 'USDC', total: '5.00', perPayment: '1.00' }, allowedHosts: ['merchant.example.com'],
-    allowedOriginNetworks: ['eip155:42161'], allowedAssets: ['USDC'], payee: { mode: 'pin-on-first-approval' },
+    allowedOriginNetworks: ['near'], allowedAssets: ['USDC'], payee: { mode: 'pin-on-first-approval' },
     price: { tolerancePct: 3, onExceed: 'needs_approval' }, approval: { above: '1.00', riskAbove: 60, firstPayeeRequiresApproval: true }, refund: { mustBePayerOrPinned: true },
   })
-  const PAYER = '0xaf88d065e77c8cc2239327c5edb3a432268e5831'
+  const PAYER = 'payer.near'
   const ctx = (deposit: string, over: Partial<CheckContext> = {}): CheckContext => {
     const pins = new InMemoryPins().pinPayee('merchant.example.com', 'merchant.near')
     const ledger = new InMemoryLedger(() => new Date('2026-11-06T10:00:00Z')); void ledger.openBudget('mnd_1', toMicro('5.00'))
     return {
       mandate: { spec, status: 'active' }, agentId: 'agent-1', host: 'merchant.example.com', now: new Date('2026-11-06T10:00:00Z'), payer: PAYER,
-      rawChallenge: { id: `ch_${deposit.slice(-2)}`, method: 'nearintents', recipient: deposit, amount: '0.251000', currency: 'USDC', originNetwork: 'eip155:42161', refundTo: PAYER, expires: '2026-11-06T10:05:00Z' },
+      rawChallenge: { id: `ch_${deposit.slice(-2)}`, method: 'nearintents', recipient: deposit, amount: '0.251000', currency: 'USDC', originNetwork: 'near', refundTo: PAYER, expires: '2026-11-06T10:05:00Z' },
       registry: h => ({ host: h, verification: 'endpoint-checked', enabled: true }), ledger,
       adapters: { oneClick: replay(), pins, decisions: new InMemoryDecisionIndex() }, ...over,
     }
@@ -185,26 +185,26 @@ describe('the checks, end to end, offline, against the committed fixtures', () =
   const run = (c: CheckContext) => evaluate(c, CHECKS)
 
   it('an honest merchant is allowed: record, quote and challenge all agree', async () => {
-    const e = await run(ctx('0xdep0000000000000000000000000000000000001'))
+    const e = await run(ctx('dec0de0000000000000000000000000000000000000000000000000000000001'))
     expect(e.decision).toBe('ALLOW')
     expect(e.checks.map(c => c.result)).toEqual(Array(12).fill('pass'))
   })
   it('a merchant paying out to an attacker is stopped by C05, even though 1Click knows the address', async () => {
-    expect(await run(ctx('0xdep0000000000000000000000000000000000002'))).toMatchObject({ decision: 'DENY', failedCheck: 'C05' })
+    expect(await run(ctx('dec0de0000000000000000000000000000000000000000000000000000000002'))).toMatchObject({ decision: 'DENY', failedCheck: 'C05' })
   })
   it('an address that has already been paid is stopped by C06', async () => {
-    expect(await run(ctx('0xdep0000000000000000000000000000000000003'))).toMatchObject({ decision: 'DENY', failedCheck: 'C06' })
+    expect(await run(ctx('dec0de0000000000000000000000000000000000000000000000000000000003'))).toMatchObject({ decision: 'DENY', failedCheck: 'C06' })
   })
   it('an address 1Click never heard of is stopped by C06 (the recorded real 404)', async () => {
-    expect(await run(ctx('0x0000000000000000000000000000000000000001'))).toMatchObject({ decision: 'DENY', failedCheck: 'C06' })
+    expect(await run(ctx('6ccbfe88ce0d615631d41dd81b48518f0ea27e60b8805d363159b4ab6bbb46f3'))).toMatchObject({ decision: 'DENY', failedCheck: 'C06' })
   })
   it('an address with no recording at all is a DENY, not a guess', async () => {
-    const e = await run(ctx('0xdep00000000000000000000000000000000000ff'))
+    const e = await run(ctx('dec0de00000000000000000000000000000000000000000000000000000000ff'))
     expect(e.decision).toBe('DENY')
     expect(JSON.stringify(e.checks.at(-1)?.evidence)).toContain('no recorded response')
   })
   it('a merchant that inflates the price 3x is stopped by C06 first, then (if it lied to both) C07', async () => {
-    const e = await run(ctx('0xdep0000000000000000000000000000000000001', { rawChallenge: { ...(ctx('0xdep0000000000000000000000000000000000001').rawChallenge as object), amount: '0.753000' } }))
+    const e = await run(ctx('dec0de0000000000000000000000000000000000000000000000000000000001', { rawChallenge: { ...(ctx('dec0de0000000000000000000000000000000000000000000000000000000001').rawChallenge as object), amount: '0.753000' } }))
     expect(e).toMatchObject({ decision: 'DENY', failedCheck: 'C06' })
   })
 })

@@ -9,7 +9,7 @@ const fresh = (): Seen => ({ keys: new Set(), since: '2026-11-07T19:59:00Z' })
 describe('newAlerts: what deserves a notification', () => {
   it('a payment waiting for you: who, how much, to whom, and a tap opens the Approve screen', () => {
     expect(newAlerts(fresh(), [approval('pending')], [])).toEqual([
-      { key: 'approval:dec_1', title: 'Payment waiting for your approval', body: 'spend-agent wants to pay 0.21 USDC to 127.0.0.1 for bridge brief. Tap to review.', url: '/approval/dec_1' },
+      { key: 'approval:dec_1', title: 'Payment waiting for your approval', body: 'spend-agent wants to pay 0.20 USDC to 127.0.0.1 for bridge brief. Tap to review.', url: '/approval/dec_1' },
     ])
   })
   it('an approved or rejected payment raises nothing', () => {

@@ -14,7 +14,7 @@ Expo SDK 58 (React Native 0.88), expo-router, TypeScript strict.
 3. In the app: **Get started**, scan the QR from step 1 (or enter the address it prints and your operator key).
 4. Turn on Face ID.
 5. **Agents → New chat.** Give it a name, pick **who answers** (one of your computer's brains, or **My own agent**), set a budget, and start. You land in the chat.
-6. Type "buy the bridge cost brief". The agent replies, asks to pay, and the payment shows up for you to approve (hold, then Face ID). Say no, or wait, and nothing is signed.
+6. Type "buy the settlement cost brief". The agent replies, asks to pay, and the payment shows up for you to approve (hold, then Face ID). Say no, or wait, and nothing is signed.
 
 Plugging in an agent of your own (Claude, Grok, ChatGPT, a script on localhost, anything that can make web requests): see `docs/bring-your-own-agent.md`.
 

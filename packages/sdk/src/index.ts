@@ -2,7 +2,7 @@ import { ApprovalRequired, GatewayError, PaymentDenied, PaymentFailed, type Chec
 import type { Rail } from './rail.ts'
 
 export { ApprovalRequired, GatewayError, PaymentDenied, PaymentFailed, TollgateError } from './errors.ts'
-export { httpRpcRail, nearRpcRail, type EvmTxParams, type NearDelegateTxParams, type NearTxParams, type Rail, type TxParams } from './rail.ts'
+export { nearRpcRail, type NearDelegateTxParams, type NearTxParams, type Rail, type TxParams } from './rail.ts'
 
 export type TollgateOptions = {
   /** Base URL of the Tollgate gateway, like http://127.0.0.1:8787 */

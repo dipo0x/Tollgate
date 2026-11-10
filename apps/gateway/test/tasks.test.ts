@@ -6,9 +6,9 @@ import { boot, mandateBody, OPERATOR, T0 } from './helpers.ts'
 describe('tasks: the owner talks to an agent', () => {
   it('owner sends a task, the agent claims it once, replies, and the owner reads the thread', async () => {
     const g = boot(); const { token, mandateId } = await g.setup()
-    const made = await g.op('POST', `/v1/agents/${mandateId}/tasks`, { text: '  buy the bridge cost brief  ' })
+    const made = await g.op('POST', `/v1/agents/${mandateId}/tasks`, { text: '  buy the settlement cost brief  ' })
     expect(made.status).toBe(201)
-    expect(made.json.task).toMatchObject({ mandateId, status: 'queued', messages: [{ from: 'owner', text: 'buy the bridge cost brief' }] })
+    expect(made.json.task).toMatchObject({ mandateId, status: 'queued', messages: [{ from: 'owner', text: 'buy the settlement cost brief' }] })
 
     const next = await g.call('POST', '/v1/tasks/next', token)
     expect(next.json.task).toMatchObject({ id: made.json.task.id, status: 'working' })

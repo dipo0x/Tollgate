@@ -4,16 +4,15 @@ import { loadConfig } from '../src/config.ts'
 import type { GatewayDeps } from '../src/gateway.ts'
 import { buildDeps, buildPersistentDeps } from '../src/wire.ts'
 import { createSignerApp } from '@tollgate/signer'
-import { viemBackend } from '@tollgate/signer/src/backend.ts'
-import { tokensFor } from '@tollgate/signer/src/chains.ts'
 import { MemorySignerStore } from '@tollgate/signer/src/store.ts'
-import { NEAR_USDC, type NearBackend } from '@tollgate/signer/src/near.ts'
-import { generatePrivateKey } from 'viem/accounts'
+import { NEAR_USDC, nearBackend, type NearBackend } from '@tollgate/signer/src/near.ts'
+import { KeyPair } from '@near-js/crypto'
+import { baseEncode } from '@near-js/utils'
 import { HttpSignerClient } from '../src/signer.ts'
 
 export const OPERATOR = 'test-operator-token-0123456789'
 export const T0 = new Date('2026-11-06T10:00:00Z')
-export const PAYER = '0xaf88d065e77c8cc2239327c5edb3a432268e5831'
+export const PAYER = 'payer.near'
 
 export const cfg = loadConfig({ GATEWAY_OPERATOR_TOKEN: OPERATOR, LOG_LEVEL: 'silent', TOLLGATE_OFFLINE: 'true' })
 
@@ -23,12 +22,12 @@ export const record = (deposit: string, over: Partial<OneClickRecord> = {}): One
 })
 
 export const challenge = (id: string, deposit: string, over: Record<string, unknown> = {}) => ({
-  id, method: 'nearintents', recipient: deposit, amount: '0.250000', currency: 'USDC', originNetwork: 'eip155:42161', refundTo: PAYER, expires: '2026-11-06T10:05:00Z', ...over,
+  id, method: 'nearintents', recipient: deposit, amount: '0.250000', currency: 'USDC', originNetwork: 'near', refundTo: PAYER, expires: '2026-11-06T10:05:00Z', ...over,
 })
 
 export const mandateBody = (over: Record<string, unknown> = {}) => ({
   id: 'mnd_1', version: 1, principal: 'ada@example.com', agentId: 'agent-1', validFrom: '2026-11-05T00:00:00Z', validUntil: '2026-11-12T00:00:00Z',
-  budget: { currency: 'USDC', total: '5.00', perPayment: '1.00' }, allowedHosts: ['merchant.example.com'], allowedOriginNetworks: ['eip155:42161'], allowedAssets: ['USDC'],
+  budget: { currency: 'USDC', total: '5.00', perPayment: '1.00' }, allowedHosts: ['merchant.example.com'], allowedOriginNetworks: ['near'], allowedAssets: ['USDC'],
   payee: { mode: 'pin-on-first-approval' }, price: { tolerancePct: 3, onExceed: 'needs_approval' }, approval: { above: '1.00', riskAbove: 90, firstPayeeRequiresApproval: true },
   refund: { mustBePayerOrPinned: true }, ...over,
 })
@@ -88,10 +87,11 @@ export async function bootPersistent(url: string, schema: string, clockRef: { no
 
 // ---- a gateway wired to a REAL signer app (same process), for tests that need to sign ----------------
 
-export const RECIPIENT = '0x1234567890abcdef1234567890abcdef12345678' // a real-looking address: the signer insists on one
+export const RECIPIENT = '6ccbfe88ce0d615631d41dd81b48518f0ea27e60b8805d363159b4ab6bbb46f3' // a real-looking 1Click NEAR deposit address (an implicit account): the signer insists on a valid one
 export const SIGNER_SERVICE_TOKEN = 'signer-service-token-0123456789-abcdef'
 export const AUTO = { approval: { above: '1.00', riskAbove: 90, firstPayeeRequiresApproval: false } }
-export const TX = { nonce: 7, gas: '100000', maxFeePerGas: '100000000', maxPriorityFeePerGas: '10000000' }
+/** How a NEAR payment is paid for: the access key's next nonce and a recent block hash. */
+export const TX = { nonce: '123456789012345', blockHash: baseEncode(new Uint8Array(32).fill(7)) }
 
 /** Lets the signer read the gateway's own stored decisions, mandates and kill switch, as the Postgres version reads the same tables. */
 export class BridgedStore extends MemorySignerStore {
@@ -111,16 +111,14 @@ export class BridgedStore extends MemorySignerStore {
 /** A gateway wired to a real signer app (in the same process), with the gateway's clock. */
 export function bootWithSigner(opts: { token?: string; over?: Partial<GatewayDeps>; near?: NearBackend } = {}) {
   const g = boot(opts.over ?? {})
-  const backend = viemBackend(generatePrivateKey())
+  const near = opts.near ?? nearBackend(KeyPair.fromRandom('ed25519').toString())
   const store = new BridgedStore(g)
-  // With a NEAR key, the signer also pays x402 on NEAR (NEAR AI Agent Market) in native USDC, as the real one is configured to.
-  const nearPart = opts.near ? { near: opts.near } : {}
-  const nearTokens = opts.near ? { nearTokens: { 'near:mainnet:USDC': NEAR_USDC } } : {}
-  const signerApp = createSignerApp({ store, backend, limits: { tokens: tokensFor(['eip155:42161']), maxPerTx: 1_000_000n, maxGas: 200_000n, maxFeePerGas: 2_000_000_000n, ...nearTokens }, clock: () => g.deps.clock(), ...nearPart }, SIGNER_SERVICE_TOKEN)
+  // The signer pays from NEAR (1Click) and, for the NEAR AI Agent Market's x402, on near:mainnet, in native USDC, as the real one is configured to.
+  const signerApp = createSignerApp({ store, near, limits: { maxPerTx: 1_000_000n, nearTokens: { 'near:USDC': NEAR_USDC, 'near:mainnet:USDC': NEAR_USDC } }, clock: () => g.deps.clock() }, SIGNER_SERVICE_TOKEN)
   const calls: unknown[] = []
   const toSigner = ((url: string, init: RequestInit) => { calls.push(JSON.parse(String(init.body))); return Promise.resolve(signerApp.request(new URL(url).pathname, init)) }) as unknown as typeof fetch
   g.deps.signer = new HttpSignerClient({ url: 'http://signer.local', token: opts.token ?? SIGNER_SERVICE_TOKEN, fetch: toSigner })
-  return { ...g, backend, store, calls }
+  return { ...g, near, store, calls }
 }
 
 /** An ALLOWed payment ready to be signed. The deposit address is a real-looking one so the signer accepts it as a recipient. */

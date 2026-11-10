@@ -100,6 +100,17 @@ export type MandateSpec = z.infer<typeof MandateSpec>
 const Status = z.object({ frozen: z.boolean(), storage: z.string(), signer: z.boolean(), signerAddress: z.string().optional(), mode: z.string(), now: z.string() })
 export type Status = z.infer<typeof Status>
 
+/** One withdrawal from the audit chain. `state` is its last step: requested, signed, sent, failed, refused or unknown (signed, but the network never confirmed). */
+const Withdrawal = z.looseObject({ withdrawalId: z.string(), amount: z.string(), to: z.string(), state: z.string(), at: z.string(), txHash: z.string().optional(), explorer: z.string().optional(), note: z.string().optional() })
+/** The withdraw screen. When `enabled` is false, `reason` says why in plain words. Amounts are USDC as decimal strings. */
+const WithdrawInfo = z.looseObject({
+  enabled: z.boolean(), reason: z.string().optional(), from: z.string().optional(), to: z.string().optional(),
+  balance: z.string().optional(), held: z.string().optional(), available: z.string().optional(), near: z.string().optional(),
+  withdrawals: z.array(Withdrawal).default([]),
+})
+export type WithdrawInfoT = z.infer<typeof WithdrawInfo>
+const WithdrawDone = z.looseObject({ withdrawalId: z.string(), amount: z.string(), to: z.string(), txHash: z.string(), explorer: z.string().optional() })
+
 const JobRow = z.object({
   job: z.object({ id: z.string(), mandateId: z.string(), goal: z.string(), receivingAddress: z.string(), price: Amount, currency: z.string() }),
   summary: z.object({ revenue: Amount, settled: Amount, net: Amount, blockedAttempts: z.number() }).passthrough().nullish(),
@@ -324,6 +335,10 @@ export function createGateway(o: { baseUrl: string; token: string; fetchImpl?: t
     reject: (id: string, reason: string) => call(z.unknown(), 'POST', `/v1/approvals/${encodeURIComponent(id)}/reject`, { reason }),
     /** Stop one agent for good (the gateway's revoke). Only ever tightens, so the phone may do it without the dashboard. */
     stopAgent: (mandateId: string) => call(z.unknown(), 'POST', `/v1/mandates/${encodeURIComponent(mandateId)}/revoke`),
+    /** Where withdrawals go, what can leave, and the history. The destination is fixed on the signer's computer: this phone cannot change it. */
+    withdrawals: () => call(WithdrawInfo, 'GET', '/v1/withdrawals'),
+    /** Take `amount` USDC back out to the owner's own account. Only an amount is sent: there is no destination to choose. */
+    withdraw: (amount: string) => call(WithdrawDone, 'POST', '/v1/withdrawals', { amount }),
     freeze: () => call(z.unknown(), 'POST', '/v1/freeze'),
     unfreeze: () => call(z.unknown(), 'POST', '/v1/unfreeze'),
     /** Which brains the owner's computer offers for hosted agents, and whether it is answering right now. */

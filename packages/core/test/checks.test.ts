@@ -88,7 +88,7 @@ describe('C03 challenge sane', () => {
 describe('C04 network and asset', () => {
   const withChallenge = (c = challenge(), m = mandate()) => ctx({ mandate: m, challenge: c })
   it('passes for an allowed network and asset', () => expect(c04NetworkAsset(withChallenge()).result).toBe('pass'))
-  it('fails for another network (A05)', () => expect(reason(c04NetworkAsset(withChallenge(challenge({ originNetwork: 'eip155:1' }))))).toBe('origin network not allowed'))
+  it('fails for another network (A05)', () => expect(reason(c04NetworkAsset(withChallenge(challenge({ originNetwork: 'ethereum' }))))).toBe('origin network not allowed'))
   it('fails for another asset (A05)', () => expect(reason(c04NetworkAsset(withChallenge(challenge({ currency: 'USDT' }))))).toBe('asset not allowed'))
   it('fails when the asset is allowed but is not the budget currency', () => {
     const m = mandate({ allowedAssets: ['USDC', 'USDT'] })

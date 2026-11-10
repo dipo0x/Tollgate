@@ -42,7 +42,7 @@ These are the settings that change when you leave your laptop. The full list is 
 | `DATABASE_POOL_MAX` | `10` | Keep it under your plan's connection limit. Small hosted plans allow few connections, and several processes sharing one database add up. |
 | `SIGNER_URL` | `http://127.0.0.1:8788` | The same, `http://127.0.0.1:` and the signer's port, because the signer is beside the gateway. |
 | `SIGNER_SERVICE_TOKEN` | generated | At least 32 characters, shared by gateway and signer. |
-| `SIGNER_KEY_FILE` | set by `pnpm onboard` | A path to a key file with mode `600`. The signer refuses a key that other users can read. |
+| `SIGNER_NEAR_KEY_FILE` | set by `pnpm onboard` | A path to a key file with mode `600`. The signer refuses a key that other users can read. |
 | `TOLLGATE_OFFLINE` | `true` (recorded answers, no funds) | `false` for live payments, which also needs `NEAR_1CLICK_API_KEY`. |
 
 The gateway checks its settings when it starts and says exactly which one is wrong, then exits.

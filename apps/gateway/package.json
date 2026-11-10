@@ -5,11 +5,13 @@
   "type": "module",
   "description": "The HTTP API and verifier. The only Tollgate component the agent talks to.",
   "devDependencies": {
+    "@near-js/crypto": "2.5.1",
+    "@near-js/transactions": "2.5.1",
+    "@near-js/utils": "2.5.1",
     "@tollgate/signer": "workspace:*",
     "happy-dom": "^21.0.4",
     "postgres": "^4.0.0",
-    "tsx": "^4.23.15",
-    "viem": "^2.0.0"
+    "tsx": "^4.23.15"
   },
   "dependencies": {
     "@hono/node-server": "^2.1.5",

@@ -30,7 +30,7 @@ export default function DecisionDetail() {
         <>
           <View style={{ marginTop: 26, alignItems: 'center', gap: 12 }}>
             <KindIcon kind={k} size={72} />
-            <Amount value={d.amount} unit={d.currency ?? ''} size={48} center />
+            <Amount value={d.amount} unit={d.currency ?? ''} size={48} center exact />
             <T v="sub" style={{ fontSize: 16, textAlign: 'center' }}>{d.purpose || d.host}</T>
           </View>
           {failed || reason ? (

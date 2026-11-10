@@ -230,7 +230,6 @@ export function build() {
   mkdirSync(join(DIST, 'fonts'), { recursive: true })
   const fonts = join(ROOT, '../site/public/fonts')
   for (const f of ['Geist-Variable.woff2', 'GeistMono-Variable.woff2', 'OFL.txt']) if (existsSync(join(fonts, f))) cpSync(join(fonts, f), join(DIST, 'fonts', f))
-  if (existsSync(join(ROOT, '../site/public/favicon.svg'))) cpSync(join(ROOT, '../site/public/favicon.svg'), join(DIST, 'favicon.svg'))
   writeFileSync(join(DIST, 'sitemap.xml'), `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${pages.map(p => `<url><loc>${SITE}${urlOf(p.slug)}</loc><lastmod>${BUILT}</lastmod></url>`).join('\n')}\n</urlset>\n`)
   writeFileSync(join(DIST, 'robots.txt'), `User-agent: *\nAllow: /\nSitemap: ${SITE}/sitemap.xml\n`)
   const notFound = layout({ slug: '404', title: 'Page not found', section: 'Not found', desc: 'That page does not exist.' }, '<h1>Page not found</h1><p>That page does not exist. Use the menu or search, or start at the <a href="/">introduction</a>.</p>', [], -1)

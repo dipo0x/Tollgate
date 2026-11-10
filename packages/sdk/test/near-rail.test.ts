@@ -26,9 +26,13 @@ describe('nearRpcRail', () => {
   })
   it('refuses any chain but near, and surfaces RPC errors instead of guessing', async () => {
     const rail = nearRpcRail({ rpcUrl: 'http://rpc', publicKey: PUB }, fakeRpc(() => ({ error: { message: 'Server error', cause: { name: 'UNKNOWN_ACCESS_KEY' } } })).f)
-    await expect(rail.txParams('agent.near', 'eip155:42161')).rejects.toThrow(/NEAR only/)
+    await expect(rail.txParams('agent.near', 'somewhere-else')).rejects.toThrow(/NEAR only/)
     await expect(rail.txParams('agent.near', 'near')).rejects.toThrow(/UNKNOWN_ACCESS_KEY/)
     const viewErr = nearRpcRail({ rpcUrl: 'http://rpc', publicKey: PUB }, fakeRpc(() => ({ result: { error: 'access key does not exist' } })).f)
     await expect(viewErr.txParams('agent.near', 'near')).rejects.toThrow(/does not exist/)
+  })
+  it('keeps the reason NEAR gives for a rejected transaction', async () => {
+    const rail = nearRpcRail({ rpcUrl: 'http://rpc', publicKey: PUB }, fakeRpc(() => ({ error: { message: 'Server error', cause: { name: 'INVALID_TRANSACTION' }, data: { TxExecutionError: { InvalidTxError: { InvalidNonce: { tx_nonce: 5, ak_nonce: 9 } } } } } })).f)
+    await expect(rail.send('near', 'AAAA')).rejects.toThrow(/INVALID_TRANSACTION: .*InvalidNonce.*ak_nonce":9/)
   })
 })

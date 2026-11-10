@@ -9,7 +9,7 @@ function boot() {
   const app = createSignerApp(w.deps, TOKEN, (e, f) => logs.push(JSON.stringify({ e, ...f })))
   const body = (over: Record<string, unknown> = {}) => {
     const r = request()
-    return { decisionId: r.decisionId, bind: r.bind, tx: { nonce: r.tx.nonce, gas: String(r.tx.gas), maxFeePerGas: String(r.tx.maxFeePerGas), maxPriorityFeePerGas: String(r.tx.maxPriorityFeePerGas) }, ...over }
+    return { decisionId: r.decisionId, bind: r.bind, tx: { nonce: String((r.tx as { nonce: bigint }).nonce), blockHash: (r.tx as { blockHash: string }).blockHash }, ...over }
   }
   const post = async (payload: unknown, token: string | null = TOKEN, raw = false) => {
     const res = await app.request('/v1/sign', { method: 'POST', headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) }, body: raw ? (payload as string) : JSON.stringify(payload) })
@@ -26,16 +26,16 @@ describe('signer HTTP: who may ask', () => {
     expect((await post(body(), 'wrong')).status).toBe(401)
     expect((await post(body(), TOKEN.slice(0, -1))).status).toBe(401)
     expect((await post(body(), TOKEN + 'x')).status).toBe(401)
-    expect(w.backend.uses).toBe(0)
+    expect(w.near.uses).toBe(0)
   })
   it('an agent-style or operator-style token does not work: only the one service token', async () => {
     const { post, body } = boot()
     expect((await post(body(), 'tg_agent_abcdefghijklmnopqrstuvwxyz')).status).toBe(401)
   })
-  it('health needs no token and reveals only the PUBLIC address', async () => {
+  it('health needs no token and reveals only the PUBLIC account and key', async () => {
     const { w, app } = boot()
-    const res = await app.request('/healthz'); const j = await res.json() as { ok: boolean; address: string }
-    expect(res.status).toBe(200); expect(j).toEqual({ ok: true, address: w.backend.address })
+    const res = await app.request('/healthz'); const j = await res.json()
+    expect(res.status).toBe(200); expect(j).toEqual({ ok: true, near: { accountId: w.near.accountId, publicKey: w.near.publicKey } })
   })
 })
 
@@ -44,19 +44,20 @@ describe('signer HTTP: what it accepts', () => {
     const { post, body } = boot()
     const r = await post(body())
     expect(r.status).toBe(200)
-    expect(r.json).toMatchObject({ decisionId: 'dec_1', chainId: 42161 })
-    expect(r.json.signedTx).toMatch(/^0x02/) // an EIP-1559 transaction
-    expect(r.json.txHash).toMatch(/^0x[0-9a-f]{64}$/)
+    expect(r.json).toMatchObject({ decisionId: 'dec_1' })
+    expect(r.json).not.toHaveProperty('chainId')
+    expect(r.json.signedTx).toMatch(/^[A-Za-z0-9+/]+=*$/) // a signed NEAR transaction, base64
+    expect(r.json.txHash).toMatch(/^[1-9A-HJ-NP-Za-km-z]{43,44}$/)
   })
   it('bad JSON, an unknown field, a missing field, and numbers where strings belong are all 400', async () => {
     const { post, body, w } = boot()
     expect((await post('{nope', TOKEN, true)).status).toBe(400)
     expect((await post(body({ extra: 1 }))).status).toBe(400)
     expect((await post({ decisionId: 'dec_1' })).status).toBe(400)
-    expect((await post(body({ tx: { nonce: 7, gas: 100000, maxFeePerGas: '1', maxPriorityFeePerGas: '1' } }))).status).toBe(400)
-    expect((await post(body({ tx: { nonce: -1, gas: '100000', maxFeePerGas: '1', maxPriorityFeePerGas: '1' } }))).status).toBe(400)
-    expect((await post(body({ tx: { nonce: 1, gas: '1e5', maxFeePerGas: '1', maxPriorityFeePerGas: '1' } }))).status).toBe(400)
-    expect(w.backend.uses).toBe(0)
+    expect((await post(body({ tx: { nonce: 7, blockHash: 'x' } }))).status).toBe(400) // a number where a string belongs, and no real block hash
+    expect((await post(body({ tx: { nonce: '-1', blockHash: 'x' } }))).status).toBe(400)
+    expect((await post(body({ tx: { nonce: '1', gas: '1e5' } }))).status).toBe(400) // gas and fee fields are not part of the contract
+    expect(w.near.uses).toBe(0)
   })
   it('a request over 8 KB is refused before it is read', async () => {
     const { post } = boot()
@@ -87,7 +88,7 @@ describe('signer HTTP: nothing secret leaks', () => {
     const outs = [await post(body()), await post(body()), await post(body(), 'wrong'), await post({ junk: 1 }), await post('{', TOKEN, true)]
     const all = (outs.map(o => o.text).join('\n') + logs.join('\n')).toLowerCase()
     expect(all).not.toContain(TOKEN.toLowerCase())
-    expect(all).not.toContain(w.backend.key.toLowerCase())
-    expect(all).not.toContain(w.backend.key.slice(2).toLowerCase()) // nor the key without its 0x
+    expect(all).not.toContain(w.near.secret.toLowerCase())
+    expect(all).not.toContain((w.near.secret.split(':')[1] as string).toLowerCase()) // nor the key without its prefix
   })
 })

@@ -59,8 +59,8 @@ describe('the agent-economy guide, as written', () => {
 
   it('EARN: the job, the receipt, the verification rules and the summary are as the guide says', async () => {
     const g = boot(); const { token } = await g.setup({ mandate: MANDATE })
-    expect((await g.op('POST', '/v1/jobs', { id: 'job_brief', mandateId: 'mnd_1', goal: 'sell the weekly market brief', receivingAddress: '0xYOUR_ADDRESS', price: '1.50', currency: 'USDC' })).status).toBe(201)
-    const receipt = { id: 'rcpt_1', status: 'SUCCESS', amount: '1.500000', currency: 'USDC', payee: '0xYOUR_ADDRESS', payerRef: 'customer-1', settledAt: '2026-11-06T09:59:00Z' }
+    expect((await g.op('POST', '/v1/jobs', { id: 'job_brief', mandateId: 'mnd_1', goal: 'sell the weekly market brief', receivingAddress: 'your-account.near', price: '1.50', currency: 'USDC' })).status).toBe(201)
+    const receipt = { id: 'rcpt_1', status: 'SUCCESS', amount: '1.500000', currency: 'USDC', payee: 'your-account.near', payerRef: 'customer-1', settledAt: '2026-11-06T09:59:00Z' }
     expect((await g.call('POST', '/v1/jobs/job_brief/revenue', token, receipt)).json).toMatchObject({ credited: true, amount: '1.500000' })
     expect((await g.call('POST', '/v1/jobs/job_brief/revenue', token, receipt)).json).toMatchObject({ credited: false, reason: 'replay' })
     expect((await g.call('POST', '/v1/jobs/job_brief/revenue', token, { ...receipt, id: 'r2', payee: '0xSOMEONE' })).json).toMatchObject({ reason: 'wrong_payee' })
@@ -84,7 +84,7 @@ describe('the agent-economy guide, as written', () => {
     // 2. The mandate, exactly as the guide shows it (the two dates are filled in by the shell, as the guide says).
     const mandate = {
       id: 'mnd_1', version: 1, principal: 'you@example.com', agentId: 'research-agent', validFrom: '2026-11-05T00:00:00Z', validUntil: '2026-11-12T00:00:00Z',
-      budget: { currency: 'USDC', total: '20.00', perPayment: '1.00' }, allowedHosts: ['api.example.com'], allowedOriginNetworks: ['eip155:42161'], allowedAssets: ['USDC'],
+      budget: { currency: 'USDC', total: '20.00', perPayment: '1.00' }, allowedHosts: ['api.example.com'], allowedOriginNetworks: ['near'], allowedAssets: ['USDC'],
       payee: { mode: 'registry' }, price: { tolerancePct: 3, onExceed: 'needs_approval' }, approval: { above: '1.00', riskAbove: 90, firstPayeeRequiresApproval: true }, refund: { mustBePayerOrPinned: true },
     }
     const made = await g.op('POST', '/v1/mandates', mandate)

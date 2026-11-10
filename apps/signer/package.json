@@ -10,7 +10,6 @@
     "start": "tsx src/server.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "keygen": "tsx src/keygen.ts",
     "keygen-near": "tsx src/keygen-near.ts"
   },
   "dependencies": {
@@ -20,7 +19,6 @@
     "@near-js/utils": "2.5.1",
     "hono": "^4.13.16",
     "postgres": "^4.0.0",
-    "viem": "^2.0.0",
     "zod": "^4.6.7"
   },
   "devDependencies": {

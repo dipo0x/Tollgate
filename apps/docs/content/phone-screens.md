@@ -34,6 +34,7 @@ Every decision the gateway made, newest first. Filter to **paid**, **blocked** o
 ### Account
 - **Connected gateway**, with a button to copy its address.
 - **Top up the signer**: the account your agents pay from, as a QR code and an address, with Share.
+- **Withdraw to your account**: take your USDC back out (see below).
 - **Jobs**: work your agents have done.
 - **Shops agents may pay**: read-only, with verification level.
 - **Face ID to approve**: always required.
@@ -52,6 +53,7 @@ Every decision the gateway made, newest first. Filter to **paid**, **blocked** o
 | **Chat** | Talk to an agent. Its payments appear as cards; delivered goods arrive here. Attach photos or send a voice note. Messages go to the running agent of that name; if none is running, history stays visible and the app says why it cannot send. |
 | **Jobs** | Each job with earned, spent and net. |
 | **Shops** | The registry as your gateway sees it. |
+| **Withdraw** | How much can leave (balance minus money set aside for payments in progress), the account it goes to, an amount with a **Max** button, and past withdrawals. The account is set on your computer (`SIGNER_WITHDRAW_TO`): the phone can choose an amount, never a destination. Face ID is asked every time. Works while payments are frozen. |
 | **Top up** | The signer's public account. If no signer is connected, it says so. Nothing is ever sent from the phone. |
 | **Freeze** | **New payments** (frozen or live), **Signing**, and **Already on chain: can't be pulled back**. Freezing is one tap; unfreezing needs Face ID. |
 | **Change address** | Saved addresses (learned from your gateway while connected; checking them sends no key), scan a new code, or type an address. |

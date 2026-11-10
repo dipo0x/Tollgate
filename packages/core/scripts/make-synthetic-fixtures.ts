@@ -11,21 +11,20 @@ const BASE = 'https://1click.chaindefuser.com'
 const NOTE = 'SYNTHETIC: written from the OpenAPI spec, not recorded from the live service.'
 const AT = '2026-10-31T00:00:00.000Z'
 
-const USDC_ARB = 'nep141:arb-0xaf88d065e77c8cc2239327c5edb3a432268e5831.omft.near'
 const USDC_NEAR = 'nep141:17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1'
-const PAYER = '0xaf88d065e77c8cc2239327c5edb3a432268e5831'
+const PAYER = 'payer.near'
 
 export const SCENARIOS = {
   /** An honest merchant: fresh deposit address, pays the real payee. */
-  honest: { deposit: '0xdep0000000000000000000000000000000000001', status: 'PENDING_DEPOSIT', payee: 'merchant.near', refundTo: PAYER, amountIn: '251000' },
+  honest: { deposit: 'dec0de0000000000000000000000000000000000000000000000000000000001', status: 'PENDING_DEPOSIT', payee: 'merchant.near', refundTo: PAYER, amountIn: '251000' },
   /** A malicious merchant: a real-looking deposit address whose payee is the attacker. */
-  payeeSwap: { deposit: '0xdep0000000000000000000000000000000000002', status: 'PENDING_DEPOSIT', payee: 'attacker.near', refundTo: PAYER, amountIn: '251000' },
+  payeeSwap: { deposit: 'dec0de0000000000000000000000000000000000000000000000000000000002', status: 'PENDING_DEPOSIT', payee: 'attacker.near', refundTo: PAYER, amountIn: '251000' },
   /** The address has already been paid: presenting it again is a replay. */
-  alreadyPaid: { deposit: '0xdep0000000000000000000000000000000000003', status: 'SUCCESS', payee: 'merchant.near', refundTo: PAYER, amountIn: '251000' },
+  alreadyPaid: { deposit: 'dec0de0000000000000000000000000000000000000000000000000000000003', status: 'SUCCESS', payee: 'merchant.near', refundTo: PAYER, amountIn: '251000' },
 } as const
 
 const quoteRequest = (s: { payee: string; refundTo: string }) => ({
-  dry: false, swapType: 'EXACT_OUTPUT', slippageTolerance: 100, originAsset: USDC_ARB, depositType: 'ORIGIN_CHAIN',
+  dry: false, swapType: 'EXACT_OUTPUT', slippageTolerance: 100, originAsset: USDC_NEAR, depositType: 'ORIGIN_CHAIN',
   destinationAsset: USDC_NEAR, amount: '250000', refundTo: s.refundTo, refundType: 'ORIGIN_CHAIN',
   recipient: s.payee, recipientType: 'DESTINATION_CHAIN', deadline: '2026-11-06T10:05:00.000Z',
 })
@@ -54,13 +53,13 @@ for (const [name, s] of Object.entries(SCENARIOS)) {
 
 // Our own dry quote for the same output (1.0 USDC out is not used here: 0.25 USDC out, matching the scenarios).
 put('POST', '/v0/quote', {}, {
-  dry: true, swapType: 'EXACT_OUTPUT', slippageTolerance: 100, originAsset: USDC_ARB, depositType: 'ORIGIN_CHAIN',
+  dry: true, swapType: 'EXACT_OUTPUT', slippageTolerance: 100, originAsset: USDC_NEAR, depositType: 'ORIGIN_CHAIN',
   destinationAsset: USDC_NEAR, amount: '250000', recipient: 'merchant.near', recipientType: 'DESTINATION_CHAIN', refundTo: PAYER, refundType: 'ORIGIN_CHAIN', deadline: 'x',
 }, 200, { correlationId: 'synthetic-quote', timestamp: AT, signature: 'synthetic', quoteRequest: {}, quote: quote('251000') })
 
 // The same quote asked for the attacker's payee, for completeness of the payee-swap scenario.
 put('POST', '/v0/quote', {}, {
-  dry: true, swapType: 'EXACT_OUTPUT', slippageTolerance: 100, originAsset: USDC_ARB, depositType: 'ORIGIN_CHAIN',
+  dry: true, swapType: 'EXACT_OUTPUT', slippageTolerance: 100, originAsset: USDC_NEAR, depositType: 'ORIGIN_CHAIN',
   destinationAsset: USDC_NEAR, amount: '250000', recipient: 'attacker.near', recipientType: 'DESTINATION_CHAIN', refundTo: PAYER, refundType: 'ORIGIN_CHAIN', deadline: 'x',
 }, 200, { correlationId: 'synthetic-quote', timestamp: AT, signature: 'synthetic', quoteRequest: {}, quote: quote('251000') })
 console.log('synthetic fixtures written')

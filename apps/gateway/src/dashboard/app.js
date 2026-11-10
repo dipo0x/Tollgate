@@ -88,7 +88,7 @@ function explorerLink(url, text) {
 }
 const tokenChip = c => el('span', { class: 'tok' }, el('i', null, '$'), c || 'USDC')
 // The network the payment is made on, read from the decision itself: the signed bind, else check C04's evidence. Never assumed.
-const NETS = { 'eip155:42161': ['A', 'Arbitrum', 'arb'], 'eip155:8453': ['B', 'Base', 'base'], near: ['N', 'NEAR', 'near'] }
+const NETS = { near: ['N', 'NEAR', 'near'], 'near:mainnet': ['N', 'NEAR', 'near'] }
 const netChip = d => {
   const id = (d && d.bind && d.bind.chain) || ((d && d.checks) || []).filter(c => c.id === 'C04').map(c => c.evidence && c.evidence.network)[0]
   const n = NETS[id]

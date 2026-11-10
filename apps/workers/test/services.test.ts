@@ -5,7 +5,7 @@ import { liveDepositMaker } from '../src/deposits.ts'
 import { createServices, signDeal, verifyDeal, type OneClickView } from '../src/services.ts'
 
 const PAYEE = 'merchant.near'
-const PAYER = '0x1Fac05Bc2a3Ff16d3C5f153454D76406af5ed1Ab'
+const PAYER = 'a55dcd6b86ca2f4466512b4a002d643408c9b28267b17a3b6487833661d9bc9e'
 const SECRET = 'test-secret-0123456789-abcdef'
 const NOW = new Date('2026-11-02T12:00:00Z')
 
@@ -30,29 +30,29 @@ describe('deposit maker: asks the real 1Click API for a deposit address', () => 
   it('sends a NON-dry exact-output quote to the merchant, refunding the payer, with the key in a header only', async () => {
     let sent: { url: string; init: RequestInit } | undefined
     const tokens = async () => new TokenCatalog([
-      { assetId: 'arb-usdc', decimals: 6, blockchain: 'arb', symbol: 'USDC' }, { assetId: 'near-usdc', decimals: 6, blockchain: 'near', symbol: 'USDC' }])
+      { assetId: 'near-usdc', decimals: 6, blockchain: 'near', symbol: 'USDC' }])
     const make = liveDepositMaker({ apiKey: 'KEY123', tokens, now: () => NOW, fetch: (async (url: string, init: RequestInit) => {
       sent = { url, init }
       return new Response(JSON.stringify({ quote: { depositAddress: '0xREAL', amountIn: '307935', deadline: '2026-11-02T12:10:00.000Z' } }), { status: 200 })
     }) as never })
-    const d = await make({ originNetwork: 'eip155:42161', symbol: 'USDC', amountOut: '0.30', payee: PAYEE, refundTo: PAYER, ttlSeconds: 600 })
+    const d = await make({ originNetwork: 'near', symbol: 'USDC', amountOut: '0.30', payee: PAYEE, refundTo: PAYER, ttlSeconds: 600 })
     expect(d).toEqual({ depositAddress: '0xREAL', amountIn: '0.307935', deadline: '2026-11-02T12:10:00.000Z' })
     const body = JSON.parse(String(sent!.init.body))
-    expect(body).toMatchObject({ dry: false, swapType: 'EXACT_OUTPUT', originAsset: 'arb-usdc', destinationAsset: 'near-usdc', amount: '300000', recipient: PAYEE, refundTo: PAYER })
+    expect(body).toMatchObject({ dry: false, swapType: 'EXACT_OUTPUT', originAsset: 'near-usdc', destinationAsset: 'near-usdc', amount: '300000', recipient: PAYEE, refundTo: PAYER })
     expect((sent!.init.headers as Record<string, string>)['x-api-key']).toBe('KEY123')
     expect(sent!.url).not.toContain('KEY123')
     expect(JSON.stringify(body)).not.toContain('KEY123')
   })
   it('the challenge expires when WE said, even if 1Click keeps the address open for days', async () => {
     const tokens = async () => new TokenCatalog([
-      { assetId: 'a', decimals: 6, blockchain: 'arb', symbol: 'USDC' }, { assetId: 'n', decimals: 6, blockchain: 'near', symbol: 'USDC' }])
+      { assetId: 'n', decimals: 6, blockchain: 'near', symbol: 'USDC' }])
     const make = liveDepositMaker({ apiKey: 'k', tokens, now: () => NOW, fetch: (async () => new Response(JSON.stringify({ quote: { depositAddress: '0xR', amountIn: '1', deadline: '2026-11-05T00:00:00.000Z' } }))) as never })
-    expect((await make({ originNetwork: 'eip155:42161', symbol: 'USDC', amountOut: '0.30', payee: PAYEE, refundTo: PAYER, ttlSeconds: 600 })).deadline).toBe('2026-11-02T12:10:00.000Z')
+    expect((await make({ originNetwork: 'near', symbol: 'USDC', amountOut: '0.30', payee: PAYEE, refundTo: PAYER, ttlSeconds: 600 })).deadline).toBe('2026-11-02T12:10:00.000Z')
   })
   it('a 401, a bad status or a reply with no deposit address is an error, never a made-up address', async () => {
     const tokens = async () => new TokenCatalog([
-      { assetId: 'a', decimals: 6, blockchain: 'arb', symbol: 'USDC' }, { assetId: 'n', decimals: 6, blockchain: 'near', symbol: 'USDC' }])
-    const req = { originNetwork: 'eip155:42161', symbol: 'USDC', amountOut: '0.30', payee: PAYEE, refundTo: PAYER, ttlSeconds: 60 }
+      { assetId: 'n', decimals: 6, blockchain: 'near', symbol: 'USDC' }])
+    const req = { originNetwork: 'near', symbol: 'USDC', amountOut: '0.30', payee: PAYEE, refundTo: PAYER, ttlSeconds: 60 }
     for (const res of [new Response('', { status: 401 }), new Response('', { status: 500 }), new Response(JSON.stringify({ quote: {} }), { status: 200 })]) {
       await expect(liveDepositMaker({ apiKey: 'k', tokens, fetch: (async () => res.clone()) as never })(req)).rejects.toThrow()
     }
@@ -63,7 +63,7 @@ describe('merchant: GET /data', () => {
   it('without a payer address: 400, and no deposit address is created', async () => {
     const { get, made } = build()
     expect((await get('/data')).status).toBe(400)
-    expect((await get('/data', { 'x-payer': 'Not An Address!' })).status).toBe(400)  // invalid as an EVM address and as a NEAR account
+    expect((await get('/data', { 'x-payer': 'Not An Address!' })).status).toBe(400)  // not a NEAR account
     expect(made).toHaveLength(0)
   })
   it('answers 402 with a challenge Tollgate itself accepts, paying the real deposit address, refunding the payer', async () => {
@@ -73,16 +73,8 @@ describe('merchant: GET /data', () => {
     const { challenge } = await res.json() as { challenge: unknown }
     const p = parseChallenge(challenge)
     expect(p.ok).toBe(true)
-    expect(p.ok && p.challenge).toMatchObject({ method: 'nearintents', recipient: '0xDEP0517', amount: '0.307935', refundTo: PAYER, originNetwork: 'eip155:42161' })
+    expect(p.ok && p.challenge).toMatchObject({ method: 'nearintents', recipient: '0xDEP0517', amount: '0.307935', refundTo: PAYER, originNetwork: 'near' })
     expect(made[0]).toMatchObject({ payee: PAYEE, refundTo: PAYER, amountOut: '0.30' })
-  })
-  it('a NEAR payer gets a NEAR-origin challenge, refunded to that NEAR account', async () => {
-    const { get, made } = build()
-    const NEARPAYER = 'a55dcd6b86ca2f4466512b4a002d643408c9b28267b17a3b6487833661d9bc9e'
-    const { challenge } = await (await get('/data', { 'x-payer': NEARPAYER })).json() as { challenge: unknown }
-    const p = parseChallenge(challenge)
-    expect(p.ok && p.challenge).toMatchObject({ originNetwork: 'near', refundTo: NEARPAYER })
-    expect(made[0]).toMatchObject({ originNetwork: 'near', refundTo: NEARPAYER })
   })
   it('if 1Click is down: 502, never a made-up challenge', async () => {
     const { app } = createServices({ payee: PAYEE, opening: '0.30', floor: '0.20', dealSecret: SECRET, makeDeposit: async () => { throw new Error('down') }, oneClick: { status: async () => ({ found: false }), dryQuote: async () => ({}) } })

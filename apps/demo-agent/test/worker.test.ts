@@ -16,7 +16,7 @@ function world(over: Partial<WorkerIO> & { answers?: Decision[] } = {}) {
     catalog: async () => [SVC], remaining: async () => 1, funds: async () => ({ usdcMicro: 1_000_000n, nearYocto: 10n ** 23n }),
     bill: async () => CH, authorize: async () => answers.length > 1 ? answers.shift()! : answers[0]!,
     pay: async id => { paid.push(id); return '7Hx9abcdef0123' }, settled: async () => 'SUCCESS',
-    collect: async () => ({ status: 200, summary: 'Delivering 1.00 USDC to NEAR from Arbitrum costs 1.0021 USDC right now.' }),
+    collect: async () => ({ status: 200, summary: 'Settling 1.00 USDC to a NEAR account through 1Click costs 1.0021 USDC right now.' }),
     reconcile: async () => {}, sleep: async ms => { t += ms }, now: () => t, ...over,
   }
   return { io, replies, paid }
@@ -25,7 +25,7 @@ function world(over: Partial<WorkerIO> & { answers?: Decision[] } = {}) {
 describe('runTask: one owner task, worked by the agent', () => {
   it('asks, waits for the owner, pays only after the yes, and reports what it got', async () => {
     const w = world()
-    expect(await runTask('buy the bridge cost brief', w.io, LIM)).toBe('done')
+    expect(await runTask('buy the settlement cost brief', w.io, LIM)).toBe('done')
     expect(w.replies[0]).toMatchObject({ decisionId: 'dec_1' }); expect(w.replies[0]!.text).toMatch(/Approve it in Tollgate/)
     expect(w.paid).toEqual(['dec_1'])
     expect(w.replies.at(-1)).toMatchObject({ status: 'done' }); expect(w.replies.at(-1)!.text).toMatch(/costs 1\.0021 USDC/)
@@ -51,10 +51,23 @@ describe('runTask: one owner task, worked by the agent', () => {
     expect(await runTask('buy the brief', w.io, LIM)).toBe('failed')
     expect(billed).toBe(false); expect(w.replies.at(-1)!.text).toMatch(/Add money/)
   })
+  it('too little NEAR for fees: says so before asking the shop for a bill, with the real amount', async () => {
+    let billed = false
+    const w = world({ funds: async () => ({ usdcMicro: 1_000_000n, nearYocto: 54_955_363_487_500_000_000_000n }), bill: async () => { billed = true; return CH } })
+    expect(await runTask('buy the brief', w.io, LIM)).toBe('failed')
+    expect(billed).toBe(false); expect(w.replies.at(-1)!.text).toMatch(/holds 0\.055 NEAR.*needs about 0\.065 NEAR/)
+  })
   it('a shop that takes payment and delivers nothing is reported, not hidden', async () => {
     const w = world({ collect: async () => ({ status: 502, summary: '' }) })
     expect(await runTask('buy the brief', w.io, LIM)).toBe('failed')
     expect(w.paid).toEqual(['dec_1']); expect(w.replies.at(-1)!.text).toMatch(/delivers nothing/)
+  })
+  it('signed but not sent: the owner is told why in the chat, and the hold is released', async () => {
+    let reconciled = ''
+    const w = world({ pay: async () => { throw new Error('send_tx failed: INVALID_TRANSACTION') }, reconcile: async id => { reconciled = id } })
+    expect(await runTask('buy the brief', w.io, LIM)).toBe('failed')
+    expect(w.replies.at(-1)!.text).toMatch(/signed the payment, but sending it to NEAR failed \(send_tx failed: INVALID_TRANSACTION\)/)
+    expect(reconciled).toBe('dec_1')
   })
   it('nothing payable: replies and does nothing', async () => {
     const w = world({ catalog: async () => [] })

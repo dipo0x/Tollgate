@@ -14,12 +14,12 @@ describe('the scenario list', () => {
     for (const s of SCENARIOS) for (const t of ['naive', 'stock', 'tollgate'] as const) expect(s.expected[t].outcome, `${s.id}/${t}`).toBeDefined()
   })
   it('gives every fresh challenge its own id and its own deposit address, and a replay reuses both exactly', () => {
-    const a08 = expand(SCENARIOS.find(s => s.id === 'A08')!, 7, '0xp')
+    const a08 = expand(SCENARIOS.find(s => s.id === 'A08')!, 7, 'payer.near')
     expect(a08[1]?.challenge['id']).toBe(a08[0]?.challenge['id']); expect(a08[1]?.challenge['recipient']).toBe(a08[0]?.challenge['recipient'])
-    const a10 = expand(SCENARIOS.find(s => s.id === 'A10')!, 9, '0xp')
+    const a10 = expand(SCENARIOS.find(s => s.id === 'A10')!, 9, 'payer.near')
     expect(a10).toHaveLength(20)
     expect(new Set(a10.map(c => c.challenge['id'])).size).toBe(20); expect(new Set(a10.map(c => c.challenge['recipient'])).size).toBe(20)
-    for (const c of a10) expect(String(c.challenge['recipient'])).toMatch(/^0x[0-9a-f]{40}$/)
+    for (const c of a10) expect(String(c.challenge['recipient'])).toMatch(/^[0-9a-f]{64}$/)
   })
 })
 

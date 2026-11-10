@@ -1,4 +1,5 @@
 import type { Approval, TaskT } from '../api/gateway'
+import { money } from './format'
 
 /** What deserves an alert on the phone. Pure, so it is tested without a phone (test/alerts.test.ts). */
 export type Alert = { key: string; title: string; body: string; url: string }
@@ -17,7 +18,7 @@ export function newAlerts(seen: Seen, approvals: readonly Approval[], convos: re
     const key = `approval:${a.decisionId}`
     if (seen.keys.has(key)) continue
     const d = a.decision
-    out.push({ key, title: 'Payment waiting for your approval', body: `${d.agentId} wants to pay ${d.amount ? Number(d.amount).toFixed(2) : '?'} ${d.currency ?? 'USDC'} to ${d.host}${d.purpose ? ` for ${d.purpose}` : ''}. Tap to review.`, url: `/approval/${encodeURIComponent(a.decisionId)}` })
+    out.push({ key, title: 'Payment waiting for your approval', body: `${d.agentId} wants to pay ${d.amount ? money(d.amount) : '?'} ${d.currency ?? 'USDC'} to ${d.host}${d.purpose ? ` for ${d.purpose}` : ''}. Tap to review.`, url: `/approval/${encodeURIComponent(a.decisionId)}` })
   }
   for (const c of convos) {
     for (const t of c.tasks) {

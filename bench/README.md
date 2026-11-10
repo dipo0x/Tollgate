@@ -12,12 +12,12 @@ pnpm bench -- --strict  # exit code 1 if Tollgate lets an attack through or wron
 | Target | What it is |
 | --- | --- |
 | **Naive agent** | Pays any 402 whose challenge has a recipient and an amount. The "before" picture. |
-| **Stock policy (modelled)** | A **model** of the stock mppx client policy as the PRD describes it: allowed networks and currencies, a maximum amount, and an allow list of expected destinations. It is **not** the mppx library. A deposit address is new for every quote, so "expected destination" can only be applied as a list of known merchant hosts. It is configured as sensibly as possible: Arbitrum only, USDC only, max 1.00 per payment, the two known merchant hosts. It has no memory of what it already paid and no independent facts about the quote, the deposit address or the refund target. |
+| **Stock policy (modelled)** | A **model** of the stock mppx client policy as the PRD describes it: allowed networks and currencies, a maximum amount, and an allow list of expected destinations. It is **not** the mppx library. A deposit address is new for every quote, so "expected destination" can only be applied as a list of known merchant hosts. It is configured as sensibly as possible: NEAR only, USDC only, max 1.00 per payment, the two known merchant hosts. It has no memory of what it already paid and no independent facts about the quote, the deposit address or the refund target. |
 | **Tollgate** | The real gateway, signer and SDK, in one process, with a fresh world per scenario and a representative mandate. |
 
 ## What is real and what is scripted
 
-- **Real:** the gateway, the 12 checks, the budget ledger, the audit chain, the signer (it signs a real EIP-1559 USDC transfer with a throwaway key), and the SDK.
+- **Real:** the gateway, the 12 checks, the budget ledger, the audit chain, the signer (it signs a real NEAR USDC transfer with a throwaway key), and the SDK.
 - **Scripted stand-ins, labelled as such:** 1Click (a fake that answers what each scenario tells it to), the merchant (a stub 402 server), and the chain (a recorder). Nothing is broadcast, no key is funded, no money moves.
 
 ## How honesty is enforced

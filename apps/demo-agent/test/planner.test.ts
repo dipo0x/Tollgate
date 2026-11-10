@@ -30,7 +30,7 @@ describe('the local planner (Ollama)', () => {
     await priceReport({ item: 'the weekly market brief', costToProduce: 0.3, minimumPrice: 0.5, maximumPrice: 3 })
     const user = calls[0]!.body.messages.find((x: any) => x.role === 'user').content as string
     expect(user).toContain('DATA (JSON):')
-    expect(user).not.toMatch(/ignore|SYSTEM NOTICE|0xATTACKER/i)
+    expect(user).not.toMatch(/ignore|SYSTEM NOTICE|attacker.near/i)
   })
   it('refuses malformed answers instead of guessing: not JSON, wrong shape, negative, zero or absurd prices, text instead of a number', async () => {
     for (const bad of ['sorry, I cannot', { price: -1, reason: 'x' }, { price: 0, reason: 'x' }, { price: 99999, reason: 'x' }, { price: '1.2 USDC', reason: 'x' }, { reason: 'no price' }]) {

@@ -10,13 +10,16 @@ const soft = <T,>(p: Promise<T[]>): Promise<T[]> => p.catch((e: { code?: string 
  */
 export const loaders = {
   home: async (gw: Gateway) => {
-    const [status, mandates, approvals, decisions] = await Promise.all([gw.status(), gw.mandates(), gw.approvals(), gw.decisions(20)])
-    return { status, mandates, approvals, decisions }
+    // What the payment account really holds, so "left to spend" can never show more than exists. Unknown (null) if the chain cannot be read.
+    const funds = gw.withdrawals().then(w => (w.enabled && w.available !== undefined ? { available: w.available } : null)).catch((e: { code?: string }) => { if (e?.code === 'yielded') throw e; return null })
+    const [status, mandates, approvals, decisions, held] = await Promise.all([gw.status(), gw.mandates(), gw.approvals(), gw.decisions(20), funds])
+    return { status, mandates, approvals, decisions, funds: held }
   },
   agents: async (gw: Gateway) => { const [mandates, approvals] = await Promise.all([gw.mandates(), gw.approvals()]); return { mandates, approvals } },
   activity: (gw: Gateway) => gw.decisions(100),
   account: (gw: Gateway) => gw.status(),
   topup: (gw: Gateway) => gw.status(),
+  withdraw: (gw: Gateway) => gw.withdrawals(),
   shops: (gw: Gateway) => gw.services(),
   services: (gw: Gateway) => gw.services(),
   jobs: async (gw: Gateway) => ({ jobs: await gw.jobs(), past: await gw.history() }),

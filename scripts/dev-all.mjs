@@ -20,7 +20,7 @@ const procs = [
 const running = []
 for (const p of procs) {
   if (p.needs && !existsSync(p.needs)) { console.log(`[${p.name}] skipped: run \`pnpm install\` first`); continue }
-  const child = spawn(p.cmd[0], p.cmd.slice(1), { env: { ...process.env, ...p.env, FORCE_COLOR: '0' }, stdio: ['ignore', 'pipe', 'pipe'] })
+  const child = spawn(p.cmd[0], p.cmd.slice(1), { env: { ...process.env, ...p.env, FORCE_COLOR: '0', BROWSER: 'none' }, stdio: ['ignore', 'pipe', 'pipe'] })
   const tag = line => console.log(`[${p.name}] ${line}`)
   for (const s of [child.stdout, child.stderr]) {
     let buf = ''

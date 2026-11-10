@@ -63,15 +63,27 @@ export type Engine = {
   explain(e: unknown): string
 }
 
-export type ChatDeps = { client?: Anthropic; model?: string; brain?: Brain; ollama?: { url?: string; model?: string; fetch?: typeof fetch }; engine?: Engine }
+/** Agreed prices by shop id, kept by the caller between messages: the owner negotiates in one message and buys in the next. */
+export type DealBook = Map<string, { deal: Deal; at: number }>
+/** The seller's signed deal token lasts 10 minutes; stop using a deal a minute before that, so a payment never starts on a dead one. */
+export const DEAL_TTL_MS = 9 * 60_000
+
+export type ChatDeps = { dealBook?: DealBook; client?: Anthropic; model?: string; brain?: Brain; ollama?: { url?: string; model?: string; fetch?: typeof fetch }; engine?: Engine }
 
 export type ToolSpec = { name: string; description: string; schema: z.ZodObject; run: (input: Record<string, unknown>) => Promise<string> }
 
 export async function converse(history: readonly ChatTurn[], io: WorkerIO, lim: WorkerLimits, deps: ChatDeps = {}): Promise<TaskStatus> {
   const lastOwner = [...history].reverse().find(t => t.from === 'owner')?.text ?? ''
   let bought = false
+  let negotiated = false
   // Deals agreed this turn, by shop id: buy() uses the agreed price. A deal is only ever the gateway's record of the talks.
-  const deals = new Map<string, Deal>()
+  const book: DealBook = deps.dealBook ?? new Map()
+  const dealFor = (shopId: string): Deal | undefined => {
+    const e = book.get(shopId)
+    if (!e) return undefined
+    if (io.now() - e.at > DEAL_TTL_MS) { book.delete(shopId); return undefined }
+    return e.deal
+  }
   // What really happened to money this turn, so a reply can never claim otherwise (see finish).
   let paidOk = false
   let notPaidWhy: string | null = null
@@ -123,9 +135,10 @@ export async function converse(history: readonly ChatTurn[], io: WorkerIO, lim: 
       if (!parsed.success) return JSON.stringify({ outcome: 'no_deal', why: 'negotiate needs shop_id from list_shops.' })
       const shop = (await shopsAllowed()).find(s => s.id === parsed.data.shop_id)
       if (!shop) return JSON.stringify({ outcome: 'no_deal', why: `No shop with id ${parsed.data.shop_id} is allowed. Use list_shops.` })
+      negotiated = true
       const r = await io.negotiate!(shop.id)
       if (r.outcome === 'agreed') {
-        deals.set(shop.id, r.deal)
+        book.set(shop.id, { deal: r.deal, at: io.now() })
         await io.reply(`I haggled with ${shop.id}: it opened at ${r.ask} USDC and we agreed ${r.deal.price} USDC. Tollgate will hold it to that price.`).catch(() => {})
         return JSON.stringify({ outcome: 'agreed', agreedPriceUsdc: r.deal.price, openingAskUsdc: r.ask, next: 'Call buy with this shop_id to pay the agreed price.' })
       }
@@ -156,13 +169,15 @@ export async function converse(history: readonly ChatTurn[], io: WorkerIO, lim: 
         const shop = (await shopsAllowed()).find(s => s.id === shop_id)
         if (!shop) return JSON.stringify({ outcome: 'not_paid', why: `No shop with id ${shop_id} is allowed. Use list_shops.` })
         bought = true
+        const deal = dealFor(shop.id)
         // Said at once, before the bill and the twelve checks (seconds against live 1Click): the owner sees a reply straight away.
-        await io.reply(`On it: checking ${shop.id} (${shop.price} ${shop.currency}) with Tollgate. Nothing is paid until you approve.`).catch(() => {})
+        await io.reply(`On it: checking ${shop.id} (${deal ? `${deal.price} ${shop.currency}, the price you negotiated` : `${shop.price} ${shop.currency}`}) with Tollgate. Nothing is paid until you approve.`).catch(() => {})
         const r = isMarket(shop.host) && io.marketBuy
           ? await io.marketBuy({ id: shop.id, host: shop.host }, purpose || lastOwner)
-          : await buy({ id: shop.id, host: shop.host, quotedPrice: Number(shop.price) }, purpose || lastOwner, io, lim, deals.get(shop.id))
+          : await buy({ id: shop.id, host: shop.host, quotedPrice: Number(shop.price) }, purpose || lastOwner, io, lim, deal)
         if (r.outcome !== 'paid') { notPaidWhy = r.text; return JSON.stringify({ outcome: 'not_paid', why: r.text, next: 'Do not try again in this message. Tell the owner, in one sentence, that nothing was hired or paid and why.' }) }
         paidOk = true
+        book.delete(shop.id)
         await io.reply(r.text, r.decisionId ? { decisionId: r.decisionId } : {})
         return JSON.stringify({ outcome: 'paid', amountUsdc: r.amount, transaction: r.tx, delivered: 'sent to the owner directly' })
       },
@@ -173,7 +188,9 @@ export async function converse(history: readonly ChatTurn[], io: WorkerIO, lim: 
   // answers "what can you buy" or picks a shop id in its FIRST round instead of spending a round on list_shops (~1.5 s on Ollama),
   // and it cannot guess an id that does not exist. list_shops stays, for a conversation that runs on while the list changes.
   const shopsNow = await shopsAllowed().catch(() => null)
-  const context = shopsNow ? `Shops you may pay right now (structured fields only): ${JSON.stringify(shopsNow)}` : ''
+  // Prices already agreed in an earlier message, still valid: the model should know that buying now pays the agreed price.
+  const agreed = [...book.keys()].flatMap(id => { const d = dealFor(id); return d ? [`${id} at ${d.price} USDC`] : [] })
+  const context = `${shopsNow ? `Shops you may pay right now (structured fields only): ${JSON.stringify(shopsNow)}` : ''}${agreed.length ? `\nPrices you already negotiated, still valid (buy pays these automatically): ${agreed.join(', ')}.` : ''}`.trim()
   tools.push(...negotiateTool, ...marketTools)
   const brain = deps.brain ?? BRAIN
   const useClaude = brain === 'claude' || (brain === 'auto' && (Boolean(deps.client) || Boolean(process.env['ANTHROPIC_API_KEY'])))
@@ -182,9 +199,17 @@ export async function converse(history: readonly ChatTurn[], io: WorkerIO, lim: 
   const finish = async (text: string) => {
     let out = plainWords(text)
     if (!paidOk && claimsPayment(out)) out = notPaidWhy ? `Nothing was hired or paid. ${notPaidWhy}` : 'Nothing was hired or paid yet.'
+    // "Waiting for your approval" / "negotiating…" is only true if the tool ran. A model of any kind can write it without calling one.
+    else if (!bought && claimsPendingPayment(out)) out = 'I have not started that payment, so there is nothing to approve and nothing was paid. Please send it again.'
+    else if (!negotiated && claimsNegotiating(out)) out = 'I have not started that negotiation, so nothing is happening. Please send it again, for example: negotiate a lower price for the market data brief.'
     await io.reply(out || (bought ? 'Done.' : 'I’m here. What would you like me to get?'), { status: 'done' })
     return 'done' as const
   }
+
+  // "buy the market data brief" names a shop outright: start that purchase in code instead of asking a model to, because a small
+  // model sometimes writes about a payment without ever calling the buy tool (the owner then waits for an approval that cannot come).
+  const direct = (await directBuy(lastOwner, tools, shopsNow)) ?? (await directNegotiate(lastOwner, tools, shopsNow))
+  if (direct) return finish(direct)
 
   // A brain the owner chose for this agent answers alone: no fallback to another one they did not choose.
   if (deps.engine) {
@@ -240,12 +265,15 @@ type OllamaMessage = { role: 'system' | 'user' | 'assistant' | 'tool'; content: 
 /** The same agent on Ollama: its native tool calling, at most a few rounds, the same tools and the same one-purchase rule. */
 export async function askOllama(history: readonly ChatTurn[], tools: ToolSpec[], deps: ChatDeps, context = ''): Promise<string> {
   const url = (deps.ollama?.url ?? OLLAMA_URL).replace(/\/+$/, ''), model = deps.ollama?.model ?? OLLAMA_CHAT_MODEL, doFetch = deps.ollama?.fetch ?? fetch
-  const messages: OllamaMessage[] = [{ role: 'system', content: context ? `${SYSTEM}\n\n${context}` : SYSTEM }, ...toMessages(history).map(m => ({ role: m.role, content: m.content as string }))]
+  // The two questions the chat suggests are answered from the tools directly: instant, and always readable. No model is involved.
+  const quick = await quickAnswer([...history].reverse().find(t => t.from === 'owner')?.text ?? '', tools)
+  if (quick) return quick
+  const messages: OllamaMessage[] = [{ role: 'system', content: `${context ? `${SYSTEM}\n\n${context}` : SYSTEM}\n\n${PLAIN}` }, ...toMessages(history).map(m => ({ role: m.role, content: m.content as string }))]
   const defs = tools.map(t => ({ type: 'function', function: { name: t.name, description: t.description, parameters: z.toJSONSchema(t.schema) } }))
-  let nudged = false
+  let nudged = false, spent = false, fakeNudged = false
   for (let round = 0; round < 6; round++) {
     // num_predict caps a reply's length: the model writes ~31 tokens a second on an M2 Pro, so length is what decides the wait.
-    const res = await doFetch(`${url}/api/chat`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ model, messages, tools: defs, stream: false, keep_alive: KEEP_ALIVE, options: { temperature: 0.2, num_predict: 400 } }), signal: AbortSignal.timeout(OLLAMA_ROUND_MS) })
+    const res = await doFetch(`${url}/api/chat`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ model, messages, tools: defs, stream: false, keep_alive: KEEP_ALIVE, options: { temperature: 0.2, num_predict: 220 } }), signal: AbortSignal.timeout(OLLAMA_ROUND_MS) })
     if (!res.ok) throw new Error(res.status === 404 ? `model ${model} is not installed: ollama pull ${model}` : `Ollama answered ${res.status}`)
     const msg = ((await res.json()) as { message?: OllamaMessage }).message
     if (!msg) throw new Error('Ollama sent no message')
@@ -258,10 +286,21 @@ export async function askOllama(history: readonly ChatTurn[], tools: ToolSpec[],
         messages.push({ role: 'assistant', content: msg.content ?? '' }, { role: 'user', content: 'You said you would do that but did not call a tool. Call the tool now. Do not ask the owner first.' })
         continue
       }
-      return msg.content.trim()
+      // A small model sometimes WRITES "buying X, waiting for your approval" without calling buy: nothing reached Tollgate, so no approval
+      // will ever appear and the owner waits for ever. A payment is only real if the tool ran. Send it back once, then say so plainly.
+      if (!spent && claimsPendingPayment(msg.content ?? '')) {
+        if (!fakeNudged) {
+          fakeNudged = true
+          messages.push({ role: 'assistant', content: msg.content ?? '' }, { role: 'user', content: 'You described a payment but did not call the buy or hire tool, so nothing was sent. Call the tool now with the shop id, or tell the owner you have not paid anything.' })
+          continue
+        }
+        return 'I have not started that payment yet, so there is nothing to approve. Please send it again, for example: buy the market data brief.'
+      }
+      return readable(msg.content)
     }
     messages.push({ role: 'assistant', content: msg.content ?? '', tool_calls: calls })
     for (const c of calls) {
+      if (c.function.name === 'buy' || c.function.name === 'hire') spent = true
       const tool = tools.find(t => t.name === c.function.name)
       const args = typeof c.function.arguments === 'string' ? safeJson(c.function.arguments) : c.function.arguments
       const out = tool ? await tool.run((args ?? {}) as Record<string, unknown>) : JSON.stringify({ error: `no tool ${c.function.name}` })
@@ -269,6 +308,80 @@ export async function askOllama(history: readonly ChatTurn[], tools: ToolSpec[],
     }
   }
   return 'I went round in circles on that one. Could you say it another way?'
+}
+
+/** Added for small local models, which tend to paste raw tool output at the owner. */
+const PLAIN = 'Write for a person reading on a phone: plain sentences, short. Never output JSON, code, a code block or a table. When you have a list, write one short line per item.'
+
+const money = (v: unknown) => { const n = Number(v); return Number.isFinite(n) ? n.toFixed(2) : String(v) }
+
+/** What can you buy / what is my budget: answered straight from the tools, formatted for a phone. Undefined for anything else. */
+export async function quickAnswer(text: string, tools: readonly ToolSpec[]): Promise<string | undefined> {
+  const t = text.trim().toLowerCase().replace(/[?!.]+$/, '')
+  const asksShops = /^(what|which) (can|could|do|shops?|things?|services?)\b.*\b(buy|pay|purchase|shops?|available|get)\b/.test(t) || /^(list|show)( me)?( the| my)? shops?$/.test(t)
+  const asksBudget = /\b(how much|what'?s|what is)\b.*\b(budget|left|remaining)\b/.test(t) || /^(my )?budget$/.test(t)
+  const run = async (name: string) => { const tool = tools.find(x => x.name === name); return tool ? safeJson(await tool.run({})) as Record<string, unknown> : undefined }
+  if (asksShops) {
+    const shops = ((await run('list_shops'))?.['shops'] ?? []) as { id?: string; category?: string; host?: string; price?: string; currency?: string }[]
+    if (!Array.isArray(shops)) return undefined
+    if (shops.length === 0) return 'I have no shops I may pay right now. They are added on your computer.'
+    const label = (h?: string) => (h && h.endsWith('.market.near.ai') ? 'NEAR AI Agent Market seller' : 'reference shop')
+    return `I can pay ${shops.length === 1 ? 'one shop' : `${shops.length} shops`}:\n${shops.map(x => `• ${String(x.category ?? 'shop').replace(/_/g, ' ')} (${x.id}): ${money(x.price)} ${x.currency ?? 'USDC'}, ${label(x.host)}`).join('\n')}\nWhich one would you like?`
+  }
+  if (asksBudget) {
+    const b = await run('check_budget')
+    if (!b || b['remainingUsdc'] === undefined) return undefined
+    return `You have ${money(b['remainingUsdc'])} USDC left, and I can pay at most ${money(b['maxPerPaymentUsdc'])} at a time. Every payment waits for your yes.`
+  }
+  return undefined
+}
+
+const STOP = new Set(['the', 'a', 'an', 'me', 'for', 'please', 'my', 'some', 'of', 'to'])
+const words = (x: string) => x.toLowerCase().split(/[^a-z0-9]+/).filter(w => w && !STOP.has(w))
+
+/**
+ * An order that names exactly one shop ("buy the market data brief") is placed here: the shop whose id and category words cover
+ * the most of what was asked wins, and only if it wins alone. Anything unclear (two shops tie, none match, a question, several
+ * sentences) returns undefined and goes to the model as before. The buy tool still runs every check and waits for the owner's yes.
+ */
+export async function directBuy(text: string, tools: readonly ToolSpec[], shops: readonly { id: string; category?: string }[] | null): Promise<string | undefined> {
+  const m = /^\s*(?:please\s+)?(?:buy|purchase|get me|order)\s+(.{3,80}?)\s*[.!]?\s*$/i.exec(text)
+  const buy = tools.find(t => t.name === 'buy')
+  if (!m || !buy || !shops || shops.length === 0 || /[?\n]/.test(text)) return undefined
+  const ask = new Set(words(m[1] ?? ''))
+  if (ask.size === 0) return undefined
+  const scored = shops.map(x => { const have = new Set(words(`${x.id} ${x.category ?? ''}`)); return { x, hit: [...ask].filter(w => have.has(w)).length } }).sort((a, b) => b.hit - a.hit)
+  const best = scored[0]
+  if (!best || best.hit < 2 || (scored[1] && scored[1].hit === best.hit)) return undefined
+  const out = safeJson(await buy.run({ shop_id: best.x.id, purpose: text.trim() })) as { outcome?: string; why?: string }
+  return out.outcome === 'paid' ? 'Paid. The details are in the message above.' : `Nothing was paid. ${out.why ?? ''}`.trim()
+}
+
+/** "Negotiate a lower price for the market data brief": start the haggle in code for one clearly named shop. Nothing is paid by it. */
+export async function directNegotiate(text: string, tools: readonly ToolSpec[], shops: readonly { id: string; category?: string }[] | null): Promise<string | undefined> {
+  const tool = tools.find(t => t.name === 'negotiate')
+  if (!tool || !shops || shops.length === 0 || /[?\n]/.test(text) || !/\b(negotiate|haggle|lower price|better price|cheaper)\b/i.test(text)) return undefined
+  const ask = new Set(words(text))
+  const scored = shops.map(x => { const have = new Set(words(`${x.id} ${x.category ?? ''}`)); return { x, hit: [...ask].filter(w => have.has(w)).length } }).sort((a, b) => b.hit - a.hit)
+  const best = scored[0]
+  if (!best || best.hit < 2 || (scored[1] && scored[1].hit === best.hit)) return undefined
+  const out = safeJson(await tool.run({ shop_id: best.x.id })) as { outcome?: string; agreedPriceUsdc?: string; why?: string }
+  return out.outcome === 'agreed' ? `Agreed ${out.agreedPriceUsdc} USDC with ${best.x.id}. Say “buy the ${(best.x.category ?? 'item').replace(/_/g, ' ')}” to pay that price; Tollgate holds the shop to it.` : `No deal. ${out.why ?? ''}`.trim()
+}
+
+/** A reply a person can read: JSON and code blocks the model pasted are turned into plain lines, or dropped. */
+export function readable(text: string): string {
+  const tidy = (raw: string): string => {
+    const v = safeJson(raw.trim()) as unknown
+    const rows = Array.isArray(v) ? v : (v && typeof v === 'object' && Array.isArray((v as { shops?: unknown }).shops) ? (v as { shops: unknown[] }).shops : undefined)
+    if (!rows) return ''
+    return rows.filter((r): r is Record<string, unknown> => !!r && typeof r === 'object')
+      .map(r => `• ${String(r['category'] ?? r['name'] ?? r['id'] ?? 'item').replace(/_/g, ' ')}${r['id'] ? ` (${String(r['id'])})` : ''}${r['price'] !== undefined ? `: ${money(r['price'])} ${String(r['currency'] ?? 'USDC')}` : ''}`).join('\n')
+  }
+  let out = text.replace(/```[a-z]*\n?([\s\S]*?)```/gi, (_m, body: string) => tidy(body))
+  // A bare JSON array or object on its own lines.
+  out = out.replace(/(^|\n)\s*([\[{][\s\S]*[\]}])\s*(?=\n|$)/g, (m, lead: string, body: string) => { const t = tidy(body); return t ? `${lead}${t}` : m })
+  return out.replace(/\n{3,}/g, '\n\n').trim()
 }
 
 const CLAUDE_CALL_MS = 60_000
@@ -318,6 +431,16 @@ export function toMessages(history: readonly ChatTurn[]): Anthropic.Beta.BetaMes
   }
   while (out.at(-1)?.role === 'assistant') out.pop()
   return out
+}
+
+/** The reply says a payment is under way or waiting for approval. Only true to the owner if buy or hire actually ran. */
+export function claimsPendingPayment(text: string): boolean {
+  return /\b(waiting for (tollgate|your approval|the owner)|once approved|tollgate is checking|awaiting (your )?approval|i('| a)?m (now )?(buying|hiring)|buying svc_|(?:let'?s )?hire [\w-]+ \(\d)/i.test(text)
+}
+
+/** Does a reply say a negotiation is under way ("Negotiating with svc_brief…", "Waiting for the negotiation result")? */
+export function claimsNegotiating(text: string): boolean {
+  return /\b(negotiating with|waiting for the negotiation|negotiation (is )?(under way|in progress|result)|-negotiate [\w-]+ \()/i.test(text)
 }
 
 /** Does a reply promise an action instead of doing it? ("Let me search for one now", "I'll look for a seller", "I will hire…") */

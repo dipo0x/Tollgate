@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "key": "da604f03491dd7553364b42987f29a1e09ff277debae006f37d9d1342a8cbad9",
+  "key": "ce1e9257705d5edc853c82491217aabe3471fd8cd085ceef6fc675b56e1c7e0f",
   "synthetic": true,
   "note": "SYNTHETIC: written from the OpenAPI spec, not recorded from the live service.",
   "recordedAt": "2026-10-31T00:00:00.000Z",
@@ -13,10 +13,10 @@
       "depositType": "ORIGIN_CHAIN",
       "destinationAsset": "nep141:17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1",
       "dry": true,
-      "originAsset": "nep141:arb-0xaf88d065e77c8cc2239327c5edb3a432268e5831.omft.near",
-      "recipient": "merchant.near",
+      "originAsset": "nep141:17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1",
+      "recipient": "attacker.near",
       "recipientType": "DESTINATION_CHAIN",
-      "refundTo": "0xaf88d065e77c8cc2239327c5edb3a432268e5831",
+      "refundTo": "payer.near",
       "refundType": "ORIGIN_CHAIN",
       "slippageTolerance": 100,
       "swapType": "EXACT_OUTPUT"

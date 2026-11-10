@@ -4,7 +4,7 @@ import type { SpendCatalogEntry } from './planner.ts'
 /**
  * One task from the owner's phone, worked end to end by the agent.
  *
- * Plain idea: the owner types "buy the bridge cost brief" in the app. The agent picks a shop it is allowed to pay (prices and
+ * Plain idea: the owner types "buy the settlement cost brief" in the app. The agent picks a shop it is allowed to pay (prices and
  * categories only), asks the shop for a bill, and asks Tollgate to pay it. Tollgate holds it for the owner. The agent tells the
  * owner, in the same chat, what it asked for and waits. Only after the owner's yes is anything signed.
  *
@@ -62,7 +62,9 @@ export type WorkerLimits = { allowedHosts: string[]; perPayment: number; reserve
 
 /** USDC has 6 decimals; 1Click's deposit runs a few percent above the quote, so ask for 5% headroom before requesting a bill. */
 const micro = (usd: number) => BigInt(Math.round(usd * 1e6))
-const MIN_GAS_YOCTO = 10n ** 22n // 0.01 NEAR
+// A payment is two token calls (register the recipient, then transfer). NEAR holds the gas for both, plus the 0.00125 NEAR registration
+// deposit, out of the balance before it runs. Measured on mainnet: a rejected payment needed 0.0630 NEAR. 0.065 leaves a little room.
+const MIN_GAS_YOCTO = 65n * 10n ** 21n // 0.065 NEAR
 const usd = (m: bigint) => (Number(m) / 1e6).toFixed(2)
 /** The same plain names the app shows (apps/mobile/src/lib/format.ts CHECK_NAME). */
 const CHECK_PLAIN: Record<string, string> = {
@@ -99,7 +101,7 @@ export async function buy(svc: Pick<SpendCatalogEntry, 'id' | 'host' | 'quotedPr
   // With a deal the agreed price is what is asked for; without one, the shop's listed price.
   const need = micro(deal ? Number(deal.price) : svc.quotedPrice) * 105n / 100n
   if (f.usdcMicro < need) return stop(`The payment account holds ${usd(f.usdcMicro)} USDC; this needs about ${usd(need)}. Top it up from Account → Add money. Nothing was paid.`)
-  if (f.nearYocto < MIN_GAS_YOCTO) return stop('The payment account needs 0.01 NEAR for network fees. Top it up from Account → Add money. Nothing was paid.')
+  if (f.nearYocto < MIN_GAS_YOCTO) return stop(`The payment account holds ${(Number(f.nearYocto / 10n ** 18n) / 1e6).toFixed(3)} NEAR; a payment needs about 0.065 NEAR up front for network fees. Top it up from Account → Add money. Nothing was paid.`)
 
   // A cold first 1Click lookup can time out (a DENY): one fresh retry, only for that.
   let ch = await io.bill(svc.id, deal), d = await io.authorize(svc.host, ch, purpose, deal?.negotiationId)
@@ -118,7 +120,13 @@ export async function buy(svc: Pick<SpendCatalogEntry, 'id' | 'host' | 'quotedPr
   if (!d.bind) return stop('Tollgate allowed it but gave no payment details, so I stopped. Nothing was paid.', d.decisionId)
 
   // 1Click, not this agent, says whether it was paid.
-  const tx = await io.pay(d.decisionId)
+  // Signing and sending are two steps: Tollgate can sign and the broadcast to NEAR can still fail. Say that, with the reason, in the chat
+  // (it used to surface only as a generic "stopped part-way"), and let the gateway settle the held money.
+  let tx: string
+  try { tx = await io.pay(d.decisionId) } catch (e) {
+    await io.reconcile(d.decisionId).catch(() => { /* the gateway's own sweeper reconciles later */ })
+    return stop(`Tollgate signed the payment, but sending it to NEAR failed (${(e as Error).message}). I could not confirm that it reached the network; check Activity. If it is not listed as paid, no money moved.`, d.decisionId)
+  }
   await io.reply(`Paying ${d.bind.amount} USDC. Transaction ${tx.slice(0, 10)}… is on NEAR.`, { decisionId: d.decisionId })
   let status = ''
   for (let i = 0; i < lim.settleTries && !['SUCCESS', 'REFUNDED', 'FAILED'].includes(status); i++) { if (i) await io.sleep(5000); status = await io.settled(d.bind.to) }

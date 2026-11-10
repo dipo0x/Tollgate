@@ -8,7 +8,7 @@ import { plannerReady } from '@tollgate/demo-agent/src/planner.ts'
 import { lanAddress, nearFunds, ownerRecord, pairingQr, preferPort, makeTmp, removeTmp, ROOT, start, waitFor, type Proc, phoneHost } from './harness.ts'
 
 /**
- * `pnpm spend "Buy the bridge cost brief"`: THE AGENT SPENDS REAL MONEY, ALWAYS. There is no offline mode for this command.
+ * `pnpm spend "Buy the settlement cost brief"`: THE AGENT SPENDS REAL MONEY, ALWAYS. There is no offline mode for this command.
  *
  *   1. Pre-flight: the signer's NEAR account must hold enough USDC and NEAR for gas, or nothing starts (no deposit address is wasted).
  *   2. The agent reads the REAL registry (structured fields only — A16) and picks a service for the task: scripted, or a model with --llm.
@@ -33,12 +33,12 @@ const PHONE = args.includes('--phone')
 const LAN = lanAddress()
 if (PHONE && !LAN) { console.error('No Wi-Fi or network address found. Connect this computer to the same Wi-Fi as your phone.'); process.exit(2) }
 const TASK = args.filter(a => !a.startsWith('--')).join(' ').trim()
-if (!TASK) { console.error('Usage: pnpm spend "Buy the bridge cost brief" [--llm] [--phone]\nThis spends real USDC from the signer\'s NEAR account after the owner approves it.'); process.exit(2) }
+if (!TASK) { console.error('Usage: pnpm spend "Buy the settlement cost brief" [--llm] [--phone]\nThis spends real USDC from the signer\'s NEAR account after the owner approves it.'); process.exit(2) }
 if (TASK.length > 240) { console.error('The task is too long (max 240 characters).'); process.exit(2) }
 
 const KEY = need('NEAR_1CLICK_API_KEY'), PAYEE = need('MERCHANT_NEAR_ACCOUNT'), DEAL = need('WORKERS_DEAL_SECRET')
 const REC = ownerRecord(), DB = REC.db, MANDATE = `mnd_spend_${REC.run}`
-const NEAR_KEY = `${ROOT}.signer-near-key`, EVM_KEY = `${ROOT}.signer-key`
+const NEAR_KEY = `${ROOT}.signer-near-key`
 // FastNEAR: the same chain, answered in ~0.3 s. rpc.mainnet.near.org is throttled (3.5-19 s a call, measured 8 Nov). NEAR_RPC_URL overrides.
 const RPC = process.env['NEAR_RPC_URL'] ?? 'https://free.rpc.fastnear.com'
 const PRICE = process.env['LIVE_PRICE'] ?? '0.20'
@@ -47,8 +47,8 @@ const BUDGET = process.env['LIVE_BUDGET'] ?? '0.50'
 const RESERVE = process.env['LIVE_RESERVE'] ?? '0.00'
 const WAIT_MIN = Number(process.env['LIVE_APPROVAL_MINUTES'] ?? '8')
 const KEEP_MIN = Number(process.env['KEEP_MINUTES'] ?? '10')
-/** 0.01 NEAR in yoctoNEAR: far more than one ft_transfer's gas, so a payment never fails half-way for want of gas. */
-const MIN_GAS_YOCTO = 10n ** 22n
+/** 0.065 NEAR in yoctoNEAR: NEAR holds the gas for both token calls plus the 0.00125 registration deposit up front (a payment needed 0.0630 on mainnet). */
+const MIN_GAS_YOCTO = 65n * 10n ** 21n
 if (!existsSync(NEAR_KEY)) { console.error('No .signer-near-key: run `pnpm --filter @tollgate/signer keygen-near` first.'); process.exit(2) }
 if (toMicro(PRICE) > toMicro(SIGNER_CAP)) { console.error(`LIVE_PRICE ${PRICE} is above the signer cap ${SIGNER_CAP}: the signer would refuse it.`); process.exit(2) }
 
@@ -85,7 +85,7 @@ try {
   console.log('Starting the real merchant, the signer (NEAR, cap ' + SIGNER_CAP + ' USDC) and a live-mode gateway...')
   procs.push(start('services', 'apps/workers', 'src/server.ts', { WORKERS_PORT: String(SP), NEAR_1CLICK_API_KEY: KEY, MERCHANT_NEAR_ACCOUNT: PAYEE, WORKERS_DEAL_SECRET: DEAL, WORKERS_PRICE_OPENING: PRICE }, tmp)); await waitFor(`${SVC}/healthz`, 'the merchant')
   procs.push(start('gateway', 'apps/gateway', 'src/server.ts', { PORT: String(GP), DATABASE_URL: DB, ...REC.schemaEnv, GATEWAY_OPERATOR_TOKEN: OP, GATEWAY_HOST: PHONE ? '0.0.0.0' : '127.0.0.1', TOLLGATE_OFFLINE: 'false', NEAR_1CLICK_API_KEY: KEY, SIGNER_URL: SIGNER, SIGNER_SERVICE_TOKEN: SVC_TOKEN, CHECK_TIMEOUT_MS: '10000', LOG_LEVEL: 'silent' }, tmp)); await waitFor(`${GW}/healthz`, 'the gateway')
-  procs.push(start('signer', 'apps/signer', 'src/server.ts', { SIGNER_PORT: String(KP), SIGNER_SERVICE_TOKEN: SVC_TOKEN, SIGNER_KEY_FILE: EVM_KEY, DATABASE_URL: DB, ...REC.schemaEnv, SIGNER_CHAINS: 'near', SIGNER_NEAR_KEY_FILE: NEAR_KEY, SIGNER_MAX_PER_TX: SIGNER_CAP, LOG_LEVEL: 'info' }, tmp))
+  procs.push(start('signer', 'apps/signer', 'src/server.ts', { SIGNER_PORT: String(KP), SIGNER_SERVICE_TOKEN: SVC_TOKEN, DATABASE_URL: DB, ...REC.schemaEnv, SIGNER_CHAINS: 'near', SIGNER_NEAR_KEY_FILE: NEAR_KEY, SIGNER_MAX_PER_TX: SIGNER_CAP, LOG_LEVEL: 'info' }, tmp))
   await waitFor(`${SIGNER}/healthz`, 'the signer')
   const near = (await call('GET', `${SIGNER}/healthz`)).json.near as { accountId: string; publicKey: string }
   if (PHONE) {
@@ -98,11 +98,11 @@ try {
   console.log(`\nSigner account ${near.accountId}\n  holds ${fromMicro(before.usdcMicro)} USDC and ${(Number(before.nearYocto / 10n ** 18n) / 1e6).toFixed(4)} NEAR`)
   const needMicro = toMicro(PRICE) * 105n / 100n // the 1Click amountIn runs a few percent above the price (0.2067 for 0.20 on 3 Nov)
   if (before.usdcMicro < needMicro) throw new Error(`not enough USDC: a ${PRICE} purchase needs about ${fromMicro(needMicro)}; top up ${fromMicro(needMicro - before.usdcMicro)} USDC to ${near.accountId}. Nothing was requested or paid.`)
-  if (before.nearYocto < MIN_GAS_YOCTO) throw new Error(`not enough NEAR for gas (needs 0.01). Nothing was requested or paid.`)
+  if (before.nearYocto < MIN_GAS_YOCTO) throw new Error(`not enough NEAR for gas (needs about 0.065). Nothing was requested or paid.`)
 
   // The owner's setup: one real service in the registry, one mandate. Every live spend is held for the owner (approval.above 0.00).
   const now = new Date()
-  await call('POST', `${GW}/v1/services`, OP, { id: 'svc_brief', name: 'Reference merchant (ours): bridge cost brief', category: 'market_data', host: '127.0.0.1', providerUrl: SVC, pricing: { model: 'per_request', quoted: PRICE, currency: 'USDC' }, paymentRails: [], limits: { maxPerRequest: SIGNER_CAP, timeoutMs: 8000 } })
+  await call('POST', `${GW}/v1/services`, OP, { id: 'svc_brief', name: 'Reference merchant (ours): settlement cost brief', category: 'market_data', host: '127.0.0.1', providerUrl: SVC, pricing: { model: 'per_request', quoted: PRICE, currency: 'USDC' }, paymentRails: [], limits: { maxPerRequest: SIGNER_CAP, timeoutMs: 8000 } })
   await call('POST', `${GW}/v1/services/svc_brief/probe-result`, OP, { verification: 'endpoint-checked', payee: PAYEE, health: 'healthy' })
   await call('POST', `${GW}/v1/services/svc_brief/enable`, OP)
   const m = await call('POST', `${GW}/v1/mandates`, OP, { id: MANDATE, version: 1, principal: 'owner', agentId: 'spend-agent', validFrom: iso(now), validUntil: iso(new Date(now.getTime() + 3_600_000)),

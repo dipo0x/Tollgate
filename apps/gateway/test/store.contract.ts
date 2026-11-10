@@ -20,7 +20,7 @@ export function storeContract(label: string, make: () => Promise<Made>) {
 
   describe(`${label}: decisions`, () => {
     it('reads back exactly what was written, with and without the optional fields', () => using(async ({ decisions }) => {
-      const full = rec('d1', { failedCheck: 'C05', reason: 'why', risk: 42, bind: { chain: 'eip155:42161', asset: 'USDC', amount: '0.250000', to: '0xabc', expiresAt: '2026-11-06T10:05:00Z', nonce: 'n1' }, indexed: false })
+      const full = rec('d1', { failedCheck: 'C05', reason: 'why', risk: 42, bind: { chain: 'near', asset: 'USDC', amount: '0.250000', to: 'abc.near', expiresAt: '2026-11-06T10:05:00Z', nonce: 'n1' }, indexed: false })
       const bare: DecisionRecord = { decisionId: 'd2', mandateId: 'm1', mandateVersion: 3, agentId: 'a', host: 'h', purpose: '', decision: 'DENY', checks: [], state: 'denied', createdAt: '2026-11-06T10:00:00.000Z' }
       await decisions.put(full); await decisions.put(bare)
       expect(await decisions.get('d1')).toEqual(full)
@@ -277,10 +277,10 @@ export function storeContract(label: string, make: () => Promise<Made>) {
     }))
 
     it('signatures: kept per decision, the first one wins, unknown decisions have none', () => using(async ({ signatures }) => {
-      const sig = { signedTx: '0x02aa', txHash: '0x' + 'a'.repeat(64), from: '0x' + 'b'.repeat(40), chainId: 42161 }
+      const sig = { signedTx: 'AgBh', txHash: 'a'.repeat(44), from: 'b'.repeat(8) + '.near' }
       expect(await signatures.get('d1')).toBeUndefined()
       await signatures.put('d1', sig)
-      await signatures.put('d1', { ...sig, signedTx: '0x02ff', txHash: '0x' + 'c'.repeat(64) }) // a second put changes nothing
+      await signatures.put('d1', { ...sig, signedTx: 'AgBi', txHash: 'c'.repeat(44) }) // a second put changes nothing
       expect(await signatures.get('d1')).toEqual(sig)
       expect(await signatures.get('d2')).toBeUndefined()
     }))

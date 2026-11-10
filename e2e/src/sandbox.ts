@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto'
 import { chmodSync, writeFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import postgres from 'postgres'
-import { createKeyFile } from '@tollgate/signer/src/backend.ts'
+import { createNearKeyFile } from '@tollgate/signer/src/near.ts'
 import { lanAddress, pairingQr, preferPort, makeTmp, removeTmp, ROOT, start, waitFor, type Proc, phoneHost } from './harness.ts'
 
 /**
@@ -25,7 +25,8 @@ const tmp = makeTmp()
 const OP = `sandbox-owner-${randomBytes(12).toString('hex')}`, SVC = `sandbox-signer-${randomBytes(16).toString('hex')}`
 const [W, G, S] = [await preferPort(9100), await preferPort(8797), await preferPort(8798)] // fixed when free, so the docs can name a real address
 const WORLD = `http://127.0.0.1:${W}`, GW = `http://127.0.0.1:${G}`
-const payer = createKeyFile(join(tmp, 'signer.key'))
+const signerKey = createNearKeyFile(join(tmp, 'signer.key'))
+const payer = signerKey.accountId
 const procs: Proc[] = []
 const sandboxFile = join(ROOT, '.sandbox.json')
 
@@ -39,7 +40,7 @@ for (const sig of ['SIGINT', 'SIGTERM'] as const) process.on(sig, () => { consol
 console.log(`${b}Starting the sandbox...${x} ${d}(about 10 seconds)${x}`)
 procs.push(start('world', 'apps/mock-merchants', 'src/world-server.ts', { WORLD_PORT: String(W) }, tmp)); await waitFor(`${WORLD}/_control/health`, 'the simulated world')
 procs.push(start('gateway', 'apps/gateway', 'src/server.ts', { PORT: String(G), DATABASE_URL: DB, DATABASE_SCHEMA: schema, GATEWAY_OPERATOR_TOKEN: OP, GATEWAY_HOST: PHONE ? '0.0.0.0' : '127.0.0.1', TOLLGATE_OFFLINE: 'false', NEAR_1CLICK_API_KEY: 'sandbox-simulated-key', ONECLICK_BASE_URL: `${WORLD}/1click`, SIGNER_URL: `http://127.0.0.1:${S}`, SIGNER_SERVICE_TOKEN: SVC, LOG_LEVEL: 'info' }, tmp)); await waitFor(`${GW}/healthz`, 'the gateway')
-procs.push(start('signer', 'apps/signer', 'src/server.ts', { SIGNER_PORT: String(S), SIGNER_SERVICE_TOKEN: SVC, SIGNER_KEY_FILE: join(tmp, 'signer.key'), DATABASE_URL: DB, DATABASE_SCHEMA: schema, SIGNER_MAX_PER_TX: '1.00', LOG_LEVEL: 'info' }, tmp)); await waitFor(`http://127.0.0.1:${S}/healthz`, 'the signer')
+procs.push(start('signer', 'apps/signer', 'src/server.ts', { SIGNER_PORT: String(S), SIGNER_SERVICE_TOKEN: SVC, SIGNER_NEAR_KEY_FILE: join(tmp, 'signer.key'), DATABASE_URL: DB, DATABASE_SCHEMA: schema, SIGNER_MAX_PER_TX: '1.00', LOG_LEVEL: 'info' }, tmp)); await waitFor(`http://127.0.0.1:${S}/healthz`, 'the signer')
 
 const op = async (method: string, path: string, body?: unknown) => (await fetch(GW + path, { method, headers: { authorization: `Bearer ${OP}`, ...(body ? { 'content-type': 'application/json' } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}) })).json() as Promise<any>
 await op('POST', '/v1/services', { id: 'svc_demo', name: 'Demo data merchant', category: 'data', host: 'merchant.example.com', providerUrl: 'https://merchant.example.com', pricing: { model: 'per_request', quoted: '0.30', currency: 'USDC' }, paymentRails: [], limits: { maxPerRequest: '1.00', timeoutMs: 8000 } })
@@ -47,11 +48,11 @@ await op('POST', '/v1/services/svc_demo/probe-result', { verification: 'endpoint
 const now = Date.now(), iso = (ms: number) => new Date(ms).toISOString()
 const m = await op('POST', '/v1/mandates', {
   id: 'mnd_sandbox', version: 1, principal: 'you@example.com', agentId: 'sandbox-agent', validFrom: iso(now - 864e5), validUntil: iso(now + 7 * 864e5),
-  budget: { currency: 'USDC', total: '5.00', perPayment: '1.00' }, allowedHosts: ['merchant.example.com'], allowedOriginNetworks: ['eip155:42161'], allowedAssets: ['USDC'],
+  budget: { currency: 'USDC', total: '5.00', perPayment: '1.00' }, allowedHosts: ['merchant.example.com'], allowedOriginNetworks: ['near'], allowedAssets: ['USDC'],
   payee: { mode: 'registry' }, price: { tolerancePct: 3, onExceed: 'needs_approval' }, approval: { above: PHONE ? '0.00' : '1.00', riskAbove: 90, firstPayeeRequiresApproval: false }, refund: { mustBePayerOrPinned: true },
 })
 await fetch(`${WORLD}/_control/merchant`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ host: 'merchant.example.com', payee: 'merchant.near', price: '0.30', behavior: 'honest' }) })
-writeFileSync(sandboxFile, JSON.stringify({ gateway: GW, world: WORLD, operatorToken: OP, agentToken: m.agentToken, mandateId: 'mnd_sandbox', payer, phone: PHONE }, null, 2)); chmodSync(sandboxFile, 0o600)
+writeFileSync(sandboxFile, JSON.stringify({ gateway: GW, world: WORLD, operatorToken: OP, agentToken: m.agentToken, mandateId: 'mnd_sandbox', payer, publicKey: signerKey.publicKey, phone: PHONE }, null, 2)); chmodSync(sandboxFile, 0o600)
 
 console.log(`
 ${g}${b}The sandbox is running.${x} ${d}Everything is real except the outside world: the 1Click, the chain and the merchant are simulated. No money, no real key.${x}

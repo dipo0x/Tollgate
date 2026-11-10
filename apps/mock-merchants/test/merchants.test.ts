@@ -23,7 +23,7 @@ async function world(behavior: MerchantBehavior = 'honest', mandate: Record<stri
     if (req.url.startsWith(GATEWAY)) { if (init?.body) gatewayBodies.push(String(init.body)); return g.app.request(url.pathname + url.search, init) }
     return merchant.app.request(url.pathname + url.search, init)
   }) as typeof fetch
-  const tg = createTollgate({ gatewayUrl: GATEWAY, agentToken: token, mandateId: 'mnd_1', payer: g.backend.address, rail: chain, purpose: 'buy the market brief', fetch: router })
+  const tg = createTollgate({ gatewayUrl: GATEWAY, agentToken: token, mandateId: 'mnd_1', payer: g.near.accountId, rail: chain, purpose: 'buy the market brief', fetch: router })
   /** The SDK asks the gateway to reconcile in the background once the merchant delivers. Wait for 1Click's word to land. */
   const settled = async () => {
     for (let i = 0; i < 100; i++) { const d = (await g.op('GET', '/v1/decisions')).json.decisions[0]; if (d?.state === 'settled') return d.decisionId as string; await new Promise(r => setTimeout(r, 20)) }
@@ -108,14 +108,14 @@ describe('a stated limit, shown honestly', () => {
 describe('the simulated 1Click and chain behave like the real thing where it matters', () => {
   it('an underpayment leaves the deposit incomplete and the merchant does not deliver', async () => {
     const oc = new FakeOneClickServer()
-    const q = oc.createQuote({ amountOut: 250_000n, destination: 'merchant.near', refundTo: '0xp', deadline: '2026-11-06T10:05:00Z' })
+    const q = oc.createQuote({ amountOut: 250_000n, destination: 'merchant.near', refundTo: 'p.near', deadline: '2026-11-06T10:05:00Z' })
     expect(oc.deposit(q.depositAddress, 100_000n)).toBe('INCOMPLETE_DEPOSIT')
     expect(oc.deposit(q.depositAddress, 250_000n)).toBe('SUCCESS')
-    expect(oc.deposit('0xnobody', 1n)).toBeUndefined()
+    expect(oc.deposit('nobody.near', 1n)).toBeUndefined()
   })
   it('an address 1Click never issued is a 404, and a dry quote follows the configured rate', async () => {
     const oc = new FakeOneClickServer(); oc.rateBps = 10_500n
-    expect((await oc.app.request('/v0/status?depositAddress=0xnope')).status).toBe(404)
+    expect((await oc.app.request('/v0/status?depositAddress=nope')).status).toBe(404)
     const quote = await (await oc.app.request('/v0/quote', { method: 'POST', body: JSON.stringify({ dry: true, amount: '1000000' }), headers: { 'content-type': 'application/json' } })).json() as { quote: { amountIn: string } }
     expect(quote.quote.amountIn).toBe('1050000')
     expect((await oc.app.request('/v0/quote', { method: 'POST', body: JSON.stringify({ dry: false, amount: '1' }) })).status).toBe(400) // only dry quotes are simulated

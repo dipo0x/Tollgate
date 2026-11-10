@@ -8,7 +8,7 @@
 //  1. ask the merchant           -> it answers 402 with a payment request (the "challenge")
 //  2. POST /v1/authorize         -> the gateway runs its twelve checks: ALLOW, DENY or NEEDS_APPROVAL
 //  3. POST /v1/payments/:id/sign -> only after ALLOW: the signer signs exactly what was approved
-//  4. broadcast the signed bytes -> eth_sendRawTransaction on the chain
+//  4. broadcast the signed bytes -> send_tx on a NEAR node
 //  5. ask the merchant again     -> with proof of payment
 package main
 
@@ -20,14 +20,13 @@ import (
 	"math/big"
 	"net/http"
 	"os"
-	"strings"
 	"time"
 )
 
 type obj = map[string]any
 
 var box struct {
-	Gateway, World, AgentToken, MandateID, Payer string
+	Gateway, World, AgentToken, MandateID, Payer, PublicKey string
 }
 
 func die(f string, a ...any) { fmt.Fprintf(os.Stderr, f+"\n", a...); os.Exit(1) }
@@ -61,18 +60,12 @@ func gateway(method, path string, body any) (int, obj) {
 	return do(method, box.Gateway+path, box.AgentToken, body, nil)
 }
 
-func rpc(method string, params ...any) any {
+func rpc(method string, params any) any {
 	_, j := do("POST", box.World+"/rpc", "", obj{"jsonrpc": "2.0", "id": 1, "method": method, "params": params}, nil)
 	if j["error"] != nil {
 		die("%s failed: %v", method, j["error"])
 	}
 	return j["result"]
-}
-
-func hexInt(v any) *big.Int {
-	n := new(big.Int)
-	n.SetString(strings.TrimPrefix(fmt.Sprint(v), "0x"), 16)
-	return n
 }
 
 func main() {
@@ -83,7 +76,7 @@ func main() {
 	var sb obj
 	_ = json.Unmarshal(raw, &sb)
 	box.Gateway, box.World, box.AgentToken = fmt.Sprint(sb["gateway"]), fmt.Sprint(sb["world"]), fmt.Sprint(sb["agentToken"])
-	box.MandateID, box.Payer = fmt.Sprint(sb["mandateId"]), fmt.Sprint(sb["payer"])
+	box.MandateID, box.Payer, box.PublicKey = fmt.Sprint(sb["mandateId"]), fmt.Sprint(sb["payer"]), fmt.Sprint(sb["publicKey"])
 
 	behaviour := "honest"
 	if len(os.Args) > 1 {
@@ -131,22 +124,17 @@ func main() {
 
 	// 3. Sign. We supply the fees and nonce; the signer builds the transfer from the approved decision, so we cannot change who is paid.
 	bind := d["bind"].(obj)
-	tip := hexInt(rpc("eth_maxPriorityFeePerGas"))
-	blk, _ := rpc("eth_getBlockByNumber", "latest", false).(obj)
-	base := new(big.Int)
-	if f, ok := blk["baseFeePerGas"]; ok {
-		base = hexInt(f)
-	}
-	maxFee := new(big.Int).Add(new(big.Int).Mul(base, big.NewInt(2)), tip)
-	tx := obj{"nonce": hexInt(rpc("eth_getTransactionCount", box.Payer, "pending")).Int64(), "gas": "100000",
-		"maxPriorityFeePerGas": tip.String(), "maxFeePerGas": maxFee.String()}
+	key, _ := rpc("query", obj{"request_type": "view_access_key", "finality": "final", "account_id": box.Payer, "public_key": box.PublicKey}).(obj)
+	nonce, _ := new(big.Int).SetString(fmt.Sprintf("%.0f", key["nonce"]), 10)
+	tx := obj{"nonce": nonce.Add(nonce, big.NewInt(1)).String(), "blockHash": key["block_hash"]}
 	s, signed := gateway("POST", fmt.Sprintf("/v1/payments/%v/sign", d["decisionId"]), obj{"tx": tx})
 	if s != 200 {
 		die("The payment could not be signed (%d): %v", s, signed["error"])
 	}
 
 	// 4. Broadcast the signed bytes ourselves. Tollgate never sends money; it only signs what it approved.
-	txHash := rpc("eth_sendRawTransaction", signed["signedTx"])
+	sent, _ := rpc("send_tx", obj{"signed_tx_base64": signed["signedTx"], "wait_until": "EXECUTED_OPTIMISTIC"}).(obj)
+	txHash := sent["transaction"].(obj)["hash"]
 
 	// 5. Ask again with proof of payment.
 	proof, _ := json.Marshal(obj{"challengeId": challenge.(obj)["id"], "txHash": txHash, "depositAddress": bind["to"]})

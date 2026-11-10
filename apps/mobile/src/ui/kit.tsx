@@ -162,8 +162,10 @@ export function Chips<K extends string>({ items, value, onChange }: { items: { i
 }
 
 /** "0.20" big and white, "6712" smaller and grey, then the unit. */
-export function Amount({ value, unit = 'USDC', size = 56, center }: { value: string | undefined; unit?: string; size?: number; center?: boolean }) {
-  const { main, rest } = splitAmount(value)
+/** Two decimals. `exact` also shows the digits after the cents in grey: only for the screens where the owner approves or audits one payment. */
+export function Amount({ value, unit = 'USDC', size = 56, center, exact }: { value: string | undefined; unit?: string; size?: number; center?: boolean; exact?: boolean }) {
+  const { main, rest: tail } = splitAmount(value)
+  const rest = exact ? tail : ''
   return (
     <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: center ? 'center' : 'flex-start' }}>
       <T style={{ fontFamily: F.bold, fontSize: size, letterSpacing: -size * 0.035, fontVariant: ['tabular-nums'] }}>{main}</T>

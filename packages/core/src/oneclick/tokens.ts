@@ -10,11 +10,8 @@ export const TokenSchema = z.object({
 })
 export type Token = z.infer<typeof TokenSchema>
 
-/** Our mandates name networks as CAIP-2 ids; 1Click names chains with short words. */
-export const NETWORK_TO_BLOCKCHAIN: Readonly<Record<string, string>> = {
-  'eip155:1': 'eth', 'eip155:10': 'op', 'eip155:56': 'bsc', 'eip155:137': 'pol', 'eip155:8453': 'base',
-  'eip155:42161': 'arb', 'eip155:43114': 'avax', near: 'near',
-}
+/** Our mandates name the network a payment is made on; 1Click names chains with short words. Tollgate pays from NEAR only. */
+export const NETWORK_TO_BLOCKCHAIN: Readonly<Record<string, string>> = { near: 'near' }
 
 export class TokenCatalog {
   private byId = new Map<string, Token>()

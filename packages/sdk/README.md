@@ -8,16 +8,16 @@ Wraps `fetch` so an HTTP 402 payment challenge is routed through the Tollgate ga
 npm install trytollgate
 ```
 
-It has one runtime dependency, `viem`. In this repository it is the workspace package `packages/sdk`.
+It has no runtime dependencies. In this repository it is the workspace package `packages/sdk`.
 
 ## Protect an agent in 9 lines
 
 ```ts
-import { createTollgate, httpRpcRail } from 'trytollgate'
+import { createTollgate, nearRpcRail } from 'trytollgate'
 
 const tollgate = createTollgate({
   gatewayUrl: 'http://127.0.0.1:8787', agentToken: process.env.TOLLGATE_AGENT_TOKEN!, mandateId: 'mnd_1',
-  payer: '0xYourSignerPublicAddress', rail: httpRpcRail({ 'eip155:42161': 'https://arb1.arbitrum.io/rpc' }),
+  payer: 'your-signer-account.near', rail: nearRpcRail({ rpcUrl: 'https://free.rpc.fastnear.com', publicKey: 'ed25519:...' }),
 })
 const res = await tollgate.fetch('https://merchant.example.com/data') // a 402 is handled for you
 ```
@@ -56,11 +56,11 @@ To wait for a person instead of throwing, pass `approval: { wait: true }`: the S
 
 - The 402 format here is Tollgate's own: the challenge in the response body as JSON (or `{ "challenge": {...} }`), and the proof in an `x-payment-proof` header. It is what `apps/mock-merchants` speaks. Real MPP / x402 headers are a separate adapter, to be added once the payment path is chosen.
 - A request body must be replayable (a string or buffer, not a one-shot stream), because it is sent again on the retry.
-- `httpRpcRail` reads a nonce and fees over public JSON-RPC and broadcasts the signed transaction. Using it with a funded key spends real money; that is always the owner's decision.
+- `nearRpcRail` reads the signer's access-key nonce over public NEAR JSON-RPC and broadcasts the signed transaction. Using it with a funded key spends real money; that is always the owner's decision.
 
-## Paying from NEAR (0.2.0+)
+## Paying from NEAR
 
-`nearRpcRail` pays from a NEAR account instead of an EVM chain. The gateway's signer must be configured for NEAR (see the repository's
+`nearRpcRail` pays from a NEAR account. The gateway's signer holds the key (see the repository's
 getting-started guide); `publicKey` is the signer's PUBLIC key from its `/healthz`.
 
 ```ts

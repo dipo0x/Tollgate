@@ -9,14 +9,14 @@ import { expand } from '../world.ts'
  * "expected destination" is therefore a list of known merchant HOSTS. The policy has no memory of what it has already paid and no
  * independent facts about the quote, the deposit address or the refund target, which is exactly what the comparison is about.
  */
-export const STOCK_POLICY = { networks: ['eip155:42161'], currencies: ['USDC'], maxAmount: 1_000_000n, hosts: ['merchant.example.com', 'data.example.com'] } as const
+export const STOCK_POLICY = { networks: ['near'], currencies: ['USDC'], maxAmount: 1_000_000n, hosts: ['merchant.example.com', 'data.example.com'] } as const
 
 const micro = (s: unknown): bigint | undefined => {
   const m = /^(\d+)(?:\.(\d{1,6}))?$/.exec(String(s)); return m ? BigInt(m[1] as string) * 1_000_000n + BigInt((m[2] ?? '').padEnd(6, '0') || '0') : undefined
 }
 
 export function runStock(s: Scenario, index: number): Result {
-  const reqs = expand(s, index, '0xpayer')
+  const reqs = expand(s, index, 'payer.near')
   let payments = 0, last: Result['outcome'] = 'blocked', why = ''
   for (const r of reqs) {
     const amount = micro(r.challenge['amount'])

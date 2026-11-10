@@ -55,13 +55,14 @@ const HelloBody = z.strictObject({ brains: z.array(z.strictObject({ id: BrainId,
 const TaskReplyBody = z.strictObject({ text: z.string().trim().min(1).max(1000), status: z.enum(['working', 'done', 'failed']).optional(), decisionId: z.string().min(1).max(128).optional() })
 const JobBody = z.strictObject({ id: z.string().min(1).max(128), mandateId: z.string().min(1).max(128), goal: z.string().max(500), receivingAddress: z.string().min(1).max(256), price: amount, currency: z.string().min(1).max(32) })
 const wholeNumber = z.string().regex(/^\d{1,30}$/, 'must be a whole number written as a string')
-// EVM: nonce, gas and fees. NEAR: the access key's nonce (a string; it can exceed 2^53) and a recent base58 block hash.
+// The access key's nonce (a string; it can exceed 2^53) and a recent base58 block hash.
 const SignBody = z.strictObject({ tx: z.union([
-  z.strictObject({ nonce: z.number().int().min(0).max(0xffffffff), gas: wholeNumber, maxFeePerGas: wholeNumber, maxPriorityFeePerGas: wholeNumber }),
   z.strictObject({ nonce: wholeNumber, blockHash: z.string().regex(/^[1-9A-HJ-NP-Za-km-z]{32,44}$/) }),
   // x402 on NEAR (NEAR AI Agent Market): the access key's next nonce and the current block height.
   z.strictObject({ nonce: wholeNumber, blockHeight: wholeNumber }),
 ]) })
+/** An amount in USDC and nothing else. */
+const WithdrawBody = z.strictObject({ amount: z.string().regex(/^\d{1,12}(\.\d{1,6})?$/, 'amount must be a positive number of USDC with up to 6 decimals') })
 const ReasonBody = z.strictObject({ reason: z.string().min(1, 'a reason is required').max(500) })
 const ServiceBody = z.strictObject({
   id: z.string().min(1).max(128), name: z.string().min(1).max(200), category: z.string().min(1).max(64), host: z.string().min(1).max(253), providerUrl: z.url(),
@@ -233,6 +234,22 @@ export function createApp(deps: GatewayDeps) {
   app.get('/v1/approvals', asOperator(cached(async c => send(c, await gw.listApprovals()))))
   app.post('/v1/approvals/:id/approve', asOperator(async c => { const b = await parse(c, ReasonBody); return b.ok ? send(c, await gw.approve(P(c, 'id'), b.data.reason)) : b.res }))
   app.post('/v1/approvals/:id/reject', asOperator(async c => { const b = await parse(c, ReasonBody); return b.ok ? send(c, await gw.reject(P(c, 'id'), b.data.reason)) : b.res }))
+  // The owner's money back out. Operator only. The body is an amount and nothing else: there is no field for a destination, because the
+  // signer sends only to the one account in its own settings.
+  const noWithdraw = () => ({ status: 503 as const, body: { error: { code: 'withdraw_unavailable', message: 'This gateway has no signer with a NEAR account, so nothing can be withdrawn.' } } })
+  app.get('/v1/withdrawals', asOperator(async c => {
+    if (!deps.withdrawals) return send(c, noWithdraw())
+    const [info, recent] = await Promise.all([deps.withdrawals.info(), deps.withdrawals.list(Math.min(Number(c.req.query('limit') ?? 20) || 20, 100))])
+    return info.status === 200 ? c.json({ ...(info.body as object), ...(recent.body as object) }) : send(c, info)
+  }))
+  app.post('/v1/withdrawals', asOperator(async c => {
+    if (!deps.withdrawals) return send(c, noWithdraw())
+    const b = await parse(c, WithdrawBody)
+    if (!b.ok) return b.res
+    const out = await deps.withdrawals.create(b.data.amount)
+    reads.invalidate()
+    return send(c, out as Out)
+  }))
   app.post('/v1/freeze', asOperator(async c => send(c, await gw.freeze(true))))
   app.post('/v1/unfreeze', asOperator(async c => send(c, await gw.freeze(false))))
 

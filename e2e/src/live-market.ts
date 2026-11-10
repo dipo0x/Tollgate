@@ -20,7 +20,7 @@ try { process.loadEnvFile(`${ROOT}.env`) } catch { /* rely on the environment */
 const need = (k: string) => { const v = process.env[k]; if (!v) { console.error(`${k} is not set in .env`); process.exit(2) } return v }
 const KEY = need('NEAR_1CLICK_API_KEY') // the gateway's live mode needs it; this run never calls 1Click
 const REC = ownerRecord(), DB = REC.db, MANDATE = `mnd_market_${REC.run}`
-const NEAR_KEY = `${ROOT}.signer-near-key`, EVM_KEY = `${ROOT}.signer-key`
+const NEAR_KEY = `${ROOT}.signer-near-key`
 const RPC = process.env['NEAR_RPC_URL'] ?? 'https://rpc.mainnet.fastnear.com'
 const CONFIRM_FILE = process.env['CONFIRM_FILE'] ?? `${ROOT}.market-pay-confirm`
 const SELLER = process.env['MARKET_SELLER'] ?? 'contract-health-auditor'
@@ -54,7 +54,7 @@ try {
   rmSync(CONFIRM_FILE, { force: true })
   console.log('Starting a live-mode gateway and the signer (x402 on NEAR, own cap 0.12 USDC)...')
   procs.push(start('gateway', 'apps/gateway', 'src/server.ts', { PORT: String(GP), DATABASE_URL: DB, ...REC.schemaEnv, GATEWAY_OPERATOR_TOKEN: OP, TOLLGATE_OFFLINE: 'false', NEAR_1CLICK_API_KEY: KEY, SIGNER_URL: SIGNER, SIGNER_SERVICE_TOKEN: SVC_TOKEN, CHECK_TIMEOUT_MS: '10000', LOG_LEVEL: 'silent' }, tmp)); await waitFor(`${GW}/healthz`, 'the gateway')
-  procs.push(start('signer', 'apps/signer', 'src/server.ts', { SIGNER_PORT: String(KP), SIGNER_SERVICE_TOKEN: SVC_TOKEN, SIGNER_KEY_FILE: EVM_KEY, DATABASE_URL: DB, ...REC.schemaEnv, SIGNER_CHAINS: 'near:mainnet', SIGNER_NEAR_KEY_FILE: NEAR_KEY, SIGNER_MAX_PER_TX: '0.12', LOG_LEVEL: 'info' }, tmp))
+  procs.push(start('signer', 'apps/signer', 'src/server.ts', { SIGNER_PORT: String(KP), SIGNER_SERVICE_TOKEN: SVC_TOKEN, DATABASE_URL: DB, ...REC.schemaEnv, SIGNER_CHAINS: 'near:mainnet', SIGNER_NEAR_KEY_FILE: NEAR_KEY, SIGNER_MAX_PER_TX: '0.12', LOG_LEVEL: 'info' }, tmp))
   await waitFor(`${SIGNER}/healthz`, 'the signer')
   const near = (await call('GET', `${SIGNER}/healthz`)).json.near as { accountId: string; publicKey: string }
   const before = await usdcOf(near.accountId)

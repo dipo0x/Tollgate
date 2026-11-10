@@ -1,20 +1,19 @@
 import { randomBytes } from 'node:crypto'
 import postgres from 'postgres'
-import { decodeFunctionData, erc20Abi, parseTransaction, type Hex } from 'viem'
-import { generatePrivateKey } from 'viem/accounts'
+import { KeyPair } from '@near-js/crypto'
+import { decodeSignedTransaction } from '@near-js/transactions'
 import { describe, expect, it } from 'vitest'
 import { createSignerApp } from '@tollgate/signer'
-import { viemBackend } from '@tollgate/signer/src/backend.ts'
-import { tokensFor } from '@tollgate/signer/src/chains.ts'
+import { NEAR_USDC, nearBackend } from '@tollgate/signer/src/near.ts'
 import { ensureSignerSchema, PostgresSignerStore } from '@tollgate/signer/src/store-postgres.ts'
 import { claimContract } from '@tollgate/signer/test/store.contract.ts'
 import { HttpSignerClient } from '../src/signer.ts'
-import { bootPersistent, challenge, record, T0 } from './helpers.ts'
+import { bootPersistent, challenge, RECIPIENT, record, T0, TX } from './helpers.ts'
 
 const url = process.env['DATABASE_URL']
-const RECIPIENT = '0x1234567890abcdef1234567890abcdef12345678'
 const TOKEN = 'signer-service-token-0123456789-abcdef'
-const TX = { nonce: 3, gas: '100000', maxFeePerGas: '100000000', maxPriorityFeePerGas: '10000000' }
+const nearLimits = { maxPerTx: 1_000_000n, nearTokens: { 'near:USDC': NEAR_USDC } }
+const newKey = () => nearBackend(KeyPair.fromRandom('ed25519').toString())
 
 if (!url) {
   if (process.env['REQUIRE_DB']) throw new Error('REQUIRE_DB is set but DATABASE_URL is not')
@@ -38,8 +37,8 @@ if (!url) {
       const sql = postgres(url, { max: 4, onnotice: () => {}, connection: { search_path: schema } })
       try {
         await ensureSignerSchema(sql)
-        const backend = viemBackend(generatePrivateKey())
-        const signerApp = createSignerApp({ store: new PostgresSignerStore(sql), backend, limits: { tokens: tokensFor(['eip155:42161']), maxPerTx: 1_000_000n, maxGas: 200_000n, maxFeePerGas: 2_000_000_000n }, clock: () => clock.now }, TOKEN)
+        const near = newKey()
+        const signerApp = createSignerApp({ store: new PostgresSignerStore(sql), near, limits: nearLimits, clock: () => clock.now }, TOKEN)
         g.deps.signer = new HttpSignerClient({ url: 'http://signer.local', token: TOKEN, fetch: ((u: string, init: RequestInit) => Promise.resolve(signerApp.request(new URL(u).pathname, init))) as unknown as typeof fetch })
 
         const { token } = await g.setup({ mandate: { approval: { above: '1.00', riskAbove: 90, firstPayeeRequiresApproval: false } } })
@@ -54,14 +53,13 @@ if (!url) {
         await g.op('POST', '/v1/unfreeze')
 
         const ok = await sign(); expect(ok.status).toBe(200)
-        const tx = parseTransaction(ok.json.signedTx as Hex)
-        const call = decodeFunctionData({ abi: erc20Abi, data: tx.data as Hex })
-        expect((call.args as [string, bigint])[0].toLowerCase()).toBe(RECIPIENT)
-        expect((call.args as [string, bigint])[1]).toBe(250_000n)
+        const tx = decodeSignedTransaction(Buffer.from(ok.json.signedTx as string, 'base64')).transaction
+        const pay = tx.actions.map(a => a.functionCall!).find(a => a.methodName === 'ft_transfer')!
+        expect(JSON.parse(Buffer.from(pay.args).toString())).toEqual({ receiver_id: RECIPIENT, amount: '250000' })
 
         const claims = await sql`SELECT decision_id, nonce, tx_hash, signer_address FROM signer_claims`
         expect(claims).toHaveLength(1)
-        expect(claims[0]).toMatchObject({ decision_id: id, tx_hash: ok.json.txHash, signer_address: backend.address })
+        expect(claims[0]).toMatchObject({ decision_id: id, tx_hash: ok.json.txHash, signer_address: near.accountId })
 
         // Asking again returns the SAME signed bytes from the gateway's stored signature; the signer is not asked, and keeps one claim.
         const again = await sign()
@@ -78,7 +76,7 @@ if (!url) {
       const sql = postgres(url, { max: 8, onnotice: () => {}, connection: { search_path: schema } })
       try {
         await ensureSignerSchema(sql)
-        const signerApp = createSignerApp({ store: new PostgresSignerStore(sql), backend: viemBackend(generatePrivateKey()), limits: { tokens: tokensFor(['eip155:42161']), maxPerTx: 1_000_000n, maxGas: 200_000n, maxFeePerGas: 2_000_000_000n }, clock: () => clock.now }, TOKEN)
+        const signerApp = createSignerApp({ store: new PostgresSignerStore(sql), near: newKey(), limits: nearLimits, clock: () => clock.now }, TOKEN)
         g.deps.signer = new HttpSignerClient({ url: 'http://signer.local', token: TOKEN, fetch: ((u: string, init: RequestInit) => Promise.resolve(signerApp.request(new URL(u).pathname, init))) as unknown as typeof fetch })
         const { token } = await g.setup({ mandate: { approval: { above: '1.00', riskAbove: 90, firstPayeeRequiresApproval: false } } })
         g.oneClick.add(record(RECIPIENT))

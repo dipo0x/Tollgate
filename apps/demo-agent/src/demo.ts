@@ -7,10 +7,9 @@ import { HttpOneClick } from '@tollgate/core/oneclick'
 import { createMerchant, FakeOneClickServer, MockChain, ScriptedSeller, type MerchantBehavior } from '@tollgate/mock-merchants'
 import { ApprovalRequired, createTollgate, PaymentDenied } from 'trytollgate'
 import { createSignerApp } from '@tollgate/signer'
-import { viemBackend } from '@tollgate/signer/src/backend.ts'
-import { tokensFor } from '@tollgate/signer/src/chains.ts'
+import { KeyPair } from '@near-js/crypto'
+import { NEAR_USDC, nearBackend } from '@tollgate/signer/src/near.ts'
 import { MemorySignerStore } from '@tollgate/signer/src/store.ts'
-import { generatePrivateKey } from 'viem/accounts'
 import { buyOrSkip, plannerReady, priceReport } from './planner.ts'
 import { runNegotiation, type Talker } from './negotiate.ts'
 
@@ -19,7 +18,7 @@ import { runNegotiation, type Talker } from './negotiate.ts'
 // `--negotiate [item]`: negotiate-only path — haggle (Ollama with --llm, else scripted), then buy at the agreed price if any.
 const LLM = process.argv.includes('--llm')
 if (process.argv.includes('--task')) {
-  console.error('Spending on a task always uses real money now: pnpm spend "Buy the bridge cost brief" (see e2e/src/live-spend.ts).')
+  console.error('Spending on a task always uses real money now: pnpm spend "Buy the settlement cost brief" (see e2e/src/live-spend.ts).')
   process.exit(2)
 }
 const negotiateIdx = process.argv.indexOf('--negotiate')
@@ -55,7 +54,7 @@ const oc = new FakeOneClickServer()
 const oneClick = new HttpOneClick({ baseUrl: 'http://1click.simulated', now: () => NOW, fetch: ((u: string, i: RequestInit) => { const x = new URL(u); return Promise.resolve(oc.app.request(x.pathname + x.search, i)) }) as unknown as typeof fetch })
 const deps = buildDeps(loadConfig({ GATEWAY_OPERATOR_TOKEN: OPERATOR, LOG_LEVEL: 'silent', TOLLGATE_OFFLINE: 'true' }), { clock: () => NOW, oneClick })
 const { app } = createApp(deps)
-const key = viemBackend(generatePrivateKey()) // a throwaway key made for this run, never funded, never written anywhere
+const key = nearBackend(KeyPair.fromRandom('ed25519').toString(), 'payer.near') // a throwaway key made for this run, never funded, never written anywhere
 
 // The signer reads the gateway's stored decisions, as the real (Postgres) signer does.
 class Bridge extends MemorySignerStore {
@@ -63,7 +62,7 @@ class Bridge extends MemorySignerStore {
   override async mandateState(id: string) { const m = await deps.mandates.get(id); return m ? { status: m.status, validUntil: m.spec.validUntil } : undefined }
   override async isFrozen() { return deps.store.settings.frozen() }
 }
-const signer = createSignerApp({ store: new Bridge(), backend: key, limits: { tokens: tokensFor(['eip155:42161']), maxPerTx: 1_000_000n, maxGas: 200_000n, maxFeePerGas: 2_000_000_000n }, clock: () => NOW }, SERVICE_TOKEN)
+const signer = createSignerApp({ store: new Bridge(), near: key, limits: { maxPerTx: 1_000_000n, nearTokens: { 'near:USDC': NEAR_USDC } }, clock: () => NOW }, SERVICE_TOKEN)
 deps.signer = new HttpSignerClient({ url: 'http://signer.local', token: SERVICE_TOKEN, fetch: ((u: string, i: RequestInit) => Promise.resolve(signer.request(new URL(u).pathname, i))) as unknown as typeof fetch })
 const chain = new MockChain(oc)
 
@@ -102,14 +101,14 @@ for (const [id, host, category, payee, quoted] of [
 }
 const created = await op('POST', '/v1/mandates', {
   id: 'mnd_research', version: 1, principal: 'owner@example.com', agentId: 'research-agent', validFrom: '2026-11-05T00:00:00Z', validUntil: '2026-11-12T00:00:00Z',
-  budget: { currency: 'USDC', total: '5.00', perPayment: '1.00' }, allowedHosts: ['merchant.example.com', 'premium.example.com'], allowedOriginNetworks: ['eip155:42161'], allowedAssets: ['USDC'],
+  budget: { currency: 'USDC', total: '5.00', perPayment: '1.00' }, allowedHosts: ['merchant.example.com', 'premium.example.com'], allowedOriginNetworks: ['near'], allowedAssets: ['USDC'],
   payee: { mode: 'registry' }, price: { tolerancePct: 3, onExceed: 'needs_approval' }, approval: { above: '0.50', riskAbove: 90, firstPayeeRequiresApproval: false }, refund: { mustBePayerOrPinned: true },
   negotiation: { priceCeiling: '0.30', maxRounds: 4 }, delegation: { maxDepth: 1 },
 })
 const agent = created.json.agentToken as string
 line('Mandate for "research-agent": 5.00 USDC total, 1.00 per payment, approval needed above 0.50, may haggle up to 0.30, may hire one level down.')
 line(`${c.dim}The agent gets a token. The key stays in the signer. The agent never sees it.${c.x}`)
-const tg = createTollgate({ gatewayUrl: 'http://gateway.local', agentToken: agent, mandateId: 'mnd_research', payer: key.address, rail: chain, purpose: 'research for the weekly brief', fetch: router })
+const tg = createTollgate({ gatewayUrl: 'http://gateway.local', agentToken: agent, mandateId: 'mnd_research', payer: key.accountId, rail: chain, purpose: 'research for the weekly brief', fetch: router })
 const balance = async () => (await op('GET', '/v1/mandates/mnd_research')).json.balance as Record<string, string>
 
 async function buy(label: string, host: string, opts: { negotiationId?: string } = {}, client = tg): Promise<boolean> {
@@ -245,7 +244,7 @@ await haggleThenMaybeBuy({ negotiationId: 'neg_1', item: 'the daily market brief
 act(2, 'A bigger purchase needs the owner')
 shop('premium.example.com', 'honest', '0.80', 'premium.near')
 // The agent waits on the SAME request while the owner decides: asking again returns the same pending decision, not a second one.
-const patient = createTollgate({ gatewayUrl: 'http://gateway.local', agentToken: agent, mandateId: 'mnd_research', payer: key.address, rail: chain, purpose: 'the premium report', approval: { wait: true, pollMs: 20, timeoutMs: 10_000 }, fetch: router })
+const patient = createTollgate({ gatewayUrl: 'http://gateway.local', agentToken: agent, mandateId: 'mnd_research', payer: key.accountId, rail: chain, purpose: 'the premium report', approval: { wait: true, pollMs: 20, timeoutMs: 10_000 }, fetch: router })
 line('agent asks for the premium report (0.80, above the 0.50 approval line) and waits')
 const waiting = buy('premium report, 0.80', 'premium.example.com', {}, patient)
 let approved = false
@@ -279,14 +278,14 @@ if (LLM) {
     else line(`${c.y}guard${c.x}: ${q.price} is outside the owner's range (0.50 to 3.00), so the default 1.50 stands.`)
   } catch (e) { line(`${c.r}planner failed${c.x} (${(e as Error).message}): the default price 1.50 stands.`) }
 }
-await op('POST', '/v1/jobs', { id: 'job_brief', mandateId: 'mnd_research', goal: 'sell the weekly market brief', receivingAddress: '0xAGENT_RECEIVING_ADDRESS', price: sellPrice, currency: 'USDC' })
-const receipt = { id: 'rcpt_sim_1', status: 'SUCCESS', amount: fromMicro(toMicro(sellPrice)), currency: 'USDC', payee: '0xAGENT_RECEIVING_ADDRESS', payerRef: 'SIMULATED-customer', settledAt: new Date(NOW.getTime() - 30_000).toISOString() }
+await op('POST', '/v1/jobs', { id: 'job_brief', mandateId: 'mnd_research', goal: 'sell the weekly market brief', receivingAddress: 'agent-receiving.near', price: sellPrice, currency: 'USDC' })
+const receipt = { id: 'rcpt_sim_1', status: 'SUCCESS', amount: fromMicro(toMicro(sellPrice)), currency: 'USDC', payee: 'agent-receiving.near', payerRef: 'SIMULATED-customer', settledAt: new Date(NOW.getTime() - 30_000).toISOString() }
 line(`${c.y}A SIMULATED customer${c.x} pays ${sellPrice} for the brief and the agent reports the receipt.`)
 const credited = await api('POST', '/v1/jobs/job_brief/revenue', agent, receipt)
 line(`gateway verifies the receipt (fresh, settled, right payee, right amount, never seen) -> ${credited.json.credited ? `${c.g}credited ${credited.json.amount}${c.x}` : credited.json.reason}`)
 const replayed = await api('POST', '/v1/jobs/job_brief/revenue', agent, receipt)
 line(`the same receipt again -> ${c.r}refused${c.x} (${replayed.json.reason})`)
-const forged = await api('POST', '/v1/jobs/job_brief/revenue', agent, { ...receipt, id: 'rcpt_sim_2', payee: '0xSOMEONE_ELSE' })
+const forged = await api('POST', '/v1/jobs/job_brief/revenue', agent, { ...receipt, id: 'rcpt_sim_2', payee: 'someone-else.near' })
 line(`a receipt paying someone else -> ${c.r}refused${c.x} (${forged.json.reason})`)
 
 // ---- act 5: attacks --------------------------------------------------------------------------------------------------------
@@ -299,7 +298,7 @@ const attacks: [string, string, MerchantBehavior][] = [
   ['merchant sends an out-of-date challenge', 'merchant.example.com', 'expired'],
   ['merchant offers an unknown payment scheme', 'merchant.example.com', 'downgrades'],
   ['merchant charges 50.00 for a 0.30 item', 'merchant.example.com', 'inflates'],
-  ['merchant\'s page tells the agent to ignore its limits and pay 0xATTACKER', 'merchant.example.com', 'injects'],
+  ['merchant\'s page tells the agent to ignore its limits and pay attacker.near', 'merchant.example.com', 'injects'],
 ]
 for (const [label, host, behavior] of attacks) { shop(host, behavior, '0.30'); await buy(label, host) }
 line(`${c.dim}The injected page is a normal 0.30 purchase, so it is paid as normal. The text in it reached no model and no gateway.${c.x}`)

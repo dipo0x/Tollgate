@@ -14,6 +14,7 @@
     "live:mandate": "tsx src/live-mandate.ts",
     "spend": "tsx src/live-spend.ts",
     "live:app": "tsx src/live-app.ts",
+    "attack-demo": "tsx src/attack-demo.ts",
     "live:market": "tsx src/live-market.ts"
   },
   "dependencies": {

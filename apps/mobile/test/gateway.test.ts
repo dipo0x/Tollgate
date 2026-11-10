@@ -158,12 +158,12 @@ describe('jobs and imported history', () => {
 
 describe('talking to an agent', () => {
   const task = { id: 'task_1', mandateId: 'mnd_a', status: 'working', createdAt: '2026-11-07T10:00:00Z', updatedAt: '2026-11-07T10:00:05Z',
-    messages: [{ at: '2026-11-07T10:00:00Z', from: 'owner', text: 'buy the bridge cost brief' }, { at: '2026-11-07T10:00:05Z', from: 'agent', text: 'Approve it in Tollgate.', decisionId: 'dec_1' }] }
+    messages: [{ at: '2026-11-07T10:00:00Z', from: 'owner', text: 'buy the settlement cost brief' }, { at: '2026-11-07T10:00:05Z', from: 'agent', text: 'Approve it in Tollgate.', decisionId: 'dec_1' }] }
   it('sends the words to the agent\'s own inbox and reads the thread back', async () => {
     const seen: { url: string; body: string }[] = []
     const gw = createGateway({ baseUrl: 'https://g', token: 'k', fetchImpl: (async (u: string, init: RequestInit) => { seen.push({ url: u, body: String(init.body ?? '') }); return reply(init.method === 'POST' ? 201 : 200, init.method === 'POST' ? { task } : { tasks: [task] }) }) as unknown as typeof fetch })
-    expect((await gw.sendTask('mnd a', 'buy the bridge cost brief')).id).toBe('task_1')
-    expect(seen[0]).toEqual({ url: 'https://g/v1/agents/mnd%20a/tasks', body: JSON.stringify({ text: 'buy the bridge cost brief' }) })
+    expect((await gw.sendTask('mnd a', 'buy the settlement cost brief')).id).toBe('task_1')
+    expect(seen[0]).toEqual({ url: 'https://g/v1/agents/mnd%20a/tasks', body: JSON.stringify({ text: 'buy the settlement cost brief' }) })
     expect((await gw.tasks('mnd_a'))[0]?.messages[1]?.decisionId).toBe('dec_1')
   })
   it('refuses a thread with a sender it does not know', async () => {
@@ -225,5 +225,35 @@ describe('safeExplorer: the phone opens only known blockchain explorers', () => 
   it('refuses anything else: other hosts, look-alikes, http, credentials, junk', async () => {
     const { safeExplorer } = await import('../src/api/gateway')
     for (const bad of ['https://evil.example/tx/1', 'https://nearblocks.io.evil.com/x', 'http://nearblocks.io/txns/x', 'https://user:pw@nearblocks.io/x', 'javascript:alert(1)', 'nope', undefined]) expect(safeExplorer(bad), String(bad)).toBeUndefined()
+  })
+})
+
+describe('withdrawing: the phone sends an amount and nothing else', () => {
+  const gw = (calls: { url: string; init: RequestInit }[], r: Response) => createGateway({ baseUrl: 'http://192.168.1.20:8787', token: 'k'.repeat(20), fetchImpl: (async (url: string, init: RequestInit) => { calls.push({ url, init }); return r }) as unknown as typeof fetch })
+  it('POST /v1/withdrawals with exactly { amount }: no destination field exists to send', async () => {
+    const calls: { url: string; init: RequestInit }[] = []
+    const r = await gw(calls, reply(200, { withdrawalId: 'wd_1', amount: '1.500000', to: 'owner.near', txHash: 'H', explorer: 'https://nearblocks.io/txns/H' })).withdraw('1.500000')
+    expect(r).toMatchObject({ amount: '1.500000', to: 'owner.near' })
+    expect(calls[0]!.url).toBe('http://192.168.1.20:8787/v1/withdrawals')
+    expect(JSON.parse(String(calls[0]!.init.body))).toEqual({ amount: '1.500000' })
+  })
+  it('reads the screen data; a disabled gateway says why', async () => {
+    const calls: { url: string; init: RequestInit }[] = []
+    const r = await gw(calls, reply(200, { enabled: false, reason: 'No withdrawal account is set.' })).withdrawals()
+    expect(r).toMatchObject({ enabled: false, reason: 'No withdrawal account is set.', withdrawals: [] })
+  })
+  it('a refusal reaches the owner as the gateway\'s own words', async () => {
+    const calls: { url: string; init: RequestInit }[] = []
+    await expect(gw(calls, reply(422, { error: { code: 'insufficient_funds', message: 'only 2.000000 USDC can leave' } })).withdraw('9')).rejects.toThrow(/only 2.000000 USDC can leave/)
+  })
+})
+
+describe('amounts show two decimals (cut, never rounded up)', () => {
+  it('money(): 0.635728 reads 0.63 and 0.206712 reads 0.20, so the app never shows more than there is', () => {
+    expect(money('0.635728')).toBe('0.63'); expect(money('0.206712')).toBe('0.20'); expect(money('5')).toBe('5.00'); expect(money('0.1')).toBe('0.10')
+    expect(money(undefined)).toBe('—'); expect(money('abc')).toBe('—')
+  })
+  it('splitAmount keeps the exact digits for the screens that approve or audit a payment', () => {
+    expect(splitAmount('0.206712')).toEqual({ main: '0.20', rest: '6712' })
   })
 })

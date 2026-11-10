@@ -18,7 +18,7 @@
 
 **Brain.** The model that answers an agent's chat: Claude, Ollama, Grok, ChatGPT, NEAR AI Cloud, or your own.
 
-**Bridge cost brief.** The reference seller's product: a one-question report on what moving USDC from Arbitrum to NEAR costs right now.
+**Settlement cost brief.** The reference seller's product: a one-question report on what settling USDC to a NEAR account through 1Click costs right now.
 
 **Check (C01 to C12).** One question asked before every payment. See [The twelve checks](/checks/).
 

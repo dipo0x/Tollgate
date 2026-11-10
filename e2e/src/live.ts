@@ -13,7 +13,7 @@ const KEY = need('NEAR_1CLICK_API_KEY'), PAYEE = need('MERCHANT_NEAR_ACCOUNT'), 
 // The local container, not a hosted database: a slow database makes checks time out, which (correctly) fails closed and hides what we want to see.
 const DB = process.env['DATABASE_URL'] ?? ''
 if (!DB) { console.error('DATABASE_URL is not set in .env (the live database).'); process.exit(2) }
-const PAYER = '0x1Fac05Bc2a3Ff16d3C5f153454D76406af5ed1Ab' // a public address standing in for the agent's wallet; nothing is sent from it
+const PAYER = 'a55dcd6b86ca2f4466512b4a002d643408c9b28267b17a3b6487833661d9bc9e' // a public address standing in for the agent's wallet; nothing is sent from it
 
 const schema = `live_${randomBytes(4).toString('hex')}`, OP = `live-owner-${randomBytes(12).toString('hex')}`
 const tmp = makeTmp(); const procs: Proc[] = []
@@ -46,20 +46,20 @@ try {
   await call('POST', `${GW}/v1/services/svc_live/probe-result`, OP, { verification: 'endpoint-checked', payee: PAYEE, health: 'healthy' })
   await call('POST', `${GW}/v1/services/svc_live/enable`, OP)
   const m = await call('POST', `${GW}/v1/mandates`, OP, { id: 'mnd_live', version: 1, principal: 'owner', agentId: 'live-agent', validFrom: iso(from), validUntil: iso(to),
-    budget: { currency: 'USDC', total: '5.00', perPayment: '1.00' }, allowedHosts: ['127.0.0.1'], allowedOriginNetworks: ['eip155:42161'], allowedAssets: ['USDC'],
+    budget: { currency: 'USDC', total: '5.00', perPayment: '1.00' }, allowedHosts: ['127.0.0.1'], allowedOriginNetworks: ['near'], allowedAssets: ['USDC'],
     payee: { mode: 'registry' }, price: { tolerancePct: 3, onExceed: 'deny' }, approval: { above: '1.00', riskAbove: 90, firstPayeeRequiresApproval: false }, refund: { mustBePayerOrPinned: true } })
   const agent = m.json.agentToken as string
   console.log(`Merchant account: ${PAYEE}. Mandate: 5.00 USDC in all, 1.00 per payment, only this merchant. (For this run the first-payee approval is off, so an ALLOW can show.)`)
 
-  const ask = (challenge: unknown) => call('POST', `${GW}/v1/authorize`, agent, { mandateId: 'mnd_live', host: '127.0.0.1', purpose: 'buy the bridge cost brief', challenge, payer: PAYER })
+  const ask = (challenge: unknown) => call('POST', `${GW}/v1/authorize`, agent, { mandateId: 'mnd_live', host: '127.0.0.1', purpose: 'buy the settlement cost brief', challenge, payer: PAYER })
   const bought = await call('GET', `${SVC}/data`, undefined, undefined, { 'x-payer': PAYER })
   if (bought.status !== 402) { console.error(`The merchant answered ${bought.status}, not 402: ${JSON.stringify(bought.json)}`); process.exitCode = 1 } else {
     const ch = bought.json.challenge
     console.log(`\nThe merchant answered 402 with a deposit address LIVE 1Click issued: ${ch.recipient}  amount ${ch.amount} ${ch.currency}`)
     show('1. The real challenge, unchanged', await ask(ch))
-    show('2. Attack: the deposit address is swapped for one 1Click never issued', await ask({ ...ch, recipient: '0x' + 'ab'.repeat(20), id: 'ch_forged' }))
+    show('2. Attack: the deposit address is swapped for one 1Click never issued', await ask({ ...ch, recipient: 'ab'.repeat(32), id: 'ch_forged' }))
     show('3. Attack: the same real address, but the merchant claims it costs 0.60', await ask({ ...ch, amount: '0.60', id: 'ch_inflated' }))
-    show('4. Attack: the refund is redirected to a stranger', await ask({ ...ch, refundTo: '0xbad0000000000000000000000000000000000bad', id: 'ch_refund' }))
+    show('4. Attack: the refund is redirected to a stranger', await ask({ ...ch, refundTo: 'attacker-refund.near', id: 'ch_refund' }))
   }
   console.log('\nNothing was signed or sent: this gateway has no signer. The deposit address from step 1 was never paid.')
 } finally { await stop() }

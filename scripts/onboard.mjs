@@ -22,16 +22,16 @@ chmodSync(envPath, 0o600) // only you can read it: it holds secrets
 for (const k of changed) console.log(`  ${c.g}set${c.x}      ${k.padEnd(24)} ${c.d}${WANTED(root).find(w => w.key === k)?.why ?? ''}${c.x}`)
 for (const k of kept) console.log(`  ${c.d}kept     ${k.padEnd(24)} already set, left alone${c.x}`)
 
-// A relative key path means "relative to the repo root", the same way the signer reads it (not relative to wherever the key-maker runs).
-const rawKey = parseEnv(text).get('SIGNER_KEY_FILE') || `${root}/.signer-key`
-const keyFile = isAbsolute(rawKey) ? rawKey : resolve(root, rawKey)
-if (existsSync(keyFile)) console.log(`  ${c.d}kept     signer key               ${keyFile} already exists, left alone${c.x}`)
+// The NEAR key: the account your agents pay from and that withdrawals leave from.
+const rawNear = parseEnv(text).get('SIGNER_NEAR_KEY_FILE') || `${root}/.signer-near-key`
+const nearFile = isAbsolute(rawNear) ? rawNear : resolve(root, rawNear)
+if (existsSync(nearFile)) console.log(`  ${c.d}kept     NEAR key                 ${nearFile} already exists, left alone${c.x}`)
 else {
-  const r = spawnSync('pnpm', ['--filter', '@tollgate/signer', 'keygen', keyFile], { cwd: root, encoding: 'utf8' })
-  const m = /Public address: (0x[0-9a-fA-F]{40})/.exec(r.stdout)
-  if (r.status !== 0 || !m) { console.error(`\n  could not make the signer key:\n${r.stdout}${r.stderr}\n  Did \`pnpm install\` finish? Run it from the repo root first.`); process.exit(1) }
-  console.log(`  ${c.g}made${c.x}     signer key               ${keyFile} (mode 600). Its PUBLIC address is ${m[1]}`)
-  console.log(`           ${c.y}This is a throwaway key for testing. Do not put real money on it.${c.x}`)
+  const r = spawnSync('pnpm', ['--filter', '@tollgate/signer', 'keygen-near', nearFile], { cwd: root, encoding: 'utf8' })
+  const m = /NEAR account: ([0-9a-f]{64})/.exec(r.stdout)
+  if (r.status !== 0 || !m) { console.error(`\n  could not make the NEAR key:\n${r.stdout}${r.stderr}`); process.exit(1) }
+  console.log(`  ${c.g}made${c.x}     NEAR key                 ${nearFile} (mode 600). The account to fund is ${m[1]}`)
+  console.log(`           ${c.y}Send it USDC (what agents spend) and a little NEAR (network fees). Put in only what you can afford to lose.${c.x}`)
 }
 
 console.log(`\n${c.b}Next${c.x}

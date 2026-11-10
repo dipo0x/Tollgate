@@ -20,18 +20,17 @@ const cat = await live.tokens()
 console.log(`tokens: ${cat.size}`)
 
 // 2. A deposit address 1Click has never seen: the real 404.
-const missing = await live.status('0x0000000000000000000000000000000000000001')
+const missing = await live.status('6ccbfe88ce0d615631d41dd81b48518f0ea27e60b8805d363159b4ab6bbb46f3')
 console.log(`status of an unknown address -> found: ${missing.found}`)
 
 // 3. A dry quote. Kept only if it really works; a service error must not be frozen into fixtures.
-const usdcArb = cat.find('USDC', 'eip155:42161')
-const usdcBase = cat.find('USDC', 'eip155:8453')
+const usdcNear = cat.find('USDC', 'near')
 let quoted = false
-if (usdcArb && usdcBase) {
+if (usdcNear) {
   try {
     const q = await live.dryQuote({
-      originAsset: 'USDC', originNetwork: 'eip155:42161', destinationAsset: 'USDC', destination: '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913',
-      amountOut: '1.000000', refundTo: '0xaf88d065e77c8cc2239327c5edb3a432268e5831', originAssetId: usdcArb.assetId, destinationAssetId: usdcBase.assetId,
+      originAsset: 'USDC', originNetwork: 'near', destinationAsset: 'USDC', destination: 'merchant.near',
+      amountOut: '1.000000', refundTo: 'payer.near', originAssetId: usdcNear.assetId, destinationAssetId: usdcNear.assetId,
     })
     console.log('dry quote ->', JSON.stringify(q)); quoted = true
   } catch (err) { console.warn('dry quote NOT recorded:', err instanceof Error ? err.message : err) }

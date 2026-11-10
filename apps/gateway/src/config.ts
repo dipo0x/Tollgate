@@ -25,6 +25,11 @@ export const ConfigSchema = z.object({
    * with its own key. Unset: no runner can connect, and only agents with their own key work.
    */
   GATEWAY_RUNNER_TOKEN: z.string().optional().transform(v => v || undefined).pipe(z.string().min(16, 'GATEWAY_RUNNER_TOKEN must be at least 16 characters').optional()),
+  /**
+   * The NEAR RPC the gateway uses to read the signer account's balance and to send a withdrawal the signer signed. It never holds a key.
+   * Only used when the signer has a NEAR account. Default FastNEAR (rpc.mainnet.near.org is throttled to several seconds a call).
+   */
+  NEAR_RPC_URL: z.string().optional().transform(v => v || undefined).pipe(z.url().optional()),
   /** The 1Click key, only needed when not offline. */
   NEAR_1CLICK_API_KEY: z.string().optional(),
   /**

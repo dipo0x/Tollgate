@@ -11,7 +11,8 @@ test('an empty file gets every setting, and the secrets are random and long enou
   assert.ok(env.get('GATEWAY_OPERATOR_TOKEN').length >= 16)
   assert.ok(env.get('SIGNER_SERVICE_TOKEN').length >= 32) // the signer insists on 32
   assert.notEqual(env.get('GATEWAY_OPERATOR_TOKEN'), env.get('SIGNER_SERVICE_TOKEN'))
-  assert.equal(env.get('SIGNER_KEY_FILE'), '/repo/.signer-key')
+  assert.equal(env.get('SIGNER_NEAR_KEY_FILE'), '/repo/.signer-near-key')
+  assert.equal(env.get('SIGNER_CHAINS'), 'near,near:mainnet')
 })
 
 test('the database URL is built from the password that was just made, so the two always agree', () => {

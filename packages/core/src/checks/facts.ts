@@ -9,7 +9,7 @@ export function onceOf(ctx: CheckContext): <T>(key: string, fn: () => Promise<T>
   return ctx.once ?? ((_key, fn) => fn())
 }
 
-/** Addresses compare case-insensitively: EVM checksums differ in case, NEAR accounts are lowercase. */
+/** Addresses compare case-insensitively: NEAR accounts are lowercase, but a deposit address from outside may not be. */
 export const sameAddress = (a: string, b: string): boolean => a.toLowerCase() === b.toLowerCase()
 
 /**

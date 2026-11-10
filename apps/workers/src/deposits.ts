@@ -5,7 +5,7 @@ import { toBaseUnits, fromBaseUnits, NETWORK_TO_BLOCKCHAIN, type TokenCatalog } 
  * no money: money moves only if someone deposits to the address before it expires. The merchant calls this; the agent never does.
  */
 export type DepositRequest = {
-  /** Network the payer pays from, e.g. "eip155:42161". */
+  /** Network the payer pays from, "near". */
   originNetwork: string
   symbol: string
   /** What the merchant must receive, as a decimal string. */

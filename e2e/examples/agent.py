@@ -8,7 +8,7 @@ This is the whole 402 loop the TypeScript SDK does for you:
     1. ask the merchant           -> it answers 402 with a payment request (the "challenge")
     2. POST /v1/authorize         -> the gateway runs its twelve checks and answers ALLOW, DENY or NEEDS_APPROVAL
     3. POST /v1/payments/:id/sign -> only after ALLOW: the signer signs exactly what was approved
-    4. broadcast the signed bytes -> eth_sendRawTransaction on the chain
+    4. broadcast the signed bytes -> send_tx on a NEAR node
     5. ask the merchant again     -> with proof of payment
 """
 import json, os, sys, urllib.request, urllib.error
@@ -77,18 +77,16 @@ if d.get("decision") == "NEEDS_APPROVAL":
 if d.get("decision") != "ALLOW":
     sys.exit("The gateway said something unexpected: %s" % d)
 
-# 3. Sign. We supply the fees and nonce; the signer builds the transfer from the approved decision, so we cannot change who is paid.
-chain = d["bind"]["chain"]
-tip = int(rpc("eth_maxPriorityFeePerGas", []), 16)
-base = int(rpc("eth_getBlockByNumber", ["latest", False]).get("baseFeePerGas") or "0x0", 16)
-tx = {"nonce": int(rpc("eth_getTransactionCount", [box["payer"], "pending"]), 16), "gas": "100000",
-      "maxPriorityFeePerGas": str(tip), "maxFeePerGas": str(base * 2 + tip)}
+# 3. Sign. We supply only the signing key's next nonce and a recent block hash; the signer builds the USDC transfer from the
+#    approved decision, so we cannot change who is paid.
+key = rpc("query", {"request_type": "view_access_key", "finality": "final", "account_id": box["payer"], "public_key": box["publicKey"]})
+tx = {"nonce": str(int(key["nonce"]) + 1), "blockHash": key["block_hash"]}
 s, signed = gateway("POST", "/v1/payments/%s/sign" % d["decisionId"], {"tx": tx})
 if s != 200:
     sys.exit("The payment could not be signed (%s): %s" % (s, signed.get("error")))
 
 # 4. Broadcast the signed bytes ourselves. Tollgate never sends money; it only signs what it approved.
-tx_hash = rpc("eth_sendRawTransaction", [signed["signedTx"]])
+tx_hash = rpc("send_tx", {"signed_tx_base64": signed["signedTx"], "wait_until": "EXECUTED_OPTIMISTIC"})["transaction"]["hash"]
 
 # 5. Ask again with proof of payment.
 status, body = http("GET", URL, headers={**VHOST, "x-payment-proof": json.dumps(

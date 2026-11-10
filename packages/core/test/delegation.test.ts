@@ -142,7 +142,7 @@ describe('hire: scope and time can only narrow', () => {
   it('refuses an asset or network the parent does not allow', async () => {
     const { deps } = await setup()
     expect(await rejected(hire(deps, 'root', req({ allowedAssets: ['USDT'] })))).toBe('scope_widened')
-    expect(await rejected(hire(deps, 'root', req({ allowedOriginNetworks: ['eip155:1'] })))).toBe('scope_widened')
+    expect(await rejected(hire(deps, 'root', req({ allowedOriginNetworks: ['ethereum'] })))).toBe('scope_widened')
   })
   it('a worker cannot outlive its parent, and cannot start already expired', async () => {
     const { deps } = await setup()
@@ -300,7 +300,7 @@ describe('hiring: properties (PRD 9.3: verified by tests)', () => {
     total: fc.integer({ min: 0, max: 4_000_000 }), per: fc.integer({ min: 0, max: 3_000_000 }), upfront: fc.integer({ min: 0, max: 100 }),
     hosts: fc.array(fc.constantFrom(...hostPool), { minLength: 0, maxLength: 3 }),
     assets: fc.array(fc.constantFrom('USDC', 'USDT'), { minLength: 0, maxLength: 2 }),
-    nets: fc.array(fc.constantFrom('eip155:42161', 'eip155:1'), { minLength: 0, maxLength: 2 }),
+    nets: fc.array(fc.constantFrom('near', 'ethereum'), { minLength: 0, maxLength: 2 }),
     hours: fc.integer({ min: -2, max: 200 }),
   })
 

@@ -5,7 +5,7 @@ import { AUTO, boot, challenge, OPERATOR, record } from './helpers.ts'
 type El = { click(): void; hidden: boolean; textContent: string | null; dispatchEvent(e: unknown): boolean }
 const HIRING = { ...AUTO, delegation: { maxDepth: 1 } }
 
-const D1 = '0xdep0000000000000000000000000000000000001'
+const D1 = 'dec0de0000000000000000000000000000000000000000000000000000000001'
 const INJECT_IMG = '<img src=x onerror="window.__pwned=1">'
 const INJECT_SCRIPT = '<script>window.__pwned=1</script>'
 

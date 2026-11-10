@@ -25,6 +25,7 @@ Set them in `.env` (git-ignored), or as environment variables on your host. Noth
 | `GATEWAY_READ_CACHE_MS` | `5000` | How long the owner's read pages are cached, 0–30000. 0 turns it off. Paying and deciding never use it. |
 | `GATEWAY_ATTACHMENT_KEY` | unset | 32 random bytes, base64. Seals chat photos. Without it, attachments are off (`503 attachments_off`). |
 | `LOG_LEVEL` | `info` | `silent`, `info` or `debug`. |
+| `NEAR_RPC_URL` | `https://free.rpc.fastnear.com` | The NEAR RPC the gateway uses to read the signer account's balance and to send a withdrawal. It never holds a key. Only used when the signer has a NEAR account. |
 
 ## Signer
 
@@ -32,14 +33,13 @@ Set them in `.env` (git-ignored), or as environment variables on your host. Noth
 | --- | --- | --- |
 | `SIGNER_PORT` | `8788` | Port. The signer **always binds 127.0.0.1**, whatever else is set. |
 | `SIGNER_SERVICE_TOKEN` | required | Must equal the gateway's. At least 32 characters. |
-| `SIGNER_KEY_FILE` | `.signer-key` | A file holding the only key, readable by its owner alone. |
+| `SIGNER_NEAR_KEY_FILE` | `.signer-near-key` | A file holding the only key, readable by its owner alone. |
 | `DATABASE_URL` | required | The signer reads the stored decision from the database. |
-| `SIGNER_CHAINS` | `eip155:42161` | Comma-separated chains it will pay on: CAIP-2 EVM ids, `near` (1Click from NEAR), `near:mainnet` (x402 market). |
+| `SIGNER_CHAINS` | `near,near:mainnet` | Comma-separated chains it will pay on: `near` (1Click from NEAR), `near:mainnet` (x402 market). |
 | `SIGNER_MAX_PER_TX` | `1.00` | Its **own** cap per payment, in USDC, independent of any mandate. |
-| `SIGNER_MAX_GAS` | `200000` | Most gas it will sign for. |
-| `SIGNER_MAX_FEE_PER_GAS` | `2000000000` | Wei. |
-| `SIGNER_NEAR_KEY_FILE` | `.signer-near-key` | Read only when `near` is in `SIGNER_CHAINS`. |
 | `SIGNER_NEAR_ACCOUNT` | unset | The named NEAR account the key belongs to. Empty: the key's implicit account. |
+| `SIGNER_WITHDRAW_TO` | unset | The **one** NEAR account your USDC may be withdrawn to. Set it here and nowhere else: the gateway and the app can choose an amount, never a destination. Unset: withdrawals are off. Needs `near` in `SIGNER_CHAINS`. |
+| `SIGNER_MAX_WITHDRAW` | unset | The most one withdrawal may move, in USDC. Unset: no cap, because the money can only go to `SIGNER_WITHDRAW_TO`. |
 
 ## Services and agents (used by `pnpm live:app` and `pnpm services`)
 
@@ -62,4 +62,4 @@ The phone has no settings file. At pairing you give it the gateway's address and
 
 ## Never commit
 
-`.env`, `.signer-key`, `.signer-near-key`. `.env.example` lists every key with an empty placeholder.
+`.env`, `.signer-near-key`. `.env.example` lists every key with an empty placeholder.

@@ -44,7 +44,7 @@ function Tag({ n, children }: { n: number; children: ReactNode }) {
 const ATTACKS = [
   ['Price inflation', 'asks $18.00', 'real price $0.25'],
   ['Payee swap', 'pay 0x7C…02', 'pinned 0xA1…9F'],
-  ['Fake deposit address', '0xDEP0…', 'unknown to 1Click'],
+  ['Fake deposit address', 'dec0de…', 'unknown to 1Click'],
   ['Refund hijack', 'refundTo 0x55…E1', 'not the payer'],
   ['Replay', 'same challenge', 'charged twice'],
 ]
@@ -91,7 +91,7 @@ const CHECKS = [
   ['C01', 'Mandate valid', 'v3, not expired'],
   ['C02', 'Host in scope', 'registry: verified'],
   ['C03', 'Challenge sane', 'parses, not expired'],
-  ['C04', 'Network and asset', 'eip155:42161 · USDC'],
+  ['C04', 'Network and asset', 'near · USDC'],
   ['C05', 'Payee binding', 'pinned on first use'],
   ['C06', '1Click cross-check', 'quote matches'],
   ['C07', 'Price sanity', 'within 3% of own quote'],
@@ -183,10 +183,10 @@ function Decision({ live }: { live: boolean }) {
 
 /* 05 */
 const BIND = [
-  ['chain', 'eip155:42161'],
+  ['chain', 'near'],
   ['asset', 'USDC'],
   ['amount', '0.250000'],
-  ['to', '0xDEP0…4c1'],
+  ['to', 'dec0de…4c1'],
   ['expiresAt', '10:05:00Z'],
   ['nonce', 'n_9f2…'],
 ]

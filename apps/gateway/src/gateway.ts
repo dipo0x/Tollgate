@@ -1,3 +1,4 @@
+import type { Withdrawals } from './withdraw.ts'
 import {
   acceptanceCheck, closeMandate, completeWork, creditRevenue, evaluate, hire, jobSummary, MandateSchema, Negotiation, OneClickRecordSchema,
   isX402Input, parseChallenge, toMicro, x402ToChallenge, X402_NEAR_NETWORK, type AcceptanceSpec, type Challenge, type CheckResult, type DelegationDeps, type Deal, type Evaluation, type HireRequest,
@@ -36,6 +37,8 @@ export type GatewayDeps = {
   tokens: TokenRegistry
   /** Absent when no signer is configured: payments are authorized but nothing can be signed. */
   signer?: SignerClient
+  /** Taking the owner's USDC back out of the signer's NEAR account (src/withdraw.ts). Absent: the routes answer 503. */
+  withdrawals?: Withdrawals
   /** For display only. */
   info?: { mode: 'offline' | 'live'; network?: { host: string; port: number } }
   /** This computer's private network addresses (for pairing a phone). Injected so tests do not depend on the machine. */
@@ -49,12 +52,8 @@ export type GatewayDeps = {
   log: (event: string, fields: Record<string, unknown>) => void
 }
 
-// What a signer may answer. EVM: a chain id, an address and hex. NEAR: chainId 0 ("not EVM"; the decision's bind says near),
-// a NEAR account, a base58 hash and a base64 transaction. Anything else is treated as a failed signing.
-const SignedReply = z.union([
-  z.object({ decisionId: z.string(), chainId: z.number().int().positive(), from: z.string().regex(/^0x[0-9a-fA-F]{40}$/), txHash: z.string().regex(/^0x[0-9a-fA-F]{64}$/), signedTx: z.string().regex(/^0x[0-9a-fA-F]+$/) }),
-  z.object({ decisionId: z.string(), chainId: z.literal(0), from: z.string().regex(/^(([a-z\d]+[-_])*[a-z\d]+\.)*([a-z\d]+[-_])*[a-z\d]+$/).min(2).max(64), txHash: z.string().regex(/^[1-9A-HJ-NP-Za-km-z]{32,44}$/), signedTx: z.string().regex(/^[A-Za-z0-9+/]+={0,2}$/) }),
-])
+// What a signer may answer: a NEAR account, a base58 hash and a base64 transaction. Anything else is treated as a failed signing.
+const SignedReply = z.object({ decisionId: z.string(), from: z.string().regex(/^(([a-z\d]+[-_])*[a-z\d]+\.)*([a-z\d]+[-_])*[a-z\d]+$/).min(2).max(64), txHash: z.string().regex(/^[1-9A-HJ-NP-Za-km-z]{32,44}$/), signedTx: z.string().regex(/^[A-Za-z0-9+/]+={0,2}$/) })
 
 /** An agent that has said nothing and sent no heartbeat for this long has stopped. Its heartbeat runs every 20 s (e2e/src/live-app.ts). */
 export const TASK_LEASE_MS = 90_000
@@ -113,7 +112,8 @@ export class Gateway {
   /** What the dashboard's "Connection information" shows. Nothing secret: no tokens, no database address, only the signer's PUBLIC address. */
   async status() {
     return {
-      frozen: await this.isFrozen(), storage: this.d.store.kind, signer: !!this.d.signer, signerAddress: await this.d.signer?.address?.(),
+      frozen: await this.isFrozen(), storage: this.d.store.kind, signer: !!this.d.signer, // The account the owner funds: the signer's NEAR account when it has one (NEAR is the default network).
+      signerAddress: (await this.d.signer?.near?.())?.accountId,
       mode: this.d.info?.mode ?? 'offline', now: this.d.clock().toISOString(),
     }
   }
@@ -132,17 +132,22 @@ export class Gateway {
 
   // ---- mandates --------------------------------------------------------------------------
 
-  async createMandate(raw: unknown, opts: { issueToken?: boolean } = {}): Promise<Out> {
+  async createMandate(raw: unknown, opts: { issueToken?: boolean; /** The caller already checked the id is free. */ idChecked?: boolean; /** Collect the audit entries here instead of writing them, so the caller can write all of its own in one step. */ auditInto?: { type: string; payload: Record<string, unknown> }[] } = {}): Promise<Out> {
     const parsed = MandateSchema.safeParse(raw)
     if (!parsed.success) return fail(400, 'invalid_mandate', `${parsed.error.issues[0]?.path.join('.') || 'mandate'}: ${parsed.error.issues[0]?.message}`)
     const spec = parsed.data
     if (spec.parentId) return fail(400, 'invalid_mandate', 'a child mandate is created by hiring (POST /v1/mandates/:id/delegate), not directly')
-    if (await this.d.mandates.get(spec.id)) return fail(409, 'mandate_exists', `mandate ${spec.id} already exists: create a new id`)
-    await this.d.ledger.openBudget(spec.id, toMicro(spec.budget.total))
-    await this.d.mandates.put({ spec, status: 'active' })
+    if (!opts.idChecked && await this.d.mandates.get(spec.id)) return fail(409, 'mandate_exists', `mandate ${spec.id} already exists: create a new id`)
+    // The budget and the mandate do not depend on each other, so they are written together: one wait on the database, not two.
     // A hosted agent (answered by the owner's runner) never gets a key of its own: nobody holds it, so nobody can leak it.
-    const agentToken = opts.issueToken === false ? undefined : await this.d.tokens.issueAgent(spec.id, spec.agentId)
-    await this.audit('mandate.created', { mandateId: spec.id, agentId: spec.agentId, version: spec.version, budget: spec.budget.total, currency: spec.budget.currency })
+    const [, , agentToken] = await Promise.all([
+      this.d.ledger.openBudget(spec.id, toMicro(spec.budget.total)),
+      this.d.mandates.put({ spec, status: 'active' }),
+      opts.issueToken === false ? Promise.resolve(undefined) : this.d.tokens.issueAgent(spec.id, spec.agentId),
+    ])
+    const created = { mandateId: spec.id, agentId: spec.agentId, version: spec.version, budget: spec.budget.total, currency: spec.budget.currency }
+    if (opts.auditInto) opts.auditInto.push({ type: 'mandate.created', payload: created })
+    else await this.audit('mandate.created', created)
     return ok({ mandate: spec, ...(agentToken ? { agentToken, note: 'the agent token is shown once; only its hash is kept' } : {}) }, 201)
   }
 
@@ -192,15 +197,30 @@ export class Gateway {
   }
 
   private async createAgentNow(name: string, a: { mode: AgentMode; brain?: string | undefined; mandate: unknown }): Promise<Out> {
-    if (await this.runningOf(name)) return fail(409, 'agent_running', `${name} is already running. Open its chat, or stop it first.`)
     if (a.mode === 'external' && a.brain) return fail(400, 'invalid_agent', 'an agent with its own key has no brain to choose')
-    if (a.brain) { const bad = await this.brainProblem(a.brain); if (bad) return bad }
-    const made = await this.createMandate(a.mandate, { issueToken: a.mode === 'external' })
-    if (made.status !== 201) return made
+    // Every check that only reads runs at once: on a hosted database each wait is hundreds of milliseconds, and they add up.
+    const id = (a.mandate as { id?: unknown } | null)?.id
+    const [running, bad, taken] = await Promise.all([
+      this.runningOf(name),
+      a.brain ? this.brainProblem(a.brain) : Promise.resolve(undefined),
+      typeof id === 'string' ? this.d.mandates.get(id) : Promise.resolve(undefined),
+    ])
+    if (running) return fail(409, 'agent_running', `${name} is already running. Open its chat, or stop it first.`)
+    if (bad) return bad
+    if (taken) return fail(409, 'mandate_exists', `mandate ${id as string} already exists: create a new id`)
+    const entries: { type: string; payload: Record<string, unknown> }[] = []
     const agent: AgentProfile = { name, mode: a.mode, brain: a.mode === 'hosted' ? (a.brain ?? null) : null, createdAt: this.d.clock().toISOString(), archived: false }
-    await this.d.store.agents.put(agent)
+    // The mandate and the agent's profile are independent rows, written together; the audit entries for both follow in ONE step.
+    // A mandate that cannot be created is refused before anything is written (this path does no I/O), so no profile is left behind.
+    const check = MandateSchema.safeParse(a.mandate)
+    if (!check.success || check.data.parentId) return this.createMandate(a.mandate)
+    const [made] = await Promise.all([this.createMandate(a.mandate, { issueToken: a.mode === 'external', idChecked: true, auditInto: entries }), this.d.store.agents.put(agent)])
+    if (made.status !== 201) return made
     this.hostedCache = undefined
-    await this.audit('agent.created', { agentId: name, mode: agent.mode, brain: agent.brain })
+    entries.push({ type: 'agent.created', payload: { agentId: name, mode: agent.mode, brain: agent.brain } })
+    // If the entries cannot be written the request fails, so the caller is never told "done" about something that has no record.
+    await this.d.audit.appendMany(entries)
+    for (const e of entries) this.d.log(e.type, e.payload)
     return ok({ ...(made.body as object), agent }, 201)
   }
 
@@ -583,7 +603,7 @@ export class Gateway {
     // A retry (the merchant answered 503 after we paid, the agent restarted): hand back the SAME signed bytes. Broadcasting the same
     // transaction twice is harmless on chain, and the signer is never asked to sign a decision twice.
     const earlier = await this.d.store.signatures.get(decisionId)
-    if (earlier) return ok({ decisionId, chainId: earlier.chainId, from: earlier.from, txHash: earlier.txHash, signedTx: earlier.signedTx, replayed: true })
+    if (earlier) return ok({ decisionId, from: earlier.from, txHash: earlier.txHash, signedTx: earlier.signedTx, replayed: true })
     if (!this.d.signer) return fail(503, 'signer_not_configured', 'no signer is configured for this gateway')
 
     let reply
@@ -592,7 +612,7 @@ export class Gateway {
       await this.audit('payment.sign_failed', { decisionId, mandateId: rec.mandateId, cause: err instanceof Error ? err.name : 'error' })
       return fail(502, 'signer_unavailable', 'the signer could not be reached; nothing was signed')
     }
-    const body = reply.body as { error?: { code?: string; message?: string; field?: string }; txHash?: string; from?: string; chainId?: number; signedTx?: string }
+    const body = reply.body as { error?: { code?: string; message?: string; field?: string }; txHash?: string; from?: string; signedTx?: string }
     if (reply.status !== 200) {
       // A refusal by the signer is evidence: a tampered request, a replayed decision, a frozen signer. It goes in the audit chain.
       await this.audit('payment.sign_refused', { decisionId, mandateId: rec.mandateId, status: reply.status, reason: body.error?.code ?? 'unknown', ...(body.error?.field ? { field: body.error.field } : {}) })
@@ -604,8 +624,8 @@ export class Gateway {
       await this.audit('payment.sign_failed', { decisionId, mandateId: rec.mandateId, cause: 'bad_reply' })
       return fail(502, 'signer_bad_reply', 'the signer sent something that is not a signed transaction; nothing is recorded as signed')
     }
-    await this.d.store.signatures.put(decisionId, { signedTx: signed.data.signedTx, txHash: signed.data.txHash, from: signed.data.from, chainId: signed.data.chainId })
-    await this.audit('payment.signed', { decisionId, mandateId: rec.mandateId, txHash: signed.data.txHash, from: signed.data.from, chainId: signed.data.chainId })
+    await this.d.store.signatures.put(decisionId, { signedTx: signed.data.signedTx, txHash: signed.data.txHash, from: signed.data.from })
+    await this.audit('payment.signed', { decisionId, mandateId: rec.mandateId, txHash: signed.data.txHash, from: signed.data.from })
     return ok(signed.data)
   }
 

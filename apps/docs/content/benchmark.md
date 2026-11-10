@@ -37,7 +37,6 @@ The gateway, checks, ledger, audit chain, signer and SDK are real. The following
 ## What has not been run
 
 - No third-party **merchant** (outside the NEAR AI Agent Market) has been paid.
-- The EVM rail has not been run with a funded key.
 - Negotiation with a market seller (they have one fixed price) and earning from a real customer have not been run.
 - The benchmark is written by the defender. It is not an independent audit.
 

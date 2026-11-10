@@ -9,7 +9,7 @@ import { plannerReady } from '@tollgate/demo-agent/src/planner.ts'
 import { runTask, type BuyOutcome, type Challenge, type Decision, type Deal, type HaggleOutcome, type MarketSeller, type WorkerIO } from '@tollgate/demo-agent/src/worker.ts'
 import { runNegotiation } from '@tollgate/demo-agent/src/negotiate.ts'
 import type { Offer, PriceOffer } from '@tollgate/core'
-import { BRAIN, CHAT_MODEL, converse, OLLAMA_CHAT_MODEL, warmOllama } from '@tollgate/demo-agent/src/claude-agent.ts'
+import { BRAIN, CHAT_MODEL, converse, OLLAMA_CHAT_MODEL, warmOllama, type DealBook } from '@tollgate/demo-agent/src/claude-agent.ts'
 import { describeBrains, engineFor, loadBrains } from '@tollgate/demo-agent/src/brains.ts'
 import { startRunner, type Job } from '@tollgate/demo-agent/src/runner.ts'
 import type { PlannerService } from '@tollgate/demo-agent/src/spend.ts'
@@ -45,7 +45,7 @@ const KEY = need('NEAR_1CLICK_API_KEY'), PAYEE = need('MERCHANT_NEAR_ACCOUNT'), 
 // The agent host's own key: new at every start, kept in memory, never in a file. Different from the owner's key by construction.
 const RUNNER_TOKEN = `runner-${randomBytes(24).toString('hex')}`
 const REC = ownerRecord(), DB = REC.db
-const NEAR_KEY = `${ROOT}.signer-near-key`, EVM_KEY = `${ROOT}.signer-key`, AGENT_FILE = `${ROOT}.live-agent.json`
+const NEAR_KEY = `${ROOT}.signer-near-key`, AGENT_FILE = `${ROOT}.live-agent.json`
 // FastNEAR: the same chain, answered in ~0.3 s. rpc.mainnet.near.org is throttled (3.5-19 s a call, measured 8 Nov). NEAR_RPC_URL overrides.
 const RPC = process.env['NEAR_RPC_URL'] ?? 'https://free.rpc.fastnear.com'
 // NEAR AI Agent Market sellers this agent may hire. The owner's choice: each becomes a shop in the registry.
@@ -81,13 +81,13 @@ for (const sig of ['SIGINT', 'SIGTERM'] as const) process.on(sig, () => { consol
 try {
   if (LLM) { const r = await plannerReady(); if (!r.ok) throw new Error(`--llm cannot start: ${r.why}`) }
   console.log('Starting the real merchant, the NEAR signer and a live gateway on your Wi-Fi...')
-  procs.push(start('services', 'apps/workers', 'src/server.ts', { WORKERS_PORT: String(SP), NEAR_1CLICK_API_KEY: KEY, MERCHANT_NEAR_ACCOUNT: PAYEE, WORKERS_DEAL_SECRET: DEAL, WORKERS_PRICE_OPENING: PRICE }, tmp)); await waitFor(`${SVC}/healthz`, 'the merchant')
-  procs.push(start('gateway', 'apps/gateway', 'src/server.ts', { PORT: String(GP), DATABASE_URL: DB, ...REC.schemaEnv, GATEWAY_OPERATOR_TOKEN: OP, GATEWAY_RUNNER_TOKEN: RUNNER_TOKEN, GATEWAY_HOST: '0.0.0.0', DATABASE_POOL_MAX: '4', TOLLGATE_OFFLINE: 'false', NEAR_1CLICK_API_KEY: KEY, SIGNER_URL: SIGNER, SIGNER_SERVICE_TOKEN: SVC_TOKEN, CHECK_TIMEOUT_MS: '10000', LOG_LEVEL: 'info' }, tmp)); await waitFor(`${GW}/healthz`, 'the gateway')
-  procs.push(start('signer', 'apps/signer', 'src/server.ts', { SIGNER_PORT: String(KP), SIGNER_SERVICE_TOKEN: SVC_TOKEN, SIGNER_KEY_FILE: EVM_KEY, DATABASE_URL: DB, ...REC.schemaEnv, SIGNER_CHAINS: 'near,near:mainnet', SIGNER_NEAR_KEY_FILE: NEAR_KEY, SIGNER_MAX_PER_TX: SIGNER_CAP, LOG_LEVEL: 'info' }, tmp)); await waitFor(`${SIGNER}/healthz`, 'the signer')
+  procs.push(start('services', 'apps/workers', 'src/server.ts', { WORKERS_PORT: String(SP), NEAR_1CLICK_API_KEY: KEY, MERCHANT_NEAR_ACCOUNT: PAYEE, WORKERS_DEAL_SECRET: DEAL, WORKERS_PRICE_OPENING: PRICE, WORKERS_PRICE_FLOOR: process.env['LIVE_FLOOR'] ?? '0.10' }, tmp)); await waitFor(`${SVC}/healthz`, 'the merchant')
+  procs.push(start('gateway', 'apps/gateway', 'src/server.ts', { PORT: String(GP), DATABASE_URL: DB, ...REC.schemaEnv, GATEWAY_OPERATOR_TOKEN: OP, GATEWAY_RUNNER_TOKEN: RUNNER_TOKEN, NEAR_RPC_URL: RPC, GATEWAY_HOST: '0.0.0.0', DATABASE_POOL_MAX: '4', TOLLGATE_OFFLINE: 'false', NEAR_1CLICK_API_KEY: KEY, SIGNER_URL: SIGNER, SIGNER_SERVICE_TOKEN: SVC_TOKEN, CHECK_TIMEOUT_MS: '10000', LOG_LEVEL: 'info' }, tmp)); await waitFor(`${GW}/healthz`, 'the gateway')
+  procs.push(start('signer', 'apps/signer', 'src/server.ts', { SIGNER_PORT: String(KP), SIGNER_SERVICE_TOKEN: SVC_TOKEN, DATABASE_URL: DB, ...REC.schemaEnv, SIGNER_CHAINS: 'near,near:mainnet', SIGNER_NEAR_KEY_FILE: NEAR_KEY, SIGNER_MAX_PER_TX: SIGNER_CAP, LOG_LEVEL: 'info' }, tmp)); await waitFor(`${SIGNER}/healthz`, 'the signer')
   const near = (await call('GET', `${SIGNER}/healthz`)).json.near as { accountId: string; publicKey: string }
 
   // The one real shop: registered once (409 after that), its probe and switch refreshed every start.
-  await call('POST', `${GW}/v1/services`, OP, { id: 'svc_brief', name: 'Bridge cost brief (reference merchant)', category: 'market_data', host: '127.0.0.1', providerUrl: SVC, pricing: { model: 'per_request', quoted: PRICE, currency: 'USDC' }, paymentRails: [], limits: { maxPerRequest: SIGNER_CAP, timeoutMs: 8000 } })
+  await call('POST', `${GW}/v1/services`, OP, { id: 'svc_brief', name: 'Settlement cost brief (reference merchant)', category: 'market_data', host: '127.0.0.1', providerUrl: SVC, pricing: { model: 'per_request', quoted: PRICE, currency: 'USDC' }, paymentRails: [], limits: { maxPerRequest: SIGNER_CAP, timeoutMs: 8000 } })
   await call('POST', `${GW}/v1/services/svc_brief/probe-result`, OP, { verification: 'endpoint-checked', payee: PAYEE, health: 'healthy' })
   await call('POST', `${GW}/v1/services/svc_brief/enable`, OP)
 
@@ -154,6 +154,7 @@ TOLLGATE IS LIVE. Real money: every payment waits for your yes on the phone.
   Agents     make them in the app: Agents → New chat. Each has its own budget, shops and brain.
   Pays from  ${near.accountId}${f ? `  (${(Number(f.usdcMicro) / 1e6).toFixed(2)} USDC, ${(Number(f.nearYocto / 10n ** 18n) / 1e6).toFixed(4)} NEAR)` : ''}
 
+  Withdraw   ${process.env['SIGNER_WITHDRAW_TO'] ? `to ${process.env['SIGNER_WITHDRAW_TO']} (fixed here; the app can only choose an amount)` : 'off. Put SIGNER_WITHDRAW_TO=<your NEAR account> in .env and restart to turn it on'}
   Market     ${marketShops.length ? marketShops.join(', ') : 'off'}
   Brains     ${SCRIPTED ? 'scripted (no chat)' : specs.length ? describeBrains(specs).map(b => `${b.label} (${b.detail})`).join(', ') : 'none set up'}
   Default    ${BRAIN_LINE}
@@ -196,11 +197,18 @@ Ctrl+C stops everything.`)
         },
       }
       const res = await runNegotiation({
-        item: 'bridge cost brief', asset: 'USDC', payee: PAYEE, ownerCeiling: m.negotiation.priceCeiling, maxRounds: m.negotiation.maxRounds, useLlm: LLM, seller,
+        item: 'settlement cost brief', asset: 'USDC', payee: PAYEE, ownerCeiling: m.negotiation.priceCeiling, maxRounds: m.negotiation.maxRounds, useLlm: LLM, seller,
         talk: async o => { const r = await j.call('POST', `/v1/negotiations/${id}/offers`, o); return r.json as never },
       })
       const rounds = res.steps.map(x => `${x.from} ${x.kind}${x.price ? ` ${x.price}` : ''}`)
       if (res.outcome !== 'agreed') return { outcome: 'no_deal', why: res.why, rounds }
+      // When the SELLER made the last counter and the agent accepted it, the accept went to the gateway and never reached the seller, so no
+      // token exists yet. Present the agreed price to the seller: it signs that exact price or refuses. Nothing is taken on trust.
+      if (!token) {
+        const r = await call('POST', `${SVC}/negotiate`, undefined, { price: res.deal.price, asset: 'USDC' })
+        const signed = r.json?.deal as { price?: string; dealToken?: string } | undefined
+        if (r.json?.offer?.kind === 'accept' && signed?.dealToken && signed.price === res.deal.price) token = String(signed.dealToken)
+      }
       if (!token) return { outcome: 'no_deal', why: 'the seller never signed the deal, so there is nothing to hold it to', rounds }
       return { outcome: 'agreed', ask, rounds, deal: { negotiationId: id, token, price: res.deal.price } satisfies Deal }
     },
@@ -212,8 +220,8 @@ Ctrl+C stops everything.`)
     settled: async to => { const s = await oc.status(to); return s.found ? String((s.record as { status?: string }).status) : 'NOT_FOUND' },
     collect: async (_id, ch, txHash, depositAddress) => {
       const r = await call('GET', `${SVC}/data`, undefined, undefined, { 'x-payer': near.accountId, 'x-payment-proof': JSON.stringify({ challengeId: ch.id, txHash, depositAddress }) })
-      const q = r.json?.data?.usdcArbitrumToNear
-      return { status: r.status, summary: q ? `Bridge cost brief: sending ${q.amountOut} USDC from Arbitrum to NEAR costs ${q.amountIn ?? 'an unknown amount of'} USDC right now (quoted by 1Click).` : 'The shop delivered.' }
+      const q = r.json?.data?.usdcSettlement
+      return { status: r.status, summary: q ? `Settlement cost brief: settling ${q.amountOut} USDC to a NEAR account costs ${q.amountIn ?? 'an unknown amount of'} USDC right now (quoted by 1Click).` : 'The shop delivered.' }
     },
     reconcile: async id => { await j.call('POST', `/v1/payments/${id}/reconcile`) },
     sleep, now: () => Date.now(),
@@ -283,12 +291,15 @@ Ctrl+C stops everything.`)
     return { allowedHosts: m?.allowedHosts ?? [], perPayment: Number(m?.budget?.perPayment ?? 0), reserve: 0, useLlm: LLM, approvalWaitMs: APPROVAL_WAIT_MS, settleTries: 60 }
   }
 
+  const dealBooks = new Map<string, DealBook>()
   // The agent host: one loop for every hosted agent. Messages for one agent go one at a time; different agents are answered together.
   host = startRunner({
     gatewayUrl: GW, runnerToken: RUNNER_TOKEN, engines: specs.map(s => engineFor(s)), brains: describeBrains(specs), log: l => console.log(l),
     handle: async j => {
       const lim = await limitsOf(j)
-      return SCRIPTED ? runTask(j.messages[0]?.text ?? '', ioFor(j), lim) : converse(j.history, ioFor(j), lim, j.engine ? { engine: j.engine } : {})
+      // Prices an agent agreed are kept per agent run between its messages: negotiate in one message, buy in the next.
+      const dealBook = dealBooks.get(j.mandateId) ?? dealBooks.set(j.mandateId, new Map()).get(j.mandateId)!
+      return SCRIPTED ? runTask(j.messages[0]?.text ?? '', ioFor(j), lim) : converse(j.history, ioFor(j), lim, { dealBook, ...(j.engine ? { engine: j.engine } : {}) })
     },
   })
   await host.finished

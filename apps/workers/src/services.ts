@@ -34,8 +34,7 @@ export type ServicesOptions = {
   clock?: () => Date
 }
 
-const EVM = /^0x[0-9a-fA-F]{40}$/
-/** A NEAR account id (named, or a 64-hex implicit account). A payer that sends one pays FROM NEAR. */
+/** A NEAR account id (named, or a 64-hex implicit account). The payer must send one: a failed payment is refunded to it. */
 const NEAR_ACCOUNT = /^(?=.{2,64}$)(([a-z\d]+[-_])*[a-z\d]+\.)*([a-z\d]+[-_])*[a-z\d]+$/
 const Amount = z.string().regex(/^\d{1,12}(\.\d{1,6})?$/)
 const Proof = z.strictObject({ challengeId: z.string().min(1).max(128), txHash: z.string().min(1).max(128), depositAddress: z.string().min(1).max(128) })
@@ -65,7 +64,7 @@ export function verifyDeal(secret: string, token: string, now: Date): { price: s
 
 export function createServices(o: ServicesOptions) {
   const clock = o.clock ?? (() => new Date())
-  const network = o.originNetwork ?? 'eip155:42161'
+  const network = o.originNetwork ?? 'near'
   const symbol = o.symbol ?? 'USDC'
   const ttl = o.ttlSeconds ?? 600
   const app = new Hono()
@@ -88,9 +87,8 @@ export function createServices(o: ServicesOptions) {
 
     if (proofRaw === undefined) {
       const payer = c.req.header('x-payer') ?? ''
-      const fromNear = !EVM.test(payer) && NEAR_ACCOUNT.test(payer)
-      if (!EVM.test(payer) && !fromNear) return bad(c, 400, 'payer_required', 'send your wallet address (an EVM address or a NEAR account) in the x-payer header: a failed payment is refunded to it')
-      const origin = fromNear ? 'near' : network
+      if (!NEAR_ACCOUNT.test(payer)) return bad(c, 400, 'payer_required', 'send your NEAR account in the x-payer header: a failed payment is refunded to it')
+      const origin = network
       let dep
       try { dep = await o.makeDeposit({ originNetwork: origin, symbol, amountOut: p.price, payee: o.payee, refundTo: payer, ttlSeconds: ttl }) }
       catch (e) { return bad(c, 502, 'upstream', `could not get a deposit address from 1Click: ${(e as Error).message}`) }
@@ -110,10 +108,10 @@ export function createServices(o: ServicesOptions) {
     if (r?.destination !== o.payee) return bad(c, 402, 'wrong_payee', 'that deposit does not pay this merchant')
     if (r.amountOut === undefined || toMicro(r.amountOut) < toMicro(p.price)) return bad(c, 402, 'underpaid', 'that deposit is for less than the price')
     if (r.status !== 'SUCCESS') return bad(c, 402, 'not_settled', `1Click reports ${r.status ?? 'no status'}, not SUCCESS: not delivered yet`)
-    // Real data: what it costs right now to move 1 USDC from Arbitrum to NEAR.
+    // Real data: what it costs right now to settle 1 USDC to a NEAR account through 1Click.
     let quote: { amountIn?: string } = {}
     try { quote = (await o.oneClick.dryQuote({ originAsset: symbol, originNetwork: network, destinationAsset: symbol, destination: o.payee, amountOut: '1.00' })) as { amountIn?: string } } catch { /* the brief is still delivered, without the rate */ }
-    return c.json({ data: { report: 'bridge cost brief', quotedAt: clock().toISOString(), source: 'https://1click.chaindefuser.com/v0/quote', usdcArbitrumToNear: { amountOut: '1.00', amountIn: quote.amountIn ?? null } }, paid: { depositAddress: proof.depositAddress, amount: r.amountOut } })
+    return c.json({ data: { report: 'settlement cost brief', quotedAt: clock().toISOString(), source: 'https://1click.chaindefuser.com/v0/quote', usdcSettlement: { amountOut: '1.00', amountIn: quote.amountIn ?? null } }, paid: { depositAddress: proof.depositAddress, amount: r.amountOut } })
   })
 
   // ---- the seller ------------------------------------------------------------------------------------------------------
@@ -142,7 +140,7 @@ export function createServices(o: ServicesOptions) {
     try { q = (await o.oneClick.dryQuote({ originAsset: parsed.data.symbol, originNetwork: network, destinationAsset: parsed.data.symbol, destination: o.payee, amountOut: parsed.data.amount })) as { amountIn?: string } }
     catch (e) { return bad(c, 502, 'upstream', `1Click could not quote that: ${(e as Error).message}`) }
     const costIn = q.amountIn ?? ''
-    return c.json({ fields: { summary: `Delivering ${parsed.data.amount} ${parsed.data.symbol} to NEAR from Arbitrum costs ${costIn} ${parsed.data.symbol} right now.`, amountOut: parsed.data.amount, amountIn: costIn, quotedAt: clock().toISOString() }, sources: ['https://1click.chaindefuser.com/v0/quote'] })
+    return c.json({ fields: { summary: `Settling ${parsed.data.amount} ${parsed.data.symbol} to a NEAR account through 1Click costs ${costIn} ${parsed.data.symbol} right now.`, amountOut: parsed.data.amount, amountIn: costIn, quotedAt: clock().toISOString() }, sources: ['https://1click.chaindefuser.com/v0/quote'] })
   })
 
   app.get('/healthz', c => c.json({ ok: true, service: 'tollgate-reference-services', live: true }))

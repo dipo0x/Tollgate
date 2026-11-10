@@ -10,14 +10,14 @@ const spec = MandateSchema.parse({
   id: 'mnd_1', version: 1, principal: 'ada@example.com', agentId: 'research-agent-1',
   validFrom: '2026-11-05T00:00:00Z', validUntil: '2026-11-12T00:00:00Z',
   budget: { currency: 'USDC', total: '20.00', perPayment: '10.00' },
-  allowedHosts: ['seller.example.net'], allowedOriginNetworks: ['eip155:42161'], allowedAssets: ['USDC'],
+  allowedHosts: ['seller.example.net'], allowedOriginNetworks: ['near'], allowedAssets: ['USDC'],
   payee: { mode: 'pin-on-first-approval' }, price: { tolerancePct: 3, onExceed: 'needs_approval' },
   approval: { above: '10.00', riskAbove: 60, firstPayeeRequiresApproval: true },
   refund: { mustBePayerOrPinned: true },
   negotiation: { priceCeiling: '6.50', maxRounds: 3 },
 })
 
-const SELLER: Omit<SellerConfig, 'strategy'> = { asset: 'USDC', payee: '0xSELLER', opening: '8.00', floor: '5.50', attackerPayee: '0xATTACKER' }
+const SELLER: Omit<SellerConfig, 'strategy'> = { asset: 'USDC', payee: 'seller.near', opening: '8.00', floor: '5.50', attackerPayee: 'attacker.near' }
 const seller = (strategy: SellerConfig['strategy']) => new ScriptedSeller({ ...SELLER, strategy })
 
 const priceMsgs = (n: Negotiation) => n.log.filter(e => e.outcome === 'recorded' && 'price' in e.offer).map(e => e.offer as PriceOffer)
@@ -32,7 +32,7 @@ function play(n: Negotiation, s: ScriptedSeller, bid: (round: number) => string,
     const last = priceMsgs(n).at(-1)
     // The model's own rule: take any seller price at or under `acceptAt`. The code still checks the ceiling.
     if (last?.from === 'seller' && Number(last.price) <= acceptAt) { n.submit({ from: 'agent', kind: 'accept' }); continue }
-    const counter: PriceOffer = { from: 'agent', kind: 'counter', price: bid(guard), asset: 'USDC', payee: '0xSELLER' }
+    const counter: PriceOffer = { from: 'agent', kind: 'counter', price: bid(guard), asset: 'USDC', payee: 'seller.near' }
     const r = n.submit(counter)
     if (!r.ok) {
       // The model keeps trying; refusals are logged. Give up after a few so the loop ends.
@@ -48,16 +48,16 @@ const haggler = (round: number) => (5 + round).toFixed(2)
 /** The payment challenge a seller bills for a deal, run through the whole pipeline. */
 async function pay(deal: Deal, bill: { amount: string; currency: string; payee: string }) {
   const oneClick = new FakeOneClick().add({
-    status: 'PENDING_DEPOSIT', depositAddress: '0xDEP0', originAsset: bill.currency, amountIn: Number(bill.amount).toFixed(6),
-    destination: bill.payee, destinationAsset: bill.currency, amountOut: Number(bill.amount).toFixed(6), refundTo: '0xPAYER',
+    status: 'PENDING_DEPOSIT', depositAddress: 'dep0', originAsset: bill.currency, amountIn: Number(bill.amount).toFixed(6),
+    destination: bill.payee, destinationAsset: bill.currency, amountOut: Number(bill.amount).toFixed(6), refundTo: 'payer.near',
   })
   oneClick.quote = { amountIn: Number(bill.amount).toFixed(6) }
   const ledger = new InMemoryLedger(() => NOW); void ledger.openBudget('mnd_1', toMicro('20.00'))
   const ctx: CheckContext = {
-    mandate: { spec, status: 'active' }, agentId: 'research-agent-1', host: 'seller.example.net', now: NOW, payer: '0xPAYER', deal,
-    rawChallenge: { id: 'ch_1', method: 'nearintents', recipient: '0xDEP0', amount: Number(bill.amount).toFixed(6), currency: bill.currency, originNetwork: 'eip155:42161', refundTo: '0xPAYER', expires: '2026-11-06T10:05:00Z' },
-    registry: h => (h === 'seller.example.net' ? { host: h, verification: 'endpoint-checked', enabled: true, payee: '0xSELLER' } : undefined),
-    adapters: { oneClick, pins: new InMemoryPins().pinPayee('seller.example.net', '0xSELLER'), decisions: new InMemoryDecisionIndex() }, ledger,
+    mandate: { spec, status: 'active' }, agentId: 'research-agent-1', host: 'seller.example.net', now: NOW, payer: 'payer.near', deal,
+    rawChallenge: { id: 'ch_1', method: 'nearintents', recipient: 'dep0', amount: Number(bill.amount).toFixed(6), currency: bill.currency, originNetwork: 'near', refundTo: 'payer.near', expires: '2026-11-06T10:05:00Z' },
+    registry: h => (h === 'seller.example.net' ? { host: h, verification: 'endpoint-checked', enabled: true, payee: 'seller.near' } : undefined),
+    adapters: { oneClick, pins: new InMemoryPins().pinPayee('seller.example.net', 'seller.near'), decisions: new InMemoryDecisionIndex() }, ledger,
   }
   return evaluate(ctx, CHECKS)
 }
@@ -113,14 +113,14 @@ describe('scripted seller: bad faith is caught', () => {
     const n = new Negotiation('n', { ...spec, negotiation: { priceCeiling: '6.50', maxRounds: 6 } })
     play(n, seller('switches-payee'), haggler, 5)
     expect(n.log.some(e => e.outcome === 'refused:payee_changed')).toBe(true)
-    expect(priceMsgs(n).every(m => m.payee === '0xSELLER')).toBe(true)
+    expect(priceMsgs(n).every(m => m.payee === 'seller.near')).toBe(true)
   })
 
   it('switches-payee at billing time: C05 DENYs the negotiated-payee mismatch', async () => {
     const honest = new Negotiation('n', spec), h = seller('meets-in-middle')
     play(honest, h, haggler)
     const bill = seller('switches-payee').finalChallenge(honest.deal!)
-    expect(bill.payee).toBe('0xATTACKER')
+    expect(bill.payee).toBe('attacker.near')
     expect(await pay(honest.deal!, bill)).toMatchObject({ decision: 'DENY', failedCheck: 'C05' })
   })
 })
@@ -137,7 +137,7 @@ describe('the model cannot talk past the code', () => {
   it('an agent that tries to change the payee is refused every time', () => {
     const n = new Negotiation('n', spec)
     n.submit(seller('meets-in-middle').open())
-    const attempt: Offer = { from: 'agent', kind: 'counter', price: '5.00', asset: 'USDC', payee: '0xAGENT_FRIEND' }
+    const attempt: Offer = { from: 'agent', kind: 'counter', price: '5.00', asset: 'USDC', payee: 'agent-friend.near' }
     expect(n.submit(attempt)).toMatchObject({ ok: false, reason: 'payee_changed' })
     expect(n.rounds).toBe(1)
   })

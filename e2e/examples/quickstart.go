@@ -97,7 +97,7 @@ func main() {
 		"id": mandateID, "version": 1, "principal": "you@example.com", "agentId": "research-agent",
 		"validFrom": iso(now), "validUntil": iso(now.Add(7 * 24 * time.Hour)),
 		"budget":       obj{"currency": "USDC", "total": "20.00", "perPayment": "1.00"},
-		"allowedHosts": []string{host}, "allowedOriginNetworks": []string{"eip155:42161"}, "allowedAssets": []string{"USDC"},
+		"allowedHosts": []string{host}, "allowedOriginNetworks": []string{"near"}, "allowedAssets": []string{"USDC"},
 		"payee":    obj{"mode": "registry"},
 		"price":    obj{"tolerancePct": 3, "onExceed": "needs_approval"},
 		"approval": obj{"above": "1.00", "riskAbove": 90, "firstPayeeRequiresApproval": true},
@@ -114,7 +114,7 @@ func main() {
 	// 6. A merchant answered 402 with this payment request. Ask the gateway whether to pay it.
 	s, b = call("POST", "/v1/authorize", agentToken, obj{"mandateId": mandateID, "host": host, "purpose": "buy market data",
 		"challenge": obj{"id": "ch_" + run, "method": "nearintents", "recipient": "deposit-address", "amount": "0.30", "currency": "USDC",
-			"originNetwork": "eip155:42161", "refundTo": "0xYourSignerPublicAddress", "expires": iso(now.Add(10 * time.Minute))}})
+			"originNetwork": "near", "refundTo": "your-signer-account.near", "expires": iso(now.Add(10 * time.Minute))}})
 	fmt.Printf("\nauthorize -> %d %v\n", s, b["decision"])
 	if checks, ok := b["checks"].([]any); ok {
 		for _, c := range checks {

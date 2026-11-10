@@ -35,6 +35,15 @@ GATEWAY (trusted)                          SIGNER (separate process, 127.0.0.1)
 
 Request: `{ "decisionId", "bind": { … }, "tx": { … } }`. The `tx` holds only a nonce and fee fields (or, on NEAR, a nonce and a block hash or height), all bounded by the signer.
 
+### Withdrawals
+
+`POST /v1/withdraw/sign` signs taking the owner's USDC back out. Same service token, same one-time claim (the withdrawal id), same order: decide, claim, then use the key. Request: `{ "withdrawalId", "amount", "tx": { "nonce", "blockHash" } }`. There is **no field for a destination**, and an extra field is refused: the transfer goes to `SIGNER_WITHDRAW_TO`, which is set on the signer's own computer. Two deliberate differences from a payment:
+
+- **No decision or mandate.** A withdrawal is the owner moving their own money, not an agent spending it.
+- **The kill switch does not stop it.** When something is wrong, getting the money home must stay possible, and home is the only place it can go.
+
+Extra refusal code: `withdraw_off` (403), when `SIGNER_WITHDRAW_TO` is not set.
+
 ## Refusals
 
 A refusal is an HTTP error with `{ "error": { "code", "message", "field"? } }`. Nothing was signed.
@@ -53,15 +62,15 @@ A refusal is an HTTP error with `{ "error": { "code", "message", "field"? } }`. 
 | `unsupported_asset` | 403 | Not a chain and token this signer is set up for. |
 | `invalid_amount`, `invalid_recipient` | 403 | Not a payable amount or address. |
 | `over_signer_cap` | 403 | Above the signer's own `SIGNER_MAX_PER_TX`. |
-| `bad_tx_params` | 403 | Gas or fees above the signer's limits. |
+| `bad_tx_params` | 403 | A nonce or block hash outside the signer's bounds. |
+| `withdraw_off` | 403 | A withdrawal was asked for, but `SIGNER_WITHDRAW_TO` is not set. |
 | `invalid_json`, `invalid_request` | 400 | Unreadable or wrongly shaped body. |
 | `too_large` | 413 | Body over 8 KB. |
 
 ## Rails
 
-Two rails exist:
+One rail exists:
 
-- **EVM (Arbitrum):** an ERC-20 USDC transfer built with viem. Tested offline. It has not been run with a funded key.
 - **NEAR:** a NEP-141 `ft_transfer` of NEAR's native USDC to a 1Click deposit address, with `storage_deposit` in the same transaction, signed with an ed25519 key. One real payment has been made this way (see [Benchmark and proof](/benchmark/)).
 
 NEAR function-call keys cannot move tokens (`ft_transfer` needs 1 yoctoNEAR attached), so limits are enforced in the gateway and signer, not by key type.

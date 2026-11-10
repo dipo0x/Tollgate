@@ -372,11 +372,12 @@ export class PostgresSignatureStore implements SignatureStore {
   private readonly sql: Sql
   constructor(sql: Sql) { this.sql = sql }
   async get(id: string) {
-    const [r] = await this.sql`SELECT signed_tx, tx_hash, from_address, chain_id FROM gateway_signatures WHERE decision_id = ${id}`
-    return r ? { signedTx: r['signed_tx'], txHash: r['tx_hash'], from: r['from_address'], chainId: r['chain_id'] } : undefined
+    const [r] = await this.sql`SELECT signed_tx, tx_hash, from_address FROM gateway_signatures WHERE decision_id = ${id}`
+    return r ? { signedTx: r['signed_tx'], txHash: r['tx_hash'], from: r['from_address'] } : undefined
   }
   async put(id: string, s: StoredSignature) {
-    await this.sql`INSERT INTO gateway_signatures (decision_id, signed_tx, tx_hash, from_address, chain_id) VALUES (${id}, ${s.signedTx}, ${s.txHash}, ${s.from}, ${s.chainId}) ON CONFLICT (decision_id) DO NOTHING`
+    // `chain_id` is a column from the first migration that cannot be dropped without touching existing databases; it is always 0 now.
+    await this.sql`INSERT INTO gateway_signatures (decision_id, signed_tx, tx_hash, from_address, chain_id) VALUES (${id}, ${s.signedTx}, ${s.txHash}, ${s.from}, 0) ON CONFLICT (decision_id) DO NOTHING`
   }
 }
 
@@ -405,7 +406,9 @@ export class PostgresLockStore implements LockStore {
       await nap(wait + Math.floor(Math.random() * wait))
     }
     try { return await work() } finally {
-      await this.sql`DELETE FROM gateway_locks WHERE key = ${key} AND holder = ${holder}`
+      // Not waited for: the caller already has its answer, and a lease that is not deleted just expires. Waiting would add a full
+      // round trip to the database to every locked request. (.then starts the query; the error is ignored for the same reason.)
+      this.sql`DELETE FROM gateway_locks WHERE key = ${key} AND holder = ${holder}`.then(() => undefined, () => undefined)
     }
   }
 }

@@ -1,4 +1,4 @@
-import { decodeFunctionData, erc20Abi, parseTransaction, recoverTransactionAddress, type Hex } from 'viem'
+import { decodeSignedTransaction } from '@near-js/transactions'
 import { describe, expect, it } from 'vitest'
 import type { SignerClient } from '../src/signer.ts'
 import { allowed, AUTO, boot, bootWithSigner, challenge, RECIPIENT, record, TX } from './helpers.ts'
@@ -12,16 +12,14 @@ describe('signing through the gateway: the whole path', () => {
     expect(a.json.decision).toBe('ALLOW')
     const r = await sign(g, token, id)
     expect(r.status).toBe(200)
-    const tx = parseTransaction(r.json.signedTx as Hex)
-    expect(tx).toMatchObject({ chainId: 42161, nonce: 7 })
-    const call = decodeFunctionData({ abi: erc20Abi, data: tx.data as Hex })
-    expect((call.args as [string, bigint])[0].toLowerCase()).toBe(RECIPIENT)
-    expect((call.args as [string, bigint])[1]).toBe(250_000n)
-    expect(await recoverTransactionAddress({ serializedTransaction: r.json.signedTx })).toBe(g.backend.address)
+    const tx = decodeSignedTransaction(Buffer.from(r.json.signedTx as string, 'base64')).transaction
+    expect(tx).toMatchObject({ signerId: g.near.accountId, nonce: 123_456_789_012_345n })
+    const pay = tx.actions.map(a => a.functionCall!).find(a => a.methodName === 'ft_transfer')!
+    expect(JSON.parse(Buffer.from(pay.args).toString())).toEqual({ receiver_id: RECIPIENT, amount: '250000' })
     // The audit chain records that it was signed, with the hash, and still verifies.
     const audit = (await g.deps.audit.all()).filter(e => e.type === 'payment.signed')
     expect(audit).toHaveLength(1)
-    expect(audit[0]?.payload).toMatchObject({ decisionId: id, txHash: r.json.txHash, from: g.backend.address })
+    expect(audit[0]?.payload).toMatchObject({ decisionId: id, txHash: r.json.txHash, from: g.near.accountId })
     expect((await g.op('GET', '/v1/audit/verify')).json).toMatchObject({ ok: true })
   })
 
@@ -29,18 +27,18 @@ describe('signing through the gateway: the whole path', () => {
     const g = bootWithSigner(); const { token, id } = await allowed(g)
     expect((await g.op('GET', `/v1/decisions/${id}`)).json.onchain).toBeUndefined()
     const r = await sign(g, token, id)
-    expect((await g.op('GET', `/v1/decisions/${id}`)).json.onchain).toEqual({ network: 'Arbitrum', txHash: r.json.txHash, from: g.backend.address, explorer: `https://arbiscan.io/tx/${r.json.txHash}` })
+    expect((await g.op('GET', `/v1/decisions/${id}`)).json.onchain).toEqual({ network: 'NEAR', txHash: r.json.txHash, from: g.near.accountId, explorer: `https://nearblocks.io/txns/${r.json.txHash}` })
   })
 
-  it('what the signer was sent came from the gateway\'s RECORD: the agent supplied only gas and the nonce', async () => {
+  it('what the signer was sent came from the gateway\'s RECORD: the agent supplied only the nonce and a block hash', async () => {
     const g = bootWithSigner(); const { token, id } = await allowed(g)
     await sign(g, token, id)
-    expect(g.calls[0]).toMatchObject({ decisionId: id, bind: { to: RECIPIENT, amount: '0.250000', chain: 'eip155:42161', asset: 'USDC' }, tx: TX })
+    expect(g.calls[0]).toMatchObject({ decisionId: id, bind: { to: RECIPIENT, amount: '0.250000', chain: 'near', asset: 'USDC' }, tx: TX })
   })
 
   it('an agent cannot choose the recipient or the amount: extra fields are refused before anything is forwarded', async () => {
     const g = bootWithSigner(); const { token, id } = await allowed(g)
-    for (const body of [{ tx: TX, to: '0xattacker' }, { tx: TX, amount: '9.00' }, { tx: TX, bind: { to: '0xattacker' } }, { tx: { ...TX, to: '0xattacker' } }, { tx: { ...TX, gas: 100000 } }]) {
+    for (const body of [{ tx: TX, to: 'attacker.near' }, { tx: TX, amount: '9.00' }, { tx: TX, bind: { to: 'attacker.near' } }, { tx: { ...TX, to: 'attacker.near' } }, { tx: { ...TX, gas: '100000' } }]) {
       expect((await sign(g, token, id, body)).status).toBe(400)
     }
     expect(g.calls).toHaveLength(0)
@@ -123,9 +121,9 @@ describe('signing through the gateway: what stops it', () => {
     expect(r.status).toBe(403); expect(r.json.error.code).toBe('expired')
   })
 
-  it('gas or fees outside the signer\'s limits are refused, and nothing is claimed', async () => {
+  it('a nonce the signer will not use (zero) is refused, and nothing is claimed', async () => {
     const g = bootWithSigner(); const { token, id } = await allowed(g)
-    const r = await sign(g, token, id, { tx: { ...TX, gas: '9000000' } })
+    const r = await sign(g, token, id, { tx: { ...TX, nonce: '0' } })
     expect(r.status).toBe(403); expect(r.json.error.code).toBe('bad_tx_params')
     expect(g.store.claims.size).toBe(0)
     expect((await sign(g, token, id)).status).toBe(200)
@@ -198,7 +196,7 @@ describe('signing through the gateway: when the signer is not there', () => {
 
   it('a signer that answers 200 with something that is not a signed transaction: 502, and it is NOT recorded as signed', async () => {
     const g = bootWithSigner(); const { token, id } = await allowed(g)
-    for (const body of ['not json', {}, { txHash: '0x1', signedTx: '0x02', from: '0xabc', chainId: 42161, decisionId: id }, { decisionId: id, chainId: 42161, from: '0x' + 'a'.repeat(40), txHash: '0x' + 'b'.repeat(64) }]) {
+    for (const body of ['not json', {}, { txHash: '0x1', signedTx: '0x02', from: '0xabc', decisionId: id }, { decisionId: id, from: '0x' + 'a'.repeat(40), txHash: '0x' + 'b'.repeat(64), signedTx: '0x02aa' }]) {
       g.deps.signer = { sign: async () => ({ status: 200, body }) }
       const r = await sign(g, token, id)
       expect(r.status).toBe(502); expect(r.json.error.code).toBe('signer_bad_reply')

@@ -71,7 +71,7 @@ export interface ServiceStore {
 }
 
 /** The signed transaction the signer produced for a decision. A signed transaction is public once broadcast, so keeping it is safe; it is what lets a retry get the SAME bytes back instead of asking the signer to sign twice. */
-export type StoredSignature = { signedTx: string; txHash: string; from: string; chainId: number }
+export type StoredSignature = { signedTx: string; txHash: string; from: string }
 
 export interface SignatureStore {
   get(decisionId: string): Promise<StoredSignature | undefined>
@@ -109,7 +109,7 @@ export interface HistoryStore {
 }
 
 /**
- * A task the owner gives an agent from the app ("buy the bridge cost brief"). The agent collects it with its own key, works on it,
+ * A task the owner gives an agent from the app ("buy the settlement cost brief"). The agent collects it with its own key, works on it,
  * and replies. A task never moves money: the agent still asks to pay through the twelve checks and the owner's approval.
  */
 export type TaskStatus = 'queued' | 'working' | 'done' | 'failed'

@@ -142,7 +142,7 @@ export default function AgentDetail() {
                 <Pressable key={d.decisionId} onPress={() => router.push(`/decision/${encodeURIComponent(d.decisionId)}`)} style={{ flexDirection: 'row', alignItems: 'center', gap: 14, padding: 14, borderTopWidth: i ? 1 : 0, borderTopColor: C.sep }}>
                   <KindIcon kind={k} size={34} />
                   <View style={{ flex: 1, gap: 2 }}><T lines={1}>{d.purpose || d.host}</T><T v="sub">{when(d.createdAt, now)} · {KIND_LABEL[k].toLowerCase()}</T></View>
-                  <T style={{ fontVariant: ['tabular-nums'] }}>{d.amount ?? ''}</T>
+                  <T style={{ fontVariant: ['tabular-nums'] }}>{d.amount ? money(d.amount) : ''}</T>
                 </Pressable>
               )
             })}

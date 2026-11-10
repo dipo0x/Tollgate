@@ -4,7 +4,8 @@
     "strict": true,
     "noUnusedLocals": true,
     "noUncheckedIndexedAccess": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "types": ["jest", "node"]
   },
-  "include": ["app", "src", "test"]
+  "include": ["app", "src", "test", "ui-test"]
 }

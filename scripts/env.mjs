@@ -25,7 +25,8 @@ export const WANTED = root => [
   { key: 'GATEWAY_OPERATOR_TOKEN', make: () => hex(24), why: 'the owner\'s password for the gateway and the dashboard' },
   { key: 'SIGNER_SERVICE_TOKEN', make: () => hex(24), why: 'what the gateway shows the signer to prove who it is' },
   { key: 'SIGNER_URL', make: () => 'http://127.0.0.1:8788', why: 'where the gateway finds the signer' },
-  { key: 'SIGNER_KEY_FILE', make: () => `${root}/.signer-key`, why: 'the file holding the signer\'s key' },
+  { key: 'SIGNER_CHAINS', make: () => 'near,near:mainnet', why: 'the signer pays and withdraws on NEAR' },
+  { key: 'SIGNER_NEAR_KEY_FILE', make: () => `${root}/.signer-near-key`, why: 'the file holding the signer\'s key' },
   { key: 'WORKERS_DEAL_SECRET', make: () => hex(24), why: 'signs the prices the reference seller agrees to' },
   { key: 'TOLLGATE_OFFLINE', make: () => 'true', why: 'run on recorded 1Click answers: no key, network or money needed' },
 ]

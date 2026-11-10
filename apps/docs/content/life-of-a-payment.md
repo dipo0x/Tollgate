@@ -35,9 +35,9 @@ The agent asks a shop for something. The shop answers HTTP **402 Payment Require
 ```json
 {
   "challenge": {
-    "id": "ch_0xabc123…",
+    "id": "ch_6ccbfe88…",
     "method": "nearintents",
-    "recipient": "0xDEPOSITADDRESS…",
+    "recipient": "6ccbfe88…",
     "amount": "0.206712",
     "currency": "USDC",
     "originNetwork": "near",
@@ -57,8 +57,8 @@ curl -s -X POST $GW/v1/authorize \
   -d '{
     "mandateId": "mnd_research",
     "host": "shop.example.com",
-    "purpose": "bridge cost brief",
-    "challenge": { "id": "ch_0xabc123…", "method": "nearintents", "recipient": "0xDEPOSIT…", "amount": "0.206712",
+    "purpose": "settlement cost brief",
+    "challenge": { "id": "ch_6ccbfe88…", "method": "nearintents", "recipient": "6ccbfe88…", "amount": "0.206712",
                    "currency": "USDC", "originNetwork": "near", "refundTo": "your-signer-account.near", "expires": "2026-11-08T12:10:00Z" },
     "payer": "your-signer-account.near"
   }'
@@ -79,7 +79,7 @@ The gateway runs the [twelve checks](/checks/). It does not trust the agent's wo
     { "id": "C02", "name": "Host in scope", "result": "pass", "evidence": { "host": "shop.example.com", "verification": "endpoint-checked" } },
     "… C03 to C12 …"
   ],
-  "bind": { "chain": "near", "asset": "USDC", "amount": "0.206712", "to": "0xDEPOSIT…", "expiresAt": "2026-11-08T12:10:00Z", "nonce": "9c1e…" }
+  "bind": { "chain": "near", "asset": "USDC", "amount": "0.206712", "to": "6ccbfe88…", "expiresAt": "2026-11-08T12:10:00Z", "nonce": "9c1e…" }
 }
 ```
 
@@ -103,7 +103,7 @@ curl -s -X POST $GW/v1/payments/dec_8f2c…/sign \
   -d '{ "tx": { "nonce": "123456", "blockHash": "9xQeWvG816bUx9EPjHmaT23yvVM2ZWbrrpZb9PusVFin" } }'
 ```
 
-The agent supplies only chain facts it can read (a nonce and a recent block hash, or EVM gas fields). The gateway forwards them to the [signer](/signer/) together with the stored decision. The signer rebuilds the transfer itself from that decision, takes a one-time claim, signs, and returns the signed bytes. A decision can be signed once. Asking again returns the same signature (`replayed: true`) and never a second one.
+The agent supplies only chain facts it can read (the signing key's next nonce and a recent block hash). The gateway forwards them to the [signer](/signer/) together with the stored decision. The signer rebuilds the transfer itself from that decision, takes a one-time claim, signs, and returns the signed bytes. A decision can be signed once. Asking again returns the same signature (`replayed: true`) and never a second one.
 
 ### 7. Broadcast
 
@@ -114,7 +114,7 @@ The SDK's **rail** sends the signed bytes to the chain. The signer never broadca
 The agent retries the original request with proof of payment:
 
 ```
-x-payment-proof: {"challengeId":"ch_0xabc123…","txHash":"…","depositAddress":"0xDEPOSIT…"}
+x-payment-proof: {"challengeId":"ch_6ccbfe88…","txHash":"…","depositAddress":"6ccbfe88…"}
 ```
 
 A good shop does not take the agent's word. It asks 1Click whether that deposit address was paid, and delivers only on `SUCCESS`.

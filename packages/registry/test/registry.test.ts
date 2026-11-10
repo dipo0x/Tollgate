@@ -3,7 +3,7 @@ import { InMemoryRegistry, toPlannerView, type Service } from '../src/index.ts'
 
 const svc = (over: Partial<Service> = {}): Service => ({
   id: 'svc_1', name: 'Search', category: 'web_search', host: 'search.example.com', providerUrl: 'https://search.example.com',
-  pricing: { model: 'per_request', quoted: '0.01', currency: 'USDC' }, paymentRails: [{ protocol: 'mpp', method: 'nearintents', originNetwork: 'eip155:42161', asset: 'USDC' }],
+  pricing: { model: 'per_request', quoted: '0.01', currency: 'USDC' }, paymentRails: [{ protocol: 'mpp', method: 'nearintents', originNetwork: 'near', asset: 'USDC' }],
   verification: 'unverified', enabled: false, health: 'unknown', limits: { maxPerRequest: '0.10', timeoutMs: 8000 }, ...over,
 })
 

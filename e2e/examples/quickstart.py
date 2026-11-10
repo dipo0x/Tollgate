@@ -68,7 +68,7 @@ mandate = {
     "id": "mnd_" + run, "version": 1, "principal": "you@example.com", "agentId": "research-agent",
     "validFrom": iso(now), "validUntil": iso(now + timedelta(days=7)),
     "budget": {"currency": "USDC", "total": "20.00", "perPayment": "1.00"},
-    "allowedHosts": [host], "allowedOriginNetworks": ["eip155:42161"], "allowedAssets": ["USDC"],
+    "allowedHosts": [host], "allowedOriginNetworks": ["near"], "allowedAssets": ["USDC"],
     "payee": {"mode": "registry"},
     "price": {"tolerancePct": 3, "onExceed": "needs_approval"},
     "approval": {"above": "1.00", "riskAbove": 90, "firstPayeeRequiresApproval": True},
@@ -84,7 +84,7 @@ print("budget:", json.dumps(m.get("ledger", m.get("balance", {}))) if isinstance
 
 # 6. A merchant answered 402 with this payment request. Ask the gateway whether to pay it.
 challenge = {"id": "ch_" + run, "method": "nearintents", "recipient": "deposit-address", "amount": "0.30", "currency": "USDC",
-             "originNetwork": "eip155:42161", "refundTo": "0xYourSignerPublicAddress", "expires": iso(now + timedelta(minutes=10))}
+             "originNetwork": "near", "refundTo": "your-signer-account.near", "expires": iso(now + timedelta(minutes=10))}
 status, d = call("POST", "/v1/authorize", agent_token, {"mandateId": mandate["id"], "host": host, "purpose": "buy market data", "challenge": challenge})
 print("\nauthorize ->", status, d.get("decision") if isinstance(d, dict) else d)
 for c in (d or {}).get("checks", []):

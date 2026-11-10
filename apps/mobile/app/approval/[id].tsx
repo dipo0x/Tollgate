@@ -84,7 +84,7 @@ export default function Approval() {
           <View style={{ marginTop: 22, alignItems: 'center', gap: 12 }}>
             <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: C.card, alignItems: 'center', justifyContent: 'center' }}><Icon name="store" size={28} /></View>
             <T v="sub" style={{ fontSize: 16 }}>{dec.agentId} wants to pay</T>
-            <Amount value={dec.amount} unit={dec.currency ?? ''} center />
+            <Amount value={dec.amount} unit={dec.currency ?? ''} center exact />
           </View>
 
           <Card style={{ marginTop: 24 }}>

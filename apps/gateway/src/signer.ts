@@ -2,8 +2,8 @@
  * The gateway's way of asking the signer to sign. The signer is a separate process that holds the only key; the gateway
  * never sees the key, and the agent never reaches the signer. The gateway proves who it is with a service token.
  */
-/** EVM: nonce, gas and fees. NEAR: the access key's nonce (as a string; it can exceed 2^53) and a recent block hash. */
-export type TxParams = { nonce: number; gas: string; maxFeePerGas: string; maxPriorityFeePerGas: string } | { nonce: string; blockHash: string } | { nonce: string; blockHeight: string }
+/** The access key's nonce (as a string; it can exceed 2^53), and a recent block hash (or, for x402, the current block height). */
+export type TxParams = { nonce: string; blockHash: string } | { nonce: string; blockHeight: string }
 
 export type SignerRequest = {
   decisionId: string
@@ -13,10 +13,17 @@ export type SignerRequest = {
 
 export type SignerReply = { status: number; body: unknown }
 
+/** The signer's PUBLIC NEAR identity. `withdrawTo` is the one account withdrawals can go to; absent means withdrawals are off. */
+export type SignerNear = { accountId: string; publicKey: string; withdrawTo?: string }
+/** Note what is missing: there is no destination. The signer decides it from its own settings. */
+export type WithdrawSignRequest = { withdrawalId: string; amount: string; tx: { nonce: string; blockHash: string } }
+
 export interface SignerClient {
   sign(req: SignerRequest): Promise<SignerReply>
-  /** The signer's PUBLIC address, for display. Never a secret. Undefined if the signer cannot be reached. */
-  address?(): Promise<string | undefined>
+  /** Where the signer pays from on NEAR, and where it will withdraw to. Undefined if it has no NEAR key or cannot be reached. */
+  near?(opts?: { fresh?: boolean }): Promise<SignerNear | undefined>
+  /** Ask the signer to sign taking `amount` USDC out to its own withdrawal account. */
+  withdraw?(req: WithdrawSignRequest): Promise<SignerReply>
 }
 
 export class HttpSignerClient implements SignerClient {
@@ -25,25 +32,31 @@ export class HttpSignerClient implements SignerClient {
   private readonly doFetch: typeof fetch
   constructor(opts: { url: string; token: string; fetch?: typeof fetch }) { this.url = opts.url.replace(/\/+$/, ''); this.token = opts.token; this.doFetch = opts.fetch ?? fetch }
 
-  // The public address is fixed for a running signer: remember it for 5 minutes instead of calling the signer on every status read.
-  private addr: { value: string; at: number } | undefined
-  async address(): Promise<string | undefined> {
-    if (this.addr && Date.now() - this.addr.at < 300_000) return this.addr.value
-    const v = await this.fetchAddress()
-    if (v) this.addr = { value: v, at: Date.now() } // only a good answer is remembered; "unreachable" is asked again next time
+  // The NEAR identity only changes when the signer restarts: remember a good answer for a minute (a failure is asked again next time).
+  private nearInfo: { value: SignerNear; at: number } | undefined
+  async near(opts: { fresh?: boolean } = {}): Promise<SignerNear | undefined> {
+    if (!opts.fresh && this.nearInfo && Date.now() - this.nearInfo.at < 60_000) return this.nearInfo.value
+    const v = await this.fetchNear()
+    if (v) this.nearInfo = { value: v, at: Date.now() }
     return v
   }
 
-  private async fetchAddress(): Promise<string | undefined> {
+  private async fetchNear(): Promise<SignerNear | undefined> {
     try {
       const res = await this.doFetch(`${this.url}/healthz`, { signal: AbortSignal.timeout(3000) })
-      const j = await res.json() as { address?: unknown }
-      return typeof j.address === 'string' && /^0x[0-9a-fA-F]{40}$/.test(j.address) ? j.address : undefined
+      const j = await res.json() as { near?: { accountId?: unknown; publicKey?: unknown; withdrawTo?: unknown } }
+      const n = j.near
+      if (!n || typeof n.accountId !== 'string' || typeof n.publicKey !== 'string') return undefined
+      return { accountId: n.accountId, publicKey: n.publicKey, ...(typeof n.withdrawTo === 'string' ? { withdrawTo: n.withdrawTo } : {}) }
     } catch { return undefined }
   }
 
-  async sign(req: SignerRequest): Promise<SignerReply> {
-    const res = await this.doFetch(`${this.url}/v1/sign`, {
+  async withdraw(req: WithdrawSignRequest): Promise<SignerReply> { return this.post('/v1/withdraw/sign', req) }
+
+  async sign(req: SignerRequest): Promise<SignerReply> { return this.post('/v1/sign', req) }
+
+  private async post(path: string, req: unknown): Promise<SignerReply> {
+    const res = await this.doFetch(`${this.url}${path}`, {
       method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${this.token}` }, body: JSON.stringify(req), signal: AbortSignal.timeout(10_000),
     })
     const text = await res.text()

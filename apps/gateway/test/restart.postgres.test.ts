@@ -4,8 +4,8 @@ import { describe, expect, it } from 'vitest'
 import { bootPersistent, challenge, mandateBody, OPERATOR, record, T0 } from './helpers.ts'
 
 const url = process.env['DATABASE_URL']
-const D1 = '0xdep0000000000000000000000000000000000001'
-const D2 = '0xdep0000000000000000000000000000000000002'
+const D1 = 'dec0de0000000000000000000000000000000000000000000000000000000001'
+const D2 = 'dec0de0000000000000000000000000000000000000000000000000000000002'
 
 if (!url) {
   if (process.env['REQUIRE_DB']) throw new Error('REQUIRE_DB is set but DATABASE_URL is not')

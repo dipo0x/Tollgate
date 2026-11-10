@@ -4,12 +4,12 @@ Isolated process holding the only key. Signs only what a recorded ALLOW decision
 
 **Trust zone:** Most sensitive: smallest code, smallest float.
 
-**Status:** working. It signs an ERC-20 (USDC) transfer on an EVM chain. It **never sends** anything: it has no RPC and no network code, so broadcasting is someone else's job and a bug here cannot spend by itself.
+**Status:** working. It signs a NEP-141 `ft_transfer` of USDC on NEAR (and the x402 delegate action for the agent market). It **never sends** anything: it has no RPC and no network code, so broadcasting is someone else's job and a bug here cannot spend by itself.
 
 ## Run it
 
 ```bash
-pnpm --filter @tollgate/signer keygen        # makes .signer-key (mode 600), prints only the PUBLIC address
+pnpm --filter @tollgate/signer keygen-near   # makes .signer-near-key (mode 600), prints only the PUBLIC account and key
 # set SIGNER_SERVICE_TOKEN (32+ chars) in .env, the same value the gateway uses; set SIGNER_URL for the gateway
 pnpm --filter @tollgate/signer start         # 127.0.0.1:8788, needs DATABASE_URL (it reads the stored decision)
 ```
@@ -25,7 +25,7 @@ agent --(agent token)--> gateway --(service token)--> signer --> key
               its STORED decision                 from Postgres and checks it again
 ```
 
-The agent supplies only how the transaction is paid for on chain (nonce, gas, fees). The recipient, amount, chain and one-time
+The agent supplies only how the transaction is paid for on chain (the key's next nonce and a recent block hash). The recipient, amount, chain and one-time
 nonce come from the decision the gateway stored. The signer then ignores the request's word for everything: it builds the
 transaction itself from the stored decision, and the request must match that record field for field.
 
@@ -39,8 +39,9 @@ transaction itself from the stored decision, and the request must match that rec
 | The decision has expired (the signer's clock, the stored expiry) | `expired` | 403 |
 | An asset or chain the signer was not set up for | `unsupported_asset` | 403 |
 | Over the signer's OWN per-payment cap (`SIGNER_MAX_PER_TX`), whatever the mandate says | `over_signer_cap` | 403 |
-| Recipient is not an address, is the zero address, or is the token contract | `invalid_recipient` | 403 |
-| Nonce, gas or fee outside the signer's bounds | `bad_tx_params` | 403 |
+| Recipient is not a NEAR account id, or is the token contract itself | `invalid_recipient` | 403 |
+| Amount is not a positive decimal the token can express | `invalid_amount` | 403 |
+| Nonce or block hash outside the signer's bounds (a `gas` or fee field is not part of the request at all: 400) | `bad_tx_params` | 403 |
 | The decision or its nonce was ever signed before | `already_signed` | 409 |
 
 The last row is the claim: one atomic database insert (`signer_claims`, primary key on the decision, unique on the nonce) taken
@@ -50,7 +51,7 @@ The last row is the claim: one atomic database insert (`signer_claims`, primary 
 
 - **Trusts:** the stored decision in Postgres, the mandate's status, the kill switch, its own configuration, and its key file.
 - **Does not trust:** the request body, the agent, the gateway's word for anything except the service token that proves who is asking, or any listing text.
-- **Gives the agent nothing to choose** except gas and the account nonce, both bounded.
+- **Gives the agent nothing to choose** except the access key's nonce and a block hash, both bounded.
 
 ## Stated limits
 
@@ -59,11 +60,18 @@ The last row is the claim: one atomic database insert (`signer_claims`, primary 
 - No rate limiting on the signer yet.
 - A claim taken but never completed (the process died mid-signing) stays claimed: the decision must be authorized again. That fails closed.
 
-## Paying from NEAR
+## What a NEAR payment is
 
-Add `near` to `SIGNER_CHAINS` and make a key with `pnpm --filter @tollgate/signer keygen-near`. A NEAR payment is one transaction to
-NEAR's native USDC contract with two calls, both built from the stored decision: `storage_deposit` (registers the 1Click deposit
-address with the token if it is not already; the deposit is refunded if it is) and `ft_transfer` of exactly the stored amount, with the
-1 yoctoNEAR the token standard requires. That attached deposit is why a NEAR function-call key cannot make this payment, and why the
-limits live in this signer. The caller supplies only the access key's nonce and a recent block hash. Tests: `test/near.test.ts`.
+`SIGNER_CHAINS` defaults to `near,near:mainnet`: `near` is a payment to a 1Click deposit address, `near:mainnet` is an x402 payment to a
+seller on the NEAR AI Agent Market. A `near` payment is one transaction to NEAR's native USDC contract with two calls, both built from
+the stored decision: `storage_deposit` (registers the 1Click deposit address with the token if it is not already; the deposit is
+refunded if it is) and `ft_transfer` of exactly the stored amount, with the 1 yoctoNEAR the token standard requires. That attached
+deposit is why a NEAR function-call key cannot make this payment, and why the limits live in this signer. The caller supplies only the
+access key's nonce and a recent block hash. Tests: `test/near.test.ts`.
 Run once with real money on 3 Nov 2026: [389TS16z3F…](https://nearblocks.io/txns/389TS16z3FKSkuiWnrLcWpSzU5R6DjpEio2rW84FLr1X).
+
+## Withdrawing
+
+`POST /v1/withdraw/sign` signs one `ft_transfer` of USDC to the single account named in `SIGNER_WITHDRAW_TO`. The request has no field
+for a destination. The kill switch does not stop it: when something has gone wrong, getting the money home must stay possible, and
+home is the only place it can go. `SIGNER_MAX_WITHDRAW` caps one withdrawal.
