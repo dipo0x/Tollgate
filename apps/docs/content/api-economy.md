@@ -86,6 +86,20 @@ Key: **agent** (the seller). Reports a customer's payment. The gateway verifies 
 | `stale`, `from_future` | Settled too long ago, or in the future. |
 | `replay` | This receipt was already credited. |
 
+### GET /v1/agent/jobs
+
+Key: **agent**. The jobs the owner registered for this agent's mandate, each with its summary. The agent reads the price and the receiving account from here; it never chooses them.
+
+### POST /v1/jobs/:id/claim
+
+Key: **agent**. Claims a customer's payment **by transaction hash**. Unlike `/revenue`, the agent supplies no amount, receiver or time: the gateway asks the NEAR network what the transaction did, and credits revenue only if it was a finished USDC `ft_transfer` to the job's receiving account for at least the price, within the last hour, and never counted before. Live gateways only; offline it answers `503 chain_unavailable`.
+
+```json
+{ "txHash": "HzLLMEA6ky7s11xNZdGuMBpN44nGDHpmkV2oENGLWp35", "from": "customer.near" }
+```
+
+**Response 200:** `{ "credited": true, "amount": "0.200000", "txHash": "…", "from": "customer.near" }`, or `{ "credited": false, "reason": "…", "detail": "…" }`. The reasons are those of `/revenue` plus `not_on_chain` (the network cannot find it, it failed, it is unfinished, it went to another contract, or it moved no USDC).
+
 ## History (imported runs)
 
 `GET /v1/history` (operator, `limit` default 100, at most 500) and `POST /v1/history` record real runs that happened outside this gateway, such as a live demo. Each is labelled **imported** in the chain. Body: `id`, `kind` (`payment` or `job`), `occurredAt`, `title`, `amount`, `currency`, `network`, optional `txHash`, `explorer`, `status`, `note`. `409 history_exists` if the id is taken.

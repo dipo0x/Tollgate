@@ -75,6 +75,26 @@ describe('converse on Ollama, and falling back to it', () => {
     return new Response(JSON.stringify({ message }), { status: 200 })
   }) as unknown as typeof fetch
 
+  it('earning: the agent passes the transaction on, Tollgate decides, and the owner hears only what the chain check returned', async () => {
+    const script = (calls: { name: string; args: unknown }[]) => { let i = 0; return (async () => new Response(JSON.stringify({ message: i < calls.length ? { role: 'assistant', content: '', tool_calls: [{ function: { name: calls[i].name, arguments: calls[i++].args } }] } : { role: 'assistant', content: 'Done.' } }), { status: 200 })) as unknown as typeof fetch }
+    const seen: unknown[][] = []
+    const earn = (credited: boolean) => ({
+      earnJobs: async () => [{ id: 'job_1', goal: 'sell the brief', price: '0.20', currency: 'USDC', receivingAddress: 'agent-recv.near', earned: '0.000000' }],
+      earnClaim: async (...a: unknown[]) => { seen.push(a); return credited ? { credited: true as const, amount: '0.200000', txHash: 'HzLLMEA6ky7s11xNZdGuMBpN44nGDHpmkV2oENGLWp35', from: 'customer.near' } : { credited: false as const, reason: 'wrong_payee', detail: 'paid to someone else' } },
+    })
+    const go = async (ok: boolean) => {
+      const replies: string[] = []
+      await converse([{ from: 'owner', text: 'I paid, tx HzLLMEA6ky7s11xNZdGuMBpN44nGDHpmkV2oENGLWp35 from Customer.NEAR' }], { ...ioWith(replies), ...earn(ok) } as never, lim,
+        { brain: 'ollama', ollama: { fetch: script([{ name: 'my_jobs', args: {} }, { name: 'confirm_payment', args: { job_id: 'job_1', tx_hash: 'HzLLMEA6ky7s11xNZdGuMBpN44nGDHpmkV2oENGLWp35', from_account: 'Customer.NEAR' } }]) } })
+      return replies
+    }
+    const good = await go(true)
+    expect(seen[0]).toEqual(['job_1', 'HzLLMEA6ky7s11xNZdGuMBpN44nGDHpmkV2oENGLWp35', 'customer.near'])
+    expect(good[0]).toMatch(/Earned 0\.20 USDC.*checked transaction HzLLMEA6ky.*from customer\.near/)
+    const bad = await go(false)
+    expect(bad.join(' ')).not.toMatch(/Earned/)
+  })
+
   it('does not let the model claim a payment is waiting for approval when it never called buy', async () => {
     const replies: string[] = []
     const lies = (async () => new Response(JSON.stringify({ message: { role: 'assistant', content: 'Buying svc_brief (0.20 USDC) for "market data brief". Tollgate is checking the payment and waiting for your approval.' } }), { status: 200 })) as unknown as typeof fetch

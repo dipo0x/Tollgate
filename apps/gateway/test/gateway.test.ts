@@ -620,3 +620,38 @@ describe('requests that overlap, and a process that stops half way', () => {
     expect((await g.authorize(token, challenge('c1', D1))).json.decision).toBe('ALLOW')
   })
 })
+
+describe('earning, checked against the chain', () => {
+  const job = { id: 'job_c', mandateId: 'mnd_1', goal: 'sell the market brief', receivingAddress: 'agent-recv.near', price: '0.20', currency: 'USDC' }
+  const TX = 'HzLLMEA6ky7s11xNZdGuMBpN44nGDHpmkV2oENGLWp35'
+  const seen = (over: { to?: string; amountMicro?: bigint; at?: Date } = {}) => ({ ok: true as const, from: 'customer.near', txHash: TX, settledAt: over.at ?? new Date('2026-11-06T09:55:00Z'), transfers: [{ to: over.to ?? 'agent-recv.near', amountMicro: over.amountMicro ?? 200_000n }] })
+  const claim = (g: ReturnType<typeof boot>, token: string, hash = TX) => g.call('POST', '/v1/jobs/job_c/claim', token, { txHash: hash, from: 'customer.near' })
+
+  it('credits only what the chain shows, and a second claim of the same transaction is a replay', async () => {
+    const g = boot({ chain: { usdcTransfers: async () => seen() } }); const { token } = await g.setup(); await g.op('POST', '/v1/jobs', job)
+    expect((await claim(g, token)).json).toMatchObject({ credited: true, amount: '0.200000', from: 'customer.near' })
+    expect((await claim(g, token)).json).toMatchObject({ credited: false, reason: 'replay' })
+    expect((await g.call('GET', '/v1/jobs/job_c', token)).json.summary).toMatchObject({ revenue: '0.200000', remaining: '5.000000' })
+  })
+  it('refuses a transfer to someone else, one that is too small, one that is too old, and one the chain cannot find', async () => {
+    const run = async (lookup: unknown) => { const g = boot({ chain: { usdcTransfers: async () => lookup as never } }); const { token } = await g.setup(); await g.op('POST', '/v1/jobs', job); return (await claim(g, token)).json }
+    expect(await run(seen({ to: 'someone-else.near' }))).toMatchObject({ credited: false, reason: 'wrong_payee' })
+    expect(await run(seen({ amountMicro: 199_999n }))).toMatchObject({ credited: false, reason: 'underpaid' })
+    expect(await run(seen({ at: new Date('2026-11-06T07:00:00Z') }))).toMatchObject({ credited: false, reason: 'stale' })
+    expect(await run({ ok: false, why: 'the network could not find that transaction' })).toMatchObject({ credited: false, reason: 'not_on_chain' })
+  })
+  it('without a chain reader nothing is credited, and another mandate\'s agent cannot claim this job', async () => {
+    const off = boot(); const a = await off.setup(); await off.op('POST', '/v1/jobs', job)
+    expect((await claim(off, a.token)).status).toBe(503)
+    const g = boot({ chain: { usdcTransfers: async () => seen() } }); const { token } = await g.setup(); await g.op('POST', '/v1/jobs', job)
+    const other = (await g.op('POST', '/v1/mandates', mandateBody({ id: 'mnd_2', agentId: 'a2' }))).json.agentToken
+    expect((await claim(g, other)).status).toBe(404)
+    expect((await g.call('POST', '/v1/jobs/job_c/claim', token, { txHash: 'not a hash', from: 'customer.near' })).status).toBe(400)
+  })
+  it('an agent sees only its own jobs', async () => {
+    const g = boot(); const { token } = await g.setup(); await g.op('POST', '/v1/jobs', job)
+    const other = (await g.op('POST', '/v1/mandates', mandateBody({ id: 'mnd_2', agentId: 'a2' }))).json.agentToken
+    expect((await g.call('GET', '/v1/agent/jobs', token)).json.jobs).toHaveLength(1)
+    expect((await g.call('GET', '/v1/agent/jobs', other)).json.jobs).toHaveLength(0)
+  })
+})

@@ -14,6 +14,44 @@ export interface NearRail {
   send(signedTxBase64: string): Promise<string>
 }
 
+/** What a finished transaction really did on the chain: the USDC transfers in it, who sent them, and when. Never believes the caller. */
+export interface ChainReader {
+  usdcTransfers(txHash: string, sender: string): Promise<TransferLookup>
+}
+
+export type UsdcTransfers = { from: string; txHash: string; settledAt: Date; transfers: { to: string; amountMicro: bigint }[] }
+export type TransferLookup = ({ ok: true } & UsdcTransfers) | { ok: false; why: string }
+
+type TxStatusResult = {
+  transaction?: { signer_id?: string; receiver_id?: string; hash?: string; actions?: { FunctionCall?: { method_name?: string; args?: string } }[] }
+  transaction_outcome?: { block_hash?: string }
+  status?: { Failure?: unknown; SuccessValue?: unknown }
+  receipts_outcome?: { outcome?: { status?: { Failure?: unknown } } }[]
+}
+
+/**
+ * Reads a NEAR `tx` result and says what USDC it moved. Pure, so it is tested on a real transaction. It accepts only a transaction
+ * SENT TO the USDC contract that finished with no failure anywhere (the top level and every receipt), and counts only `ft_transfer`.
+ */
+export function parseUsdcTransfers(res: TxStatusResult, blockTimeMs: number): TransferLookup {
+  const tx = res.transaction
+  if (!tx?.signer_id || !tx.hash) return { ok: false, why: 'the network returned no such transaction' }
+  if (tx.receiver_id !== NEAR_USDC_CONTRACT) return { ok: false, why: 'that transaction was not sent to the USDC contract' }
+  if (!res.status || res.status.Failure !== undefined || res.receipts_outcome?.some(r => r.outcome?.status?.Failure !== undefined)) return { ok: false, why: 'that transaction failed on the network, so no USDC moved' }
+  if (res.status.SuccessValue === undefined) return { ok: false, why: 'that transaction has not finished yet' }
+  const transfers: { to: string; amountMicro: bigint }[] = []
+  for (const a of tx.actions ?? []) {
+    const f = a.FunctionCall
+    if (f?.method_name !== 'ft_transfer' || !f.args) continue
+    try {
+      const args = JSON.parse(Buffer.from(f.args, 'base64').toString('utf8')) as { receiver_id?: unknown; amount?: unknown }
+      if (typeof args.receiver_id === 'string' && typeof args.amount === 'string' && /^\d{1,30}$/.test(args.amount)) transfers.push({ to: args.receiver_id, amountMicro: BigInt(args.amount) })
+    } catch { /* an action we cannot read is not counted */ }
+  }
+  if (transfers.length === 0) return { ok: false, why: 'that transaction moved no USDC' }
+  return { ok: true, from: tx.signer_id, txHash: tx.hash, settledAt: new Date(blockTimeMs), transfers }
+}
+
 /** The chain accepted the transaction and then it failed (for example the account held too little USDC). Nothing moved. */
 export class NearTxFailed extends Error {}
 
@@ -24,7 +62,7 @@ class NearRpcError extends Error {
 
 type Rpc = <T>(method: string, params: unknown) => Promise<T>
 
-export function nearRail(rpcUrl: string, doFetch: typeof fetch = fetch): NearRail {
+export function nearRail(rpcUrl: string, doFetch: typeof fetch = fetch): NearRail & ChainReader {
   const rpc: Rpc = async <T>(method: string, params: unknown) => {
     const res = await doFetch(rpcUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 'tollgate', method, params }), signal: AbortSignal.timeout(20_000) })
     const j = await res.json() as { result?: T & { error?: string }; error?: { message?: string; data?: unknown; cause?: { name?: string; info?: { error?: unknown } } } }
@@ -62,6 +100,19 @@ export function nearRail(rpcUrl: string, doFetch: typeof fetch = fetch): NearRai
       if (!hash) throw new Error('send_tx returned no transaction hash')
       if (r.status?.Failure || r.receipts_outcome?.some(x => x.outcome?.status?.Failure)) throw new NearTxFailed(`the chain ran transaction ${hash} and it failed, so no USDC moved`)
       return hash
+    },
+    async usdcTransfers(txHash, sender) {
+      let res: TxStatusResult
+      try { res = await rpc<TxStatusResult>('tx', { tx_hash: txHash, sender_account_id: sender, wait_until: 'FINAL' }) } catch (e) {
+        return { ok: false, why: `the network could not find that transaction from ${sender} (${e instanceof Error ? e.message : 'unknown'})` }
+      }
+      const blockHash = res.transaction_outcome?.block_hash
+      let ms = NaN
+      if (blockHash) {
+        try { ms = Number(BigInt((await rpc<{ header: { timestamp: number | string } }>('block', { block_id: blockHash })).header.timestamp) / 1_000_000n) } catch { /* handled below */ }
+      }
+      if (!Number.isFinite(ms)) return { ok: false, why: 'could not read when that transaction settled' }
+      return parseUsdcTransfers(res, ms)
     },
   }
 }

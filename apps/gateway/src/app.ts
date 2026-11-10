@@ -54,6 +54,7 @@ const ArchiveBody = z.strictObject({ archived: z.boolean() })
 const HelloBody = z.strictObject({ brains: z.array(z.strictObject({ id: BrainId, label: z.string().min(1).max(40), detail: z.string().max(80) })).max(16) })
 const TaskReplyBody = z.strictObject({ text: z.string().trim().min(1).max(1000), status: z.enum(['working', 'done', 'failed']).optional(), decisionId: z.string().min(1).max(128).optional() })
 const JobBody = z.strictObject({ id: z.string().min(1).max(128), mandateId: z.string().min(1).max(128), goal: z.string().max(500), receivingAddress: z.string().min(1).max(256), price: amount, currency: z.string().min(1).max(32) })
+const ClaimBody = z.strictObject({ txHash: z.string().regex(/^[1-9A-HJ-NP-Za-km-z]{32,50}$/, 'a NEAR transaction hash'), from: z.string().min(2).max(64).regex(/^[a-z0-9._-]+$/, 'a NEAR account id') })
 const wholeNumber = z.string().regex(/^\d{1,30}$/, 'must be a whole number written as a string')
 // The access key's nonce (a string; it can exceed 2^53) and a recent base58 block hash.
 const SignBody = z.strictObject({ tx: z.union([
@@ -298,6 +299,8 @@ export function createApp(deps: GatewayDeps) {
   app.post('/v1/history', asOperator(async c => { const b = await parse(c, HistoryBody); return b.ok ? send(c, await gw.importHistory(b.data)) : b.res }))
   app.get('/v1/jobs', asOperator(cached(async c => send(c, await gw.listJobs(Math.min(Number(c.req.query('limit') ?? 100) || 100, 500))))))
   app.get('/v1/jobs/:id', asEither(async (c, p) => send(c, await gw.getJob(P(c, 'id'), p.role === 'agent' ? { mandateId: p.mandateId } : {}))))
+  app.get('/v1/agent/jobs', asAgent(async (c, a) => send(c, await gw.agentJobs(a))))
+  app.post('/v1/jobs/:id/claim', asAgent(async (c, a) => { const b = await parse(c, ClaimBody); return b.ok ? send(c, await gw.claimEarning(a, P(c, 'id'), b.data)) : b.res }))
   app.post('/v1/jobs/:id/revenue', asAgent(async (c, a) => { const raw = await c.req.json().catch(() => undefined); return send(c, await gw.reportRevenue(a, P(c, 'id'), raw)) }))
 
   // ---- the service registry --------------------------------------------------------------

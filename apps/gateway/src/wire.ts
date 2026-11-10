@@ -57,6 +57,8 @@ function assemble(cfg: Config, durable: Durable, over: Partial<GatewayDeps>): Ga
     // The NEAR AI Agent Market's published payees and prices: live only. Offline there is no market, so every market payment is
     // refused at C06/C07 (fail closed) rather than judged against made-up facts.
     ...(cfg.TOLLGATE_OFFLINE ? {} : { market: new HttpMarket() }),
+    // Reads NEAR to verify that a customer really paid an agent (earnings). Live only: offline there is no network to ask, so a claim is refused.
+    ...(cfg.TOLLGATE_OFFLINE ? {} : { chain: nearRail(cfg.NEAR_RPC_URL ?? 'https://free.rpc.fastnear.com') }),
     tokens: new TokenRegistry(cfg.GATEWAY_OPERATOR_TOKEN, durable.store.tokens, cfg.GATEWAY_RUNNER_TOKEN),
     info: { mode: cfg.TOLLGATE_OFFLINE ? 'offline' : 'live', network: { host: cfg.GATEWAY_HOST, port: cfg.PORT } } as const,
     lanAddresses,

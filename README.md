@@ -164,7 +164,23 @@ card shows 0.20 USDC; the agent's own message says 0.202021 USDC, the amount in 
 | ![Chat: ask, check, approval request, approved card, payment reported](docs/images/phone-chat-spend-1.jpg) | ![Chat: the same run, scrolled to the end](docs/images/phone-chat-spend-2.jpg) |
 | **Spend 1.** "Nothing is paid until you approve", then the request. | **Spend 2.** Approved, paid, transaction on NEAR. |
 
-Hiring, negotiating and earning screenshots are not in this repository yet. They are added only from real runs, never mocked up.
+**Negotiating, in chat.** The owner told a hosted agent (Claude brain) to "negotiate a lower price for the market data brief", after saying no to the
+0.20 USDC payment above it. The agent haggled with the reference seller, which opened at 0.20 USDC; they agreed 0.12 USDC, and the agent says Tollgate holds
+the shop to that price. Nothing was paid in this run. The seller is our own scripted reference merchant, labelled as such, not a live third party.
+
+| |
+| --- |
+| ![Chat: payment declined, then a negotiated price of 0.12 USDC](docs/images/phone-chat-negotiate.jpg) |
+| **Negotiate.** Opened at 0.20, agreed 0.12, nothing paid. |
+
+**Earning, in chat (built, real run pending).** The owner registers a job for an agent: what it sells, the price, and the NEAR account that must receive the
+money. A customer pays that account in USDC on NEAR and the owner tells the agent the transaction hash. The agent passes the hash to the gateway, which asks
+the NEAR network what that transaction did and credits revenue only if it was a finished USDC transfer to that account for at least the price, within the
+last hour, and not counted before (`POST /v1/jobs/:id/claim`). The agent never supplies the amount, receiver or time. This is tested offline (a real mainnet
+transaction is the parser's fixture); the first real earning run is not recorded here yet. Earlier, a **simulated** job from a labelled simulated customer
+was created to check the Jobs screen; it is marked SIMULATED in the app and is not evidence of earning.
+
+Hiring screenshots are not in this repository yet. Screenshots are added only from real runs, never mocked up.
 
 **Tested on a real phone, by hand.** The author built the app and tested it end to end on their own iPhone 15 Pro, Face ID included, so Face ID there is the
 device's own. That session was manual and is not recorded in this repository. It also surfaced a failure: the first Withdraw attempt was

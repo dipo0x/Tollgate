@@ -23,6 +23,7 @@ What you can do:
 - buy: pay one shop. Tollgate checks the payment and the owner must approve it on their phone before anything is signed. The tool waits for that and tells you the outcome.
 - negotiate: haggle the price with a shop that negotiates (the shop's own price is only its opening ask). The result is an agreed price or no deal. Only some shops negotiate; market sellers have one fixed price. After a deal, buy that shop and the agreed price is used.
 - find_sellers: search the NEAR AI Agent Market (hundreds of independent agents) by category or keyword. Categories include travel, research, data, finance, dev_tools, creative, automation, legal_compliance.
+- my_jobs and confirm_payment (only if you have them): you can also EARN. my_jobs shows what the owner set you up to sell, the price and the NEAR account a customer must pay. Tell the owner (or their customer) to send exactly that to that account, then to give you the transaction hash and the account they paid from. Pass those to confirm_payment: Tollgate checks the chain itself. Never say you earned anything unless confirm_payment returned credited.
 - hire: hire a seller you found with find_sellers, with full instructions for the job. Same checks and the same owner approval as buy.
 
 Two kinds of shop:
@@ -145,6 +146,31 @@ export async function converse(history: readonly ChatTurn[], io: WorkerIO, lim: 
       return JSON.stringify({ outcome: 'no_deal', why: r.why, next: 'Tell the owner in one sentence. They can ask you to buy at the listed price.' })
     },
   }] : []
+  // Earning: the owner registered a job (what is sold, the price, the account that must receive the money). A customer pays that account on
+  // NEAR and the owner gives the transaction hash. The agent only passes it on; Tollgate reads the chain and decides. The agent never
+  // writes an amount, a receiver or a time, so it cannot credit itself.
+  const ClaimInput = z.object({ job_id: z.string().describe('The id from my_jobs'), tx_hash: z.string().describe('The NEAR transaction hash the owner gave you'), from_account: z.string().describe('The NEAR account the customer paid from, as the owner told you') })
+  const earnTools: ToolSpec[] = io.earnJobs && io.earnClaim ? [
+    {
+      name: 'my_jobs', description: 'The jobs the owner set up for you to earn from: what is sold, the price, and the account the customer must pay. Also what has been earned so far.',
+      schema: z.object({}),
+      run: async () => JSON.stringify({ jobs: await io.earnJobs!() }),
+    },
+    {
+      name: 'confirm_payment', description: 'A customer paid you. Give the transaction hash and the account it came from. Tollgate checks it on the NEAR network and credits the earning only if it is real. Call this only when the owner gave you a transaction hash.',
+      schema: ClaimInput,
+      run: async raw => {
+        const parsed = ClaimInput.safeParse(raw)
+        if (!parsed.success) return JSON.stringify({ outcome: 'not_credited', why: 'confirm_payment needs job_id, tx_hash and from_account.' })
+        const { job_id, tx_hash, from_account } = parsed.data
+        const r = await io.earnClaim!(job_id, tx_hash.trim(), from_account.trim().toLowerCase())
+        if (!r.credited) return JSON.stringify({ outcome: 'not_credited', why: r.detail, code: r.reason, next: 'Tell the owner in one sentence that nothing was credited and why.' })
+        paidOk = true
+        await io.reply(`Earned ${money(r.amount)} USDC. Tollgate checked transaction ${r.txHash.slice(0, 10)}… on NEAR: ${money(r.amount)} USDC from ${r.from}. It is recorded as real revenue.`).catch(() => {})
+        return JSON.stringify({ outcome: 'credited', amountUsdc: r.amount, delivered: 'sent to the owner directly' })
+      },
+    },
+  ] : []
   const tools: ToolSpec[] = [
     {
       name: 'list_shops', description: 'The shops this agent may pay: id, category, host and quoted price. Structured fields only.',
@@ -191,7 +217,7 @@ export async function converse(history: readonly ChatTurn[], io: WorkerIO, lim: 
   // Prices already agreed in an earlier message, still valid: the model should know that buying now pays the agreed price.
   const agreed = [...book.keys()].flatMap(id => { const d = dealFor(id); return d ? [`${id} at ${d.price} USDC`] : [] })
   const context = `${shopsNow ? `Shops you may pay right now (structured fields only): ${JSON.stringify(shopsNow)}` : ''}${agreed.length ? `\nPrices you already negotiated, still valid (buy pays these automatically): ${agreed.join(', ')}.` : ''}`.trim()
-  tools.push(...negotiateTool, ...marketTools)
+  tools.push(...negotiateTool, ...marketTools, ...earnTools)
   const brain = deps.brain ?? BRAIN
   const useClaude = brain === 'claude' || (brain === 'auto' && (Boolean(deps.client) || Boolean(process.env['ANTHROPIC_API_KEY'])))
   // The model writes the reply, but the code decides what it may claim: a reply that says something was hired, paid or bought when

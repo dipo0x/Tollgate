@@ -1,7 +1,8 @@
 import type { Withdrawals } from './withdraw.ts'
+import type { ChainReader } from './near-rpc.ts'
 import {
   acceptanceCheck, closeMandate, completeWork, creditRevenue, evaluate, hire, jobSummary, MandateSchema, Negotiation, OneClickRecordSchema,
-  isX402Input, parseChallenge, toMicro, x402ToChallenge, X402_NEAR_NETWORK, type AcceptanceSpec, type Challenge, type CheckResult, type DelegationDeps, type Deal, type Evaluation, type HireRequest,
+  fromMicro, isX402Input, parseChallenge, toMicro, x402ToChallenge, X402_NEAR_NETWORK, type AcceptanceSpec, type Challenge, type CheckResult, type DelegationDeps, type Deal, type Evaluation, type HireRequest,
   type AuditStore, type Ledger, type MandateStore, type MarketAdapter, type OneClickAdapter, type Offer, type PinStore, type RevenueStore,
 } from '@tollgate/core'
 import type { Services } from './services.ts'
@@ -39,6 +40,8 @@ export type GatewayDeps = {
   signer?: SignerClient
   /** Taking the owner's USDC back out of the signer's NEAR account (src/withdraw.ts). Absent: the routes answer 503. */
   withdrawals?: Withdrawals
+  /** Reads finished NEAR transactions, so earnings can be checked against the chain itself. Absent: claiming an earning is refused. */
+  chain?: ChainReader
   /** For display only. */
   info?: { mode: 'offline' | 'live'; network?: { host: string; port: number } }
   /** This computer's private network addresses (for pairing a phone). Injected so tests do not depend on the machine. */
@@ -850,6 +853,33 @@ export class Gateway {
     const r = await creditRevenue(this.d.revenue, jobId, receipt, { receivingAddress: job.receivingAddress, price: job.price, currency: job.currency }, this.d.clock())
     await this.audit('revenue', { jobId, outcome: r.ok ? 'credited' : `refused:${r.reason}`, ...(r.ok ? { amount: Number(r.entry.amount) / 1e6, receiptId: r.entry.receiptId } : {}) })
     return ok(r.ok ? { credited: true, amount: (Number(r.entry.amount) / 1e6).toFixed(6), receiptId: r.entry.receiptId } : { credited: false, reason: r.reason, detail: r.detail })
+  }
+
+  /** The jobs the owner registered for this agent: what to sell, the price, and the account that must receive the money. */
+  async agentJobs(agent: Agent): Promise<Out> {
+    const jobs = (await this.d.store.jobs.list(500)).filter(j => j.mandateId === agent.mandateId)
+    return ok({ jobs: await Promise.all(jobs.map(async job => ({ job, summary: await jobSummary({ ledger: this.d.ledger, revenue: this.d.revenue }, job, 0) }))) })
+  }
+
+  /**
+   * A customer paid the agent for a job. The agent hands over a transaction hash and who sent it; THIS asks the network what that
+   * transaction really did, and credits revenue only if it was a finished USDC transfer to the job's receiving account for at least the
+   * price, recent, and never counted before. Nothing the agent says about the amount, the receiver or the time is used.
+   */
+  async claimEarning(agent: Agent, jobId: string, body: { txHash: string; from: string }): Promise<Out> {
+    const job = await this.d.store.jobs.get(jobId)
+    if (!job || job.mandateId !== agent.mandateId) return fail(404, 'not_found', `no job ${jobId}`)
+    if (!this.d.chain) return fail(503, 'chain_unavailable', 'This gateway cannot read the NEAR network, so it cannot verify a payment. Nothing was credited.')
+    const seen = await this.d.chain.usdcTransfers(body.txHash, body.from)
+    if (!seen.ok) {
+      await this.audit('revenue', { jobId, outcome: 'refused:not_on_chain', txHash: body.txHash })
+      return ok({ credited: false, reason: 'not_on_chain', detail: seen.why })
+    }
+    const paid = seen.transfers.filter(t => t.to.toLowerCase() === job.receivingAddress.toLowerCase()).reduce((n, t) => n + t.amountMicro, 0n)
+    const receipt = { id: seen.txHash, status: 'SUCCESS', amount: fromMicro(paid), currency: job.currency, payee: paid > 0n ? job.receivingAddress : seen.transfers[0]!.to, payerRef: seen.from, settledAt: seen.settledAt.toISOString() }
+    const r = await creditRevenue(this.d.revenue, jobId, receipt, { receivingAddress: job.receivingAddress, price: job.price, currency: job.currency, maxAgeMs: 60 * 60_000 }, this.d.clock())
+    await this.audit('revenue', { jobId, outcome: r.ok ? 'credited' : `refused:${r.reason}`, txHash: seen.txHash, source: 'chain', ...(r.ok ? { amount: Number(r.entry.amount) / 1e6, receiptId: r.entry.receiptId } : {}) })
+    return ok(r.ok ? { credited: true, amount: (Number(r.entry.amount) / 1e6).toFixed(6), txHash: seen.txHash, from: seen.from } : { credited: false, reason: r.reason, detail: r.detail })
   }
 
   // ---- operator controls -----------------------------------------------------------------

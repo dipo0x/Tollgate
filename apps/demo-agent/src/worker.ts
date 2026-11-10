@@ -48,9 +48,16 @@ export type WorkerIO = {
   marketSearch?(q: { category?: string | undefined; keyword?: string | undefined }): Promise<MarketSeller[]>
   /** Hire a seller found by marketSearch: registered as a shop on the spot (price and payee from the market), then marketBuy. */
   marketHire?(handle: string, task: string): Promise<BuyOutcome>
+  /** The jobs the owner registered for this agent to earn from: what is sold, the price, and the account that must receive the money. */
+  earnJobs?(): Promise<EarnJob[]>
+  /** A customer paid. Tollgate checks the transaction on the NEAR network itself and credits revenue only if it matches the job. */
+  earnClaim?(jobId: string, txHash: string, from: string): Promise<EarnResult>
   sleep(ms: number): Promise<void>
   now(): number
 }
+
+export type EarnJob = { id: string; goal: string; price: string; currency: string; receivingAddress: string; earned: string }
+export type EarnResult = { credited: true; amount: string; txHash: string; from: string } | { credited: false; reason: string; detail: string }
 
 /** An agreed price: the gateway's record of the deal, plus the seller's signed token that proves it to the seller. */
 export type Deal = { negotiationId: string; token: string; price: string }

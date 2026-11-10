@@ -224,6 +224,17 @@ Ctrl+C stops everything.`)
       return { status: r.status, summary: q ? `Settlement cost brief: settling ${q.amountOut} USDC to a NEAR account costs ${q.amountIn ?? 'an unknown amount of'} USDC right now (quoted by 1Click).` : 'The shop delivered.' }
     },
     reconcile: async id => { await j.call('POST', `/v1/payments/${id}/reconcile`) },
+    // Earning: the owner registered the job; the customer paid on NEAR; the gateway (not this runner) reads the chain and decides.
+    earnJobs: async () => {
+      const r = await j.call('GET', '/v1/agent/jobs')
+      return ((r.json.jobs ?? []) as { job: { id: string; goal: string; price: string; currency: string; receivingAddress: string }; summary: { revenue: string } }[])
+        .map(x => ({ id: x.job.id, goal: x.job.goal, price: x.job.price, currency: x.job.currency, receivingAddress: x.job.receivingAddress, earned: x.summary.revenue }))
+    },
+    earnClaim: async (jobId, txHash, from) => {
+      const r = await j.call('POST', `/v1/jobs/${encodeURIComponent(jobId)}/claim`, { txHash, from })
+      if (r.status === 200 && r.json.credited) return { credited: true as const, amount: String(r.json.amount), txHash: String(r.json.txHash), from: String(r.json.from) }
+      return { credited: false as const, reason: String(r.json.reason ?? r.json.error?.code ?? `http ${r.status}`), detail: String(r.json.detail ?? r.json.error?.message ?? 'the gateway refused') }
+    },
     sleep, now: () => Date.now(),
     ...(treasury ? {
       marketBuy: (shop: { id: string; host: string }, job: string) => marketBuy(j, shop, job),

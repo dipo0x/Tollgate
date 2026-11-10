@@ -1,0 +1,51 @@
+{
+ "status": {
+  "SuccessValue": ""
+ },
+ "transaction": {
+  "actions": [
+   {
+    "FunctionCall": {
+     "args": "eyJhY2NvdW50X2lkIjoiZWQ0MjY4YzJmYjc5NzVjMjYxOTg2MTA3YmYzYWQzMmRmODYwNWRmNGRkMGJhN2M5ZTAzODRlZmI0MzVjMzYxZCIsInJlZ2lzdHJhdGlvbl9vbmx5Ijp0cnVlfQ==",
+     "deposit": "1250000000000000000000",
+     "gas": 30000000000000,
+     "method_name": "storage_deposit"
+    }
+   },
+   {
+    "FunctionCall": {
+     "args": "eyJyZWNlaXZlcl9pZCI6ImVkNDI2OGMyZmI3OTc1YzI2MTk4NjEwN2JmM2FkMzJkZjg2MDVkZjRkZDBiYTdjOWUwMzg0ZWZiNDM1YzM2MWQiLCJhbW91bnQiOiIyMDIwMjEifQ==",
+     "deposit": "1",
+     "gas": 30000000000000,
+     "method_name": "ft_transfer"
+    }
+   }
+  ],
+  "hash": "HzLLMEA6ky7s11xNZdGuMBpN44nGDHpmkV2oENGLWp35",
+  "nonce": 222844757000005,
+  "priority_fee": 0,
+  "public_key": "ed25519:C8XEJvz4ptTVn8JkyhjjWDMsjV1WLtJ1UsqeGgR5F5dw",
+  "receiver_id": "17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1",
+  "signature": "ed25519:3SmkhHvLyu23LoQiBi6fMpuRY3qnxQArEseLqfefT9Srj4LGXPyjWkH26vUKTGFaXCRXaBrgRXFtogRJGRBq59oc",
+  "signer_id": "a55dcd6b86ca2f4466512b4a002d643408c9b28267b17a3b6487833661d9bc9e"
+ },
+ "transaction_outcome": {
+  "block_hash": "Gom1X2DL3vKf6rQoLRmfEGWFARDUkx2oxpeSBPeGHkku"
+ },
+ "receipts_outcome": [
+  {
+   "outcome": {
+    "status": {
+     "SuccessValue": ""
+    }
+   }
+  },
+  {
+   "outcome": {
+    "status": {
+     "SuccessValue": ""
+    }
+   }
+  }
+ ]
+}
