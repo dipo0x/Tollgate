@@ -72,11 +72,61 @@ describe('gateway: a NEAR AI Agent Market (x402) payment', () => {
     const r = await g.call('POST', '/v1/authorize', tok, { mandateId: 'mnd_9', host: HOST, purpose: 'x', challenge: { x402: { requestId: 'msg-0001-aaaa', accepted: row() } }, payer: NEAR_PAYER })
     expect(r.json.decision).not.toBe('ALLOW')
   })
-  it('reconcile refuses to ask 1Click about a market payment (the amount stays held)', async () => {
+  it('reconcile never asks 1Click about a market payment; an unsigned one stays held', async () => {
     const g = await marketGateway()
     const a = await g.authorize(row())
     const r = await g.call('POST', `/v1/payments/${a.json.decisionId}/reconcile`, OPERATOR)
-    expect(r.json.error?.code ?? r.json.error).toBeDefined()
+    expect(r.json).toMatchObject({ state: 'allowed', status: 'not_signed' })
     expect((await g.op('GET', '/v1/mandates/mnd_1')).json.balance.committed).toBe('0.050000')
+  })
+
+  describe('settlement on the chain (the real transfer, not the signed authorisation)', () => {
+    const SETTLE_TX = '7n8RKdnzmRbBSCxxu62WNeXEx7wrh4q5bdVQrqzcrUgs'
+    const signedAndAuthorised = async (chain: { settlementOf: (q: { from: string; to: string; amountMicro: bigint; since: Date; until: Date }) => Promise<unknown> }) => {
+      const g = boot({ market: new FakeMarket().publish(X402_NEAR_NETWORK, NEAR_USDC_CONTRACT, TREASURY).price(HOST, '0.0500'), chain: chain as never })
+      await g.op('POST', '/v1/services', { id: 'svc_cha', name: 'Contract Health Auditor', category: 'security_audit', host: HOST, providerUrl: `https://${HOST}`, pricing: { model: 'per_request', quoted: '0.05', currency: 'USDC' }, paymentRails: [], limits: { maxPerRequest: '0.12', timeoutMs: 8000 } })
+      await g.op('POST', '/v1/services/svc_cha/probe-result', { verification: 'endpoint-checked', payee: TREASURY })
+      await g.op('POST', '/v1/services/svc_cha/enable')
+      const m = await g.op('POST', '/v1/mandates', mandateBody({ allowedHosts: ['*.market.near.ai'], allowedOriginNetworks: [X402_NEAR_NETWORK], budget: { currency: 'USDC', total: '0.30', perPayment: '0.12' }, payee: { mode: 'registry' }, approval: { above: '0.12', riskAbove: 90, firstPayeeRequiresApproval: false } }))
+      const a = await g.call('POST', '/v1/authorize', m.json.agentToken as string, { mandateId: 'mnd_1', host: HOST, purpose: 'audit', challenge: { x402: { requestId: 'msg-0001-aaaa', accepted: row() } }, payer: NEAR_PAYER })
+      await g.deps.store.signatures.put(a.json.decisionId as string, { signedTx: 'AAAA', txHash: 'GGwkP13c2uh7xretJypBJ49M62HLHbMo9yi6ah95Lnn1', from: NEAR_PAYER })
+      return { g, id: a.json.decisionId as string }
+    }
+
+    it('a matching transfer on the chain settles the payment, keeps the amount spent, and links the real transaction', async () => {
+      const seen: unknown[] = []
+      const { g, id } = await signedAndAuthorised({ settlementOf: async q => { seen.push(q); return { ok: true, txHash: SETTLE_TX, settledAt: new Date() } } })
+      const r = await g.call('POST', `/v1/payments/${id}/reconcile`, OPERATOR)
+      expect(r.json).toMatchObject({ state: 'settled', settlementTx: SETTLE_TX })
+      expect(seen[0]).toMatchObject({ from: NEAR_PAYER, to: TREASURY, amountMicro: 50000n })
+      const d = await g.op('GET', `/v1/decisions/${id}`)
+      expect(d.json.state).toBe('settled')
+      expect(d.json.onchain.explorer).toContain(SETTLE_TX)
+      expect((await g.op('GET', '/v1/mandates/mnd_1')).json.balance.committed).toBe('0.000000')
+    })
+
+    it('nothing on the chain yet: the payment stays allowed and held', async () => {
+      const { g, id } = await signedAndAuthorised({ settlementOf: async () => ({ ok: false, why: 'no matching USDC transfer' }) })
+      const r = await g.call('POST', `/v1/payments/${id}/reconcile`, OPERATOR)
+      expect(r.json).toMatchObject({ state: 'allowed', status: 'not_settled_yet' })
+      expect((await g.op('GET', '/v1/mandates/mnd_1')).json.balance.committed).toBe('0.050000')
+    })
+
+    it('an unsigned market payment can be cancelled; a signed one cannot', async () => {
+      const g = await marketGateway()
+      const a = await g.authorize(row())
+      expect((await g.call('POST', `/v1/payments/${a.json.decisionId}/cancel`, OPERATOR)).json).toMatchObject({ state: 'released' })
+      const b = await g.authorize(row(), 'msg-0002-bbbb')
+      await g.deps.store.signatures.put(b.json.decisionId, { signedTx: 'AAAA', txHash: 'GGwkP13c2uh7xretJypBJ49M62HLHbMo9yi6ah95Lnn1', from: NEAR_PAYER })
+      expect((await g.call('POST', `/v1/payments/${b.json.decisionId}/cancel`, OPERATOR)).status).toBe(409)
+    })
+
+    it('a chain it cannot read (no reader): it stays held and says why', async () => {
+      const g = await marketGateway()
+      const a = await g.authorize(row())
+      await g.deps.store.signatures.put(a.json.decisionId, { signedTx: 'AAAA', txHash: 'GGwkP13c2uh7xretJypBJ49M62HLHbMo9yi6ah95Lnn1', from: NEAR_PAYER })
+      const r = await g.call('POST', `/v1/payments/${a.json.decisionId}/reconcile`, OPERATOR)
+      expect(r.status).toBe(409)
+    })
   })
 })

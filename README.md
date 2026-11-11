@@ -21,7 +21,7 @@ Run from the repo root (Node 22+, pnpm 10+). Each step says what you should see.
 | 1 | `pnpm install` | Ends with `Done in ...s`. |
 | 2 | `pnpm bench` | 16 attacks and 5 benign payments against three targets. Last lines: naive agent `0/16`, modelled stock policy `5/16`, **Tollgate `16/16`**, `5/5` benign allowed, and `Every result matched what was written down before the run.` |
 | 3 | `pnpm demo` | An agent haggles, buys, waits for approval, hires, earns (from a labelled **simulated** customer), meets dishonest merchants, and hits the kill switch. A banner says what is real and what is simulated. |
-| 4 | `pnpm --filter @tollgate/mobile test` and `pnpm --filter @tollgate/mobile typecheck` | The phone app's checks: 64 logic tests and 16 UI tests pass (80 in all), the type check is clean. |
+| 4 | `pnpm --filter @tollgate/mobile test` and `pnpm --filter @tollgate/mobile typecheck` | The phone app's checks: 74 logic tests and 16 UI tests pass (90 in all), the type check is clean. |
 | 5 | `pnpm --filter @tollgate/docs test` | The documentation site builds and its 8 checks pass: every page, link, anchor and image resolves, and nothing secret-shaped is published. |
 | 6 | Open <https://docs.trytollgate.xyz> | The 40-page documentation site, live. Start at [Life of a payment](https://docs.trytollgate.xyz/life-of-a-payment/) and [Phone app: every screen](https://docs.trytollgate.xyz/phone-screens/). |
 
@@ -43,17 +43,17 @@ What exists, what is simulated, and what is not built. Written for a reviewer wh
 | Demo (`pnpm demo`): buy, haggle, hire, earn, attacks, kill switch | **Built.** Real gateway, signer and SDK; everything outside them is simulated and labelled. |
 | Mock merchants, fake 1Click server, simulated chain, poisoned directory | **Built.** Test doubles, labelled as simulated. |
 | Marketing site and `/docs/` page | **Built** (`apps/site`). |
-| Phone app (`apps/mobile`) | **Built, tested offline and by hand.** Logic: 64 tests. Screens: 16 automated UI tests (Jest and React Native Testing Library; see "The phone app"). By hand: the author built the app and ran it end to end on their own iPhone 15 Pro, Face ID included (the author's statement; no recording of that session is in this repository, and the screenshots in "The phone app" are from the build on that phone, which is older than the current code). No App Store build. Pair with a QR code, approve or reject with Face ID, kill switch, every decision with its checks, agents and chats, top up, **withdraw**. Holds no wallet key. Alerts are local notifications while the app runs, not push. |
-| Withdraw (take USDC back out of the signer's NEAR account) | **Built and tested offline** (gateway and signer tests; UI tests of the screen). **The first real attempt failed and no money moved.** The author tried it from the iPhone and the NEAR node refused the transaction as `INVALID_TRANSACTION` before running it, so it is on no block. The cause is **not yet identified**: the gateway used to hide the node's reason. It now reports it (`apps/gateway/src/near-rpc.ts`, 3 tests), so the next attempt will say why. The destination is set only in the signer's config (`SIGNER_WITHDRAW_TO`); a request carries an amount and nothing else. |
+| Phone app (`apps/mobile`) | **Built, tested offline and by hand.** Logic: 74 tests. Screens: 16 automated UI tests (Jest and React Native Testing Library; see "The phone app"). By hand: the author built the app and ran it end to end on their own iPhone 15 Pro, Face ID included (the author's statement; no recording of that session is in this repository, and the screenshots in "The phone app" are from the build on that phone, which is older than the current code). No App Store build. Pair with a QR code, approve or reject with Face ID, kill switch, every decision with its checks, agents and chats, top up, **withdraw**. Holds no wallet key. Alerts are local notifications while the app runs, not push. |
+| Withdraw (take USDC back out of the signer's NEAR account) | **Built, tested offline, and run once for real.** 0.14 USDC to the owner's own account on 11 Nov 2026 ([transaction](https://nearblocks.io/txns/Sr7ib9jxvCDg9QcqdyN4qotujdYGeu4UdDXuGP1Ex8T)). An earlier attempt on 9 Nov was refused by the NEAR node (`INVALID_TRANSACTION`, nothing moved); its cause is not identified. See "Withdraw". The destination is set only in the signer's config (`SIGNER_WITHDRAW_TO`); a request carries an amount and nothing else. |
 | Documentation site (`apps/docs`) | **Built, tested (8 checks) and live at <https://docs.trytollgate.xyz>.** 40 pages: concepts, quickstart, every phone screen, every dashboard page, the full HTTP API, errors, the 12 checks, configuration, limits. Built from markdown; the quickstart, mandates, economy, services, architecture and threat-model pages are read straight from `docs/` so they cannot drift from this repository. |
 | Dashboard (owner UI) | **Built, minimal.** Served by the gateway at `/dashboard`: decisions with every check's evidence, approvals (approve or reject with a required reason), mandates and their money, the service list, the audit chain with a verify button, and the kill switch. Read-only apart from those two actions. **Not built:** a jobs screen, a live push feed, a hosted version. Try it on the demo's data with `pnpm demo --serve`. |
-| Reference services (`apps/workers`): a merchant, a seller, a worker | **Built and tested (13 tests), and run once against live 1Click** (see `docs/SERVICES.md`). We operate them; they are not a third-party marketplace. Hiring through the gateway is still exercised with the worker played inline in the demo. |
+| Reference services (`apps/workers`): a merchant, a seller, a worker | **Built and tested (13 tests), and run once against live 1Click** (see `docs/SERVICES.md`). We operate them; they are not a third-party marketplace. In the offline demo the hired worker is played inline; from the phone, hiring is a real purchase from a seller on the NEAR AI Agent Market (see "Hiring, in chat"). |
 | An LLM planner | **Built and run, locally.** `pnpm demo --llm` lets a model on your own computer (Ollama, `qwen2.5:7b`, nothing leaves the machine, no key) decide whether to buy, how to haggle and what to charge for the report it sells. It sees only prices and limits, never merchant text, and the gateway checks every move. In the recorded runs the model offered 0.35 against a 0.30 owner ceiling, the gateway refused it (`above_ceiling`), and the model corrected to 0.30 and bought; it then priced its report at 1.06 inside the owner's 0.50 to 3.00 range and the gateway credited exactly that. A small local model is not always right (in an earlier run it skipped a purchase for a wrong reason), so the savings-reserve arithmetic is done in code, not by the model. The reserve is the agent's own policy: Tollgate's mandate has no reserve field. Claude can be used instead (`PLANNER_PROVIDER=anthropic`, needs your key and credit; not run). Without `--llm` the demo is scripted and needs no model. |
 | Live 1Click | **Run once (`pnpm live`, 3 Nov 2026):** the reference merchant got a real deposit address from live 1Click, and Tollgate's 12 checks returned ALLOW on the real challenge and DENY (C06) on three tampered copies. The gateway had no signer. Needs your own 1Click key and NEAR account. |
 | A payment with real money | **Done once, on NEAR mainnet (3 Nov 2026).** 0.206712 USDC from the signer's NEAR account to a live 1Click deposit address, after all 12 checks passed on live data and a human said yes; 1Click reported `SUCCESS` and the owner's own NEAR account (our reference merchant's payee) received 0.20 USDC. Transaction: [389TS16z3FKSkuiWnrLcWpSzU5R6DjpEio2rW84FLr1X](https://nearblocks.io/txns/389TS16z3FKSkuiWnrLcWpSzU5R6DjpEio2rW84FLr1X). Reproduce: `pnpm live:near` (needs your own funded NEAR key, 1Click key and Docker). The merchant is ours; no third party has been paid. |
 | Real MPP / x402 wire format | **Not built.** The SDK and mock merchants speak a simple 402 format of our own (see `packages/sdk/README.md`). |
 
-Real money has moved twice: the 0.206712 USDC NEAR payment above (3 Nov 2026), and one 0.05 USDC purchase from a seller on the NEAR AI Agent Market (7 Nov 2026; the seller delivered a report about the wrong account and was still paid, which is why hiring has an acceptance check). Nothing else on this page has been run against real money. Benchmark results are produced by one command (`pnpm bench`) and rerunning it gives identical output.
+Real money has moved on NEAR mainnet in: the 0.206712 USDC NEAR payment above (3 Nov 2026); one 0.05 USDC purchase from a seller on the NEAR AI Agent Market (7 Nov 2026; the seller delivered a report about the wrong account and was still paid, which is why hiring has an acceptance check); the phone's spend run (0.202021 USDC to our reference merchant); a 0.10 USDC hire of a third-party market seller from the phone (11 Nov 2026); a 0.10 USDC sale of the author's own market listing to the author's own agent (11 Nov 2026); and a 0.14 USDC withdrawal back to the owner's account (11 Nov 2026). Each is described, with what it does and does not prove, under "The phone app". Nothing else on this page has been run against real money. Benchmark results are produced by one command (`pnpm bench`) and rerunning it gives identical output.
 
 ## Repository layout
 
@@ -152,7 +152,7 @@ Some screens show the failures and the rejected payment as they happened, not a 
 | ![Activity](docs/images/phone-activity.jpg) | ![Account](docs/images/phone-account.jpg) | ![New chat](docs/images/phone-new-chat.jpg) | ![Jobs](docs/images/phone-jobs.jpg) |
 | **Activity.** Paid, blocked (C06), rejected, expired. | **Account.** Top up, withdraw, Face ID, kill switch. | **New chat.** Who answers, budget, max per payment, shops. | **Jobs.** Real runs recorded from outside the decision log. |
 | ![Shops](docs/images/phone-shops.jpg) | ![Change address](docs/images/phone-gateway-address.jpg) | ![Withdraw](docs/images/phone-withdraw.jpg) | ![Withdraw failed](docs/images/phone-withdraw-failed.jpg) |
-| **Shops.** What agents may pay. | **Gateway address.** Same gateway, new address. | **Withdraw.** The failed attempt in the history. | **Withdraw, failed.** The node refused the transaction; see "Withdraw". |
+| **Shops.** What agents may pay. | **Gateway address.** Same gateway, new address. | **Withdraw.** The 9 Nov failed attempt in the history (older build). | **Withdraw, failed.** The node refused the 9 Nov transaction; a later one worked, see "Withdraw". |
 
 **Spending, in chat.** One run on the same iPhone, from the current build: the owner types "buy the market data brief" to a hosted agent
 (`spend-agent`, local Ollama model). The agent says it is checking the payment with Tollgate, asks for approval, the owner approves on the phone, and the
@@ -173,18 +173,36 @@ the shop to that price. Nothing was paid in this run. The seller is our own scri
 | ![Chat: payment declined, then a negotiated price of 0.12 USDC](docs/images/phone-chat-negotiate.jpg) |
 | **Negotiate.** Opened at 0.20, agreed 0.12, nothing paid. |
 
-**Earning, in chat (built, real run pending).** The owner registers a job for an agent: what it sells, the price, and the NEAR account that must receive the
-money. A customer pays that account in USDC on NEAR and the owner tells the agent the transaction hash. The agent passes the hash to the gateway, which asks
-the NEAR network what that transaction did and credits revenue only if it was a finished USDC transfer to that account for at least the price, within the
-last hour, and not counted before (`POST /v1/jobs/:id/claim`). The agent never supplies the amount, receiver or time. This is tested offline (a real mainnet
-transaction is the parser's fixture); the first real earning run is not recorded here yet. Earlier, a **simulated** job from a labelled simulated customer
-was created to check the Jobs screen; it is marked SIMULATED in the app and is not evidence of earning.
+**Hiring, in chat (11 Nov 2026).** The owner told a hosted agent (`hiring-agent`, Claude brain) to "hire an agent to summarise this market brief, budget
+0.30 USDC". The agent searched the NEAR AI Agent Market (`find_sellers`: structured fields only, never a seller's own text) and found `dailybriefer`, a
+third-party seller at 0.10 USDC. The owner said "hire dailybriefer", the payment request went through the twelve checks (the payee must be one the market
+publishes, the price must match the seller's published price), and the owner approved 0.10 USDC on the phone. The screenshot ends at the approval; the
+seller's delivery is not shown in it, so nothing beyond the approved payment is claimed here.
 
-Hiring screenshots are not in this repository yet. Screenshots are added only from real runs, never mocked up.
+**Earning (11 Nov 2026).** The author listed a seller of their own, `tollgate-briefs`, on the NEAR AI Agent Market, answered by a local model
+(qwen2.5:7b). A customer hired it for 0.10 USDC, the owner approved the customer's payment, the seller delivered, and the app's Earned screen
+shows 0.10 USDC "Sold on the market". Said plainly: **the customer was the author's own `hiring-agent`**, so this is the author paying the author's
+seller through a real third-party market, with real USDC. The market pays the seller on delivery, and the market's own seller dashboard
+(below) lists the 0.10 USDC as a confirmed payout for the listing "Tollgate Brief Desk" (`@tollgate-briefs`, 1 job). At the time of the
+phone screenshot **Tollgate itself had not confirmed that payout on the chain** ("Confirmed by Tollgate 0.00"). The chain-verified path exists (`POST /v1/jobs/:id/claim`: the agent hands over a NEAR
+transaction hash and the gateway reads the transfer from the network itself; tested against a recorded mainnet transaction) but has not had a real run.
+Earlier, a **simulated** job from a labelled simulated customer was created to check the Jobs screen; it is marked SIMULATED in the app and is not
+evidence of earning.
+
+| | | | |
+| --- | --- | --- | --- |
+| ![Chat: hire a third-party seller from the market, approved](docs/images/phone-chat-hire.jpg) | ![Chat: the author's own seller is hired, payment waiting for the owner](docs/images/phone-chat-earn-1.jpg) | ![Chat: the seller delivered, written by a local model](docs/images/phone-chat-earn-2.jpg) | ![Earned: 0.10 USDC sold on the market, 0.00 confirmed by Tollgate](docs/images/phone-earned.jpg) |
+| **Hire.** `dailybriefer` found on the market, 0.10 USDC approved. | **Earn 1.** `tollgate-briefs` hired, the payment waits for the owner. | **Earn 2.** Delivered, labelled as written by a local model. | **Earned.** 0.10 sold on the market; Tollgate has confirmed 0.00 on chain. |
+
+![The NEAR AI Agent Market's seller dashboard: Tollgate Brief Desk, live, 1 job, $0.10 in lifetime confirmed payouts](docs/images/market-seller-earnings.jpg)
+
+*The market's own record of the same sale (market.near.ai, the author's seller dashboard): the listing "Tollgate Brief Desk" (`@tollgate-briefs`), live, 1 job, $0.10 under "lifetime confirmed payouts". This is the market's statement, not a NEAR transaction Tollgate has read.*
+
+Screenshots are added only from real runs, never mocked up.
 
 **Tested on a real phone, by hand.** The author built the app and tested it end to end on their own iPhone 15 Pro, Face ID included, so Face ID there is the
 device's own. That session was manual and is not recorded in this repository. It also surfaced a failure: the first Withdraw attempt was
-refused by the NEAR node (see "Withdraw").
+refused by the NEAR node; a later one went through (see "Withdraw").
 
 **Automated UI tests (16).** `apps/mobile/ui-test` renders the real screens with React Native Testing Library under Jest (jest-expo) and drives them
 like a person: press, hold, type. What it covers:
@@ -227,11 +245,20 @@ The owner can take USDC back out of the signer's NEAR account from the phone (Ac
 
 Tested offline: the signed bytes decode to a transfer to the configured account, and the signer refuses a second use of the same withdrawal id.
 
-**The first real attempt failed, and nothing moved.** From the iPhone, withdrawing 0.63 USDC to the author's own NEAR account ended with
-`INVALID_TRANSACTION`. That is the NEAR node refusing the transaction before running it, so it is on no block and no USDC left the account.
-The gateway then showed only the code. **The cause is not identified yet.** What changed: `apps/gateway/src/near-rpc.ts` now carries the node's own reason
-into the message and the audit entry, and `test/near-rpc.test.ts` (3 tests) covers it. The next attempt, with the author's yes for the exact
-amount and account, will say what the node objected to. No withdrawal has succeeded. API: <https://docs.trytollgate.xyz/api-ops/>.
+**A real withdrawal worked on 11 Nov 2026.** From the iPhone, with Face ID, 0.14 USDC went from the signer's NEAR account to the author's own
+account `dipo0x.near`: [Sr7ib9jxvCDg9QcqdyN4qotujdYGeu4UdDXuGP1Ex8T](https://nearblocks.io/txns/Sr7ib9jxvCDg9QcqdyN4qotujdYGeu4UdDXuGP1Ex8T).
+Read back from a NEAR RPC node: a `storage_deposit` and an `ft_transfer` of `140000` (0.14 USDC) to `dipo0x.near` on the USDC contract, status
+`SuccessValue`, no failed receipt. The app capped the amount below what was in the account: 0.80 of the 0.81 USDC there was held for payments in progress.
+
+**The first attempt, on 9 Nov 2026, failed and nothing moved.** Withdrawing 0.63 USDC ended with `INVALID_TRANSACTION`: the NEAR node refused the
+transaction before running it, so it is on no block. The gateway then showed only the code; it now carries the node's own reason into the message and
+the audit entry (`apps/gateway/src/near-rpc.ts`, covered in `test/near-rpc.test.ts`). **The cause of that failure is still not identified:** the
+withdraw code did not change between the two attempts. API: <https://docs.trytollgate.xyz/api-ops/>.
+
+| | |
+| --- | --- |
+| ![Withdraw: 0.14 USDC sent to dipo0x.near, the 9 Nov failure below it](docs/images/phone-withdraw-sent.jpg) | ![Withdraw failed, 9 Nov](docs/images/phone-withdraw-failed.jpg) |
+| **Sent.** 0.14 USDC to the owner's account; the earlier failure stays in the history. | **The 9 Nov failure.** Refused by the node before it ran. |
 
 ### The bad-payment demo
 
@@ -291,7 +318,7 @@ cd tollgate
 | 12 | `pnpm --filter @tollgate/core verify-log --db` | The audit chain stored in Postgres verifies (`OK: N entries, head ...`), or the first broken entry is named. It reads the database directly, so it does not trust the gateway. |
 | 13 | Stop the gateway (Ctrl+C) and start it again | Mandates, agent tokens, pending approvals, decisions, jobs, earnings, negotiations, the service list, the freeze flag and the audit chain are all still there. The gateway keeps nothing in the process between requests, and refuses to start without `DATABASE_URL`. |
 | 14 | Optional, needs your own 1Click key and NEAR account in `.env` (see `docs/SERVICES.md`), then `pnpm live` | Real 1Click: a merchant gets a real deposit address, and the 12 checks decide on live data. Nothing is signed or sent. |
-| 15 | `pnpm --filter @tollgate/mobile test`, `pnpm --filter @tollgate/mobile typecheck` | The phone app: 64 logic tests (Vitest) and 16 screen tests (Jest, `pnpm --filter @tollgate/mobile test:ui` alone) pass and the type check is clean. No keys, no phone. |
+| 15 | `pnpm --filter @tollgate/mobile test`, `pnpm --filter @tollgate/mobile typecheck` | The phone app: 74 logic tests (Vitest) and 16 screen tests (Jest, `pnpm --filter @tollgate/mobile test:ui` alone) pass and the type check is clean. No keys, no phone. |
 | 16 | `pnpm --filter @tollgate/docs test`, or `pnpm docs:dev` and open <http://127.0.0.1:4173> | 8 checks pass; the docs site serves locally. No keys. |
 | 17 | Optional, needs your own keys and a phone: `pnpm live:app`, then `pnpm attack-demo` in a second terminal | The phone app against a live gateway, and three tampered bills stopped at C06. Real 1Click, nothing signed by the demo. See "The phone app". |
 
@@ -301,7 +328,9 @@ Steps 1 to 4 need no keys, no database and no network beyond the install. Steps 
 
 - **Paying from NEAR.** With `SIGNER_CHAINS=near`, the agent's money sits in a NEAR account and a payment is a NEP-141 `ft_transfer` of NEAR's native USDC to the deposit address 1Click issued (with a `storage_deposit` in the same transaction, in case that address is not yet registered with the token). The signer builds it from the stored decision and signs it with an ed25519 key; the SDK's `nearRpcRail` reads the access-key nonce and broadcasts. Tested offline (the signed transaction decodes to exactly the stored decision and its signature verifies), and **run once with real money on 3 Nov 2026**: 0.206712 USDC from NEAR, approved by all 12 checks on live 1Click, settled by 1Click (`SUCCESS`), 0.20 USDC received by the merchant account: [389TS16z3F…](https://nearblocks.io/txns/389TS16z3FKSkuiWnrLcWpSzU5R6DjpEio2rW84FLr1X).
 - **NEAR Intents / 1Click** is the settlement path for agent payments. Check C06 cross-checks the merchant's challenge against the 1Click API — the advertised deposit address, amount, asset and refund target must match the quote, or the payment is denied.
-- **NEAR AI Cloud** is the intended home of the demo agent's reasoning. It is **not wired in**: the demo agent's decisions are scripted and no model is called, and there is no attestation display.
+- **NEAR AI Cloud** can answer a phone agent: the runner offers it as the brain `near` when `NEARAI_API_KEY` and `NEARAI_MODEL` are set (`apps/demo-agent/src/brains.ts`, OpenAI-compatible endpoint). **Not run:** our account there is unfunded, so no recorded run used it; the recorded runs used a local Ollama model and Claude. The offline demo is scripted and calls no model. There is no attestation display.
+- **NEAR AI Agent Market** is where a phone agent hires: `find_sellers` reads the market's structured listing (never a seller's free text, attack A16), and a hire is an x402 payment on NEAR whose payee must be one the market itself publishes (C06) and whose price must match the seller's published price (C07). One real 0.05 USDC purchase was made there on 7 Nov 2026.
+- **Earning is verified on NEAR itself.** A customer's payment is credited only after the gateway reads the transaction from a NEAR RPC node and finds a finished USDC `ft_transfer` to the job's receiving account (`POST /v1/jobs/:id/claim`).
 - **NEAR function-call keys** are discussed honestly: they cannot attach deposits or move tokens, and NEP-413 intent signing needs a full-access key. That is exactly why the limits live in a policy gate in front of an isolated signer, not in the key type.
 
 ## Honesty rules
@@ -332,8 +361,9 @@ Steps 1 to 4 need no keys, no database and no network beyond the install. Steps 
 Direction, not a promise, and none of it is built unless the Status section says so. Ordered by
 what I would do next.
 
-1. **Earn for real.** An agent lists a service on the NEAR AI Agent Market and is paid by a
-   real customer. Today the gateway records revenue it can verify, but nothing sells yet.
+1. **Earn from a stranger, confirmed on chain.** The author's listing has sold once, to the
+   author's own agent, and the market's payout is not yet confirmed by Tollgate. Next: a sale
+   to someone else, and the payout credited through the chain-verified claim.
 2. **Negotiate with market sellers.** Negotiation works against the reference seller in this
    repo. Market sellers publish one fixed price, so there is nothing to haggle with yet.
 3. **x402 on Base for APIs and compute.** Most paid APIs take USDC on Base. The buyer for

@@ -133,6 +133,19 @@ A receipt is credited only if it is **settled, fresh (under 10 minutes), for the
 for at least the price, and never seen before**. Reporting the same receipt again returns `replay`; one paying a different address
 returns `wrong_payee`; an underpayment returns `underpaid`.
 
+**Checked against the chain.** On a live gateway the agent does not need to hand over a receipt at all, only the NEAR transaction
+hash and the account that sent it. The gateway asks the NEAR network what that transaction did and builds the receipt itself:
+
+```sh
+curl -s -X POST $GW/v1/jobs/job_brief/claim -H "$AGENT" -H "$J" -d '{"txHash":"<NEAR transaction hash>","from":"customer.near"}'
+#   -> { "credited": true, "amount": "0.200000", "txHash": "...", "from": "customer.near" }
+```
+
+It is credited only if the transaction **finished**, was sent **to the USDC contract**, contained an `ft_transfer` **to the job's
+receiving account**, for **at least the price**, within the **last hour**, and was **never counted before** (the hash is the replay key).
+Anything else is `not_on_chain` or one of the reasons above. The agent supplies no amount, receiver or time, so it cannot
+inflate its own revenue; it can only point at a transaction. The phone's chat agents use this path (`my_jobs`, `confirm_payment`).
+
 ## Putting it together
 
 `pnpm demo` plays all four, one after another: Act 1 haggles and buys, Act 2 waits for the owner, Act 3 hires and checks a
@@ -142,13 +155,18 @@ the parent and worker mandates (the worker shown as "Hired by" its parent), and 
 ## Limits, stated
 
 - **The SDK wraps spending only.** Negotiating, hiring and earning are HTTP calls, as above. Helpers for them are not built.
-- **There is no earning server.** Tollgate verifies a receipt; it does not provide the paid endpoint that issues one. The PRD's design
+- **There is no earning server.** Tollgate verifies a payment; it does not provide the paid endpoint a customer buys from. The PRD's design
   uses an `mppx` server for that, which is not built. In the demo the customer and the receipt are simulated.
-- **A receipt is checked for consistency, not confirmed at 1Click.** The gateway verifies what the receipt says (settled, right payee,
-  enough money, fresh, unique). It does not yet look the payment up at 1Click, so reported revenue is only as trustworthy as whoever
-  reports it. This cannot raise a budget, but it can make the revenue line wrong.
-- **The negotiation counterpart is scripted in the demo.** No real merchant is known to negotiate this way, so the seller is
-  simulated and labelled.
-- **Hired workers are not separate processes.** The demo plays the worker inline; the gateway supports it fully (its own token and
-  mandate), but there is no worker runtime in this repository.
-- **Nothing here has been run with real money.**
+- **A reported receipt (`/revenue`) is checked for consistency, not confirmed anywhere.** The gateway verifies what the receipt says
+  (settled, right payee, enough money, fresh, unique) and nothing more, so revenue reported that way is only as trustworthy as whoever
+  reports it. The chain path (`/claim`) does not have this limit: the amount, receiver and time come from the NEAR network. Neither path
+  can raise a budget.
+- **The negotiation counterpart is our own reference seller.** Sellers on the NEAR AI Agent Market publish one fixed price, so there is
+  nothing to haggle with there yet. The seller in the demo and on the phone is `apps/workers`, labelled as a reference shop.
+- **Hired workers in the demo are not separate processes.** The demo plays the worker inline; the gateway supports it fully (its own token
+  and mandate). On the phone, hiring a seller on the NEAR AI Agent Market is a real third-party purchase (x402 on NEAR).
+- **What has run with real money:** spending (one 0.206712 USDC payment through 1Click on 3 Nov 2026, one 0.05 USDC purchase from a market
+  seller on 7 Nov 2026, and the phone's chat spend run); hiring (a 0.10 USDC hire of a third-party market seller from the phone, 11 Nov 2026);
+  earning (the author's own market listing sold once for 0.10 USDC, to the author's own agent, 11 Nov 2026; the market paid it, Tollgate did not
+  confirm the payout on chain). Negotiation was run for real against the reference seller, with nothing paid. Earning by transaction hash is
+  tested against a recorded mainnet transaction; it has not had a live run.

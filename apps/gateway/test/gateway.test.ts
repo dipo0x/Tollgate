@@ -655,3 +655,51 @@ describe('earning, checked against the chain', () => {
     expect((await g.call('GET', '/v1/agent/jobs', other)).json.jobs).toHaveLength(0)
   })
 })
+
+
+describe('cancelling a payment in progress: only when the money provably never left', () => {
+  const FROM = 'a55dcd6b86ca2f4466512b4a002d643408c9b28267b17a3b6487833661d9bc9e'
+  const HASH = 'DzcfymE4VxgG6RU4HKhiyefg4dqhi38e5hvtDiFQGag1'
+  const setup = async (txState?: 'present' | 'absent' | 'unknown') => {
+    const g = boot(txState ? { chain: { txState: async () => txState, usdcTransfers: async () => ({ ok: false as const, why: 'n/a' }) } as never } : {})
+    const s = await g.setup({ mandate: { approval: { above: '1.00', riskAbove: 90, firstPayeeRequiresApproval: false } } }); g.oneClick.add(record(D1))
+    const a = await g.authorize(s.token, challenge('c1', D1)); return { g, id: a.json.decisionId as string }
+  }
+  const cancel = (g: Awaited<ReturnType<typeof setup>>['g'], id: string) => g.call('POST', `/v1/payments/${id}/cancel`, OPERATOR)
+  const held = async (g: Awaited<ReturnType<typeof setup>>['g']) => (await g.op('GET', '/v1/mandates/mnd_1')).json.balance.committed
+
+  it('a payment that was never signed is cancelled and its money is freed', async () => {
+    const { g, id } = await setup()
+    expect(await held(g)).toBe('0.250000')
+    expect((await cancel(g, id)).json).toMatchObject({ state: 'released', status: 'CANCELLED_BY_OWNER' })
+    expect(await held(g)).toBe('0.000000')
+  })
+  it('a signed one under a day old stays held (the signed transaction could still be sent)', async () => {
+    const { g, id } = await setup('absent')
+    await g.deps.store.signatures.put(id, { signedTx: 'AAAA', txHash: HASH, from: FROM })
+    expect((await cancel(g, id)).status).toBe(409)
+    expect(await held(g)).toBe('0.250000')
+  })
+  it('a signed one is refused when the chain has the transaction, or cannot say', async () => {
+    for (const st of ['present', 'unknown'] as const) {
+      const { g, id } = await setup(st)
+      await g.deps.store.signatures.put(id, { signedTx: 'AAAA', txHash: HASH, from: FROM })
+      g.setNow(new Date(Date.now() + 3 * 24 * 3600_000))
+      expect((await cancel(g, id)).status).toBe(409)
+      expect(await held(g)).toBe('0.250000')
+    }
+  })
+  it('an old signed payment the chain has never seen is cancelled', async () => {
+    const { g, id } = await setup('absent')
+    await g.deps.store.signatures.put(id, { signedTx: 'AAAA', txHash: HASH, from: FROM })
+    g.setNow(new Date(Date.now() + 3 * 24 * 3600_000))
+    expect((await cancel(g, id)).json).toMatchObject({ state: 'released' })
+    expect(await held(g)).toBe('0.000000')
+  })
+  it('only the owner can cancel, and a settled payment cannot be cancelled', async () => {
+    const { g, id } = await setup()
+    expect((await g.call('POST', `/v1/payments/${id}/cancel`, 'not-a-token')).status).toBeGreaterThanOrEqual(401)
+    g.oneClick.add(record(D1, { status: 'SUCCESS' })); await g.call('POST', `/v1/payments/${id}/reconcile`, OPERATOR)
+    expect((await cancel(g, id)).status).toBe(409)
+  })
+})

@@ -218,11 +218,14 @@ function hostOf(baseUrl: string): string {
 export function mandateForNewAgent(a: NewAgent) {
   const id = `mnd_${a.name}_${a.now.getTime().toString(36)}`
   const iso = (d: Date) => d.toISOString().replace(/\.\d{3}Z$/, 'Z')
+  // Reference shops are paid through 1Click ("near"). The NEAR AI Agent Market takes x402 payments on "near:mainnet": an agent that may
+  // pay the market must be allowed that network too, or check C04 refuses every hire. Both are the same NEAR mainnet.
+  const market = a.hosts.some(h => h.endsWith('.market.near.ai'))
   return {
     id, version: 1, principal: 'owner', agentId: a.name,
     validFrom: iso(a.now), validUntil: iso(new Date(a.now.getTime() + 30 * 24 * 3_600_000)),
     budget: { currency: 'USDC', total: a.budget, perPayment: a.perPayment },
-    allowedHosts: a.hosts, allowedOriginNetworks: ['near'], allowedAssets: ['USDC'],
+    allowedHosts: a.hosts, allowedOriginNetworks: market ? ['near', 'near:mainnet'] : ['near'], allowedAssets: ['USDC'],
     payee: { mode: 'registry' as const }, price: { tolerancePct: 3, onExceed: 'deny' as const },
     approval: { above: '0.00', riskAbove: 90, firstPayeeRequiresApproval: true },
     refund: { mustBePayerOrPinned: true },

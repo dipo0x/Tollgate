@@ -43,8 +43,10 @@ export default function Account() {
       <Card>
         <Row first icon="plus" title="Top up the signer" sub="The account your agents pay from" onPress={() => router.push('/topup')} />
         <Row icon="send" title="Withdraw to your account" sub="Take your USDC back out" onPress={() => router.push('/withdraw')} />
+        <Row icon="plus" title="Earned" sub="What your agents have sold" onPress={() => router.push('/earnings')} />
         <Row icon="briefcase" title="Jobs" sub="Work your agents have done" onPress={() => router.push('/jobs')} />
         <Row icon="store" title="Shops agents may pay" sub="Checked by Tollgate" onPress={() => router.push('/shops')} />
+        <Row icon="shield" title="The 12 checks" sub="What every payment must pass" onPress={() => router.push('/checks')} />
       </Card>
 
       <Label>Security</Label>

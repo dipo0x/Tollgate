@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { runTask, type Decision, type WorkerIO } from '../src/worker.ts'
+import { blockedWhy, runTask, type Decision, type WorkerIO } from '../src/worker.ts'
 
 const SVC = { id: 'svc_brief', category: 'market_data', host: '127.0.0.1', pricing: { model: 'per_request', quoted: '0.20', currency: 'USDC' }, verification: 'endpoint-checked', enabled: true, health: 'healthy' }
 const CH = { id: 'ch1', amount: '0.206712', recipient: 'dep.near', expires: '2026-11-07T12:00:00Z' }
@@ -78,5 +78,13 @@ describe('runTask: one owner task, worked by the agent', () => {
     const w = world({ bill: async () => { throw new Error('merchant down') } })
     expect(await runTask('buy the brief', w.io, LIM)).toBe('failed')
     expect(w.replies.at(-1)).toMatchObject({ status: 'failed' }); expect(w.replies.at(-1)!.text).toMatch(/merchant down/)
+  })
+})
+
+describe('blockedWhy', () => {
+  it('says the check in plain words with the reason and what was used', () => {
+    expect(blockedWhy({ failedCheck: 'C04', checks: [{ id: 'C04', name: 'Network and asset', result: 'fail', evidence: { got: 'near:mainnet', reason: 'origin network not allowed', allowed: ['near'] } }] }))
+      .toBe('“Network and asset allowed” failed: origin network not allowed (it used "near:mainnet"; allowed: ["near"])')
+    expect(blockedWhy({ failedCheck: 'C09', reason: 'above the per-payment limit' })).toBe('“Within budget” failed: above the per-payment limit')
   })
 })

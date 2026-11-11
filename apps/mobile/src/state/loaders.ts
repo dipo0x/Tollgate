@@ -1,4 +1,5 @@
 import type { Decision, Gateway } from '../api/gateway'
+import { earningsOf } from '../lib/earnings'
 
 /** Optional extras may fail to an empty list, but a prefetch that was cancelled must stay cancelled, never be stored half-empty. */
 const soft = <T,>(p: Promise<T[]>): Promise<T[]> => p.catch((e: { code?: string }) => { if (e?.code === 'yielded') throw e; return [] as T[] })
@@ -23,6 +24,7 @@ export const loaders = {
   shops: (gw: Gateway) => gw.services(),
   services: (gw: Gateway) => gw.services(),
   jobs: async (gw: Gateway) => ({ jobs: await gw.jobs(), past: await gw.history() }),
+  earnings: async (gw: Gateway) => { const [jobs, history] = await Promise.all([gw.jobs(), gw.history()]); return earningsOf(jobs, history) },
   agent: async (gw: Gateway, id: string) => {
     // The list row says who answers this agent (hosted with a brain, or its own program). The gateway keeps the list for 5 s, so this is cheap.
     const [m, decisions, rows] = await Promise.all([gw.mandate(id), gw.decisionsFor(id, 8), soft(gw.mandates())])

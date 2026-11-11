@@ -27,7 +27,7 @@ export function start(name: string, dir: string, file: string, env: Record<strin
   const log = join(logDir, `${name}.log`)
   const fd = openSync(log, 'a')
   const child = spawn('pnpm', ['exec', 'tsx', file], { cwd: join(ROOT, dir), // The helper processes get the settings they are given and NOT the real keys in your environment (the simulated world and the signer have no business holding them).
-    env: { ...process.env, NEAR_1CLICK_API_KEY: '', NEAR_AI_API_KEY: '', ...env }, stdio: ['ignore', fd, fd] })
+    env: { ...process.env, NEAR_1CLICK_API_KEY: '', NEARAI_API_KEY: '', ...env }, stdio: ['ignore', fd, fd] })
   closeSync(fd)
   let exited = false
   child.on('exit', () => { exited = true })

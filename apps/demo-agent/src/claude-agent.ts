@@ -76,6 +76,8 @@ export type ToolSpec = { name: string; description: string; schema: z.ZodObject;
 export async function converse(history: readonly ChatTurn[], io: WorkerIO, lim: WorkerLimits, deps: ChatDeps = {}): Promise<TaskStatus> {
   const lastOwner = [...history].reverse().find(t => t.from === 'owner')?.text ?? ''
   let bought = false
+  /** What the market search really returned in this message. The only source for a seller's price and job count. */
+  const sellersSeen = new Map<string, SellerFacts>()
   let negotiated = false
   // Deals agreed this turn, by shop id: buy() uses the agreed price. A deal is only ever the gateway's record of the talks.
   const book: DealBook = deps.dealBook ?? new Map()
@@ -108,6 +110,7 @@ export async function converse(history: readonly ChatTurn[], io: WorkerIO, lim: 
       run: async raw => {
         const q = z.object({ category: z.string().max(40).optional(), keyword: z.string().max(40).optional() }).safeParse(raw)
         const sellers = await io.marketSearch!(q.success ? q.data : {})
+        for (const x of sellers) sellersSeen.set(x.handle, x)
         return JSON.stringify({ sellers: sellers.slice(0, 8), maxPerPaymentUsdc: lim.perPayment.toFixed(2), note: 'These sellers deliver research, plans and options with links. None of them books or buys tickets: the owner books from the links they send. Ask the owner for missing details (dates, city, budget) before hiring.' })
       },
     },
@@ -224,6 +227,8 @@ export async function converse(history: readonly ChatTurn[], io: WorkerIO, lim: 
   // nothing was is replaced by what really happened. (A small model said "I have hired a seller" after a refused hire.)
   const finish = async (text: string) => {
     let out = plainWords(text)
+    // A seller's price and job count are facts from the market search. A model that quotes them without having searched, or quotes different ones, is corrected.
+    out = correctSellerClaims(out, sellersSeen)
     if (!paidOk && claimsPayment(out)) out = notPaidWhy ? `Nothing was hired or paid. ${notPaidWhy}` : 'Nothing was hired or paid yet.'
     // "Waiting for your approval" / "negotiating…" is only true if the tool ran. A model of any kind can write it without calling one.
     else if (!bought && claimsPendingPayment(out)) out = 'I have not started that payment, so there is nothing to approve and nothing was paid. Please send it again.'
@@ -234,7 +239,7 @@ export async function converse(history: readonly ChatTurn[], io: WorkerIO, lim: 
 
   // "buy the market data brief" names a shop outright: start that purchase in code instead of asking a model to, because a small
   // model sometimes writes about a payment without ever calling the buy tool (the owner then waits for an approval that cannot come).
-  const direct = (await directBuy(lastOwner, tools, shopsNow)) ?? (await directNegotiate(lastOwner, tools, shopsNow))
+  const direct = (await directBuy(lastOwner, tools, shopsNow)) ?? (await directNegotiate(lastOwner, tools, shopsNow)) ?? (await directHire(history, tools))
   if (direct) return finish(direct)
 
   // A brain the owner chose for this agent answers alone: no fallback to another one they did not choose.
@@ -395,6 +400,50 @@ export async function directNegotiate(text: string, tools: readonly ToolSpec[], 
   return out.outcome === 'agreed' ? `Agreed ${out.agreedPriceUsdc} USDC with ${best.x.id}. Say “buy the ${(best.x.category ?? 'item').replace(/_/g, ' ')}” to pay that price; Tollgate holds the shop to it.` : `No deal. ${out.why ?? ''}`.trim()
 }
 
+const HIRE_ASK = /^\s*(?:please\s+)?hire\s+(?:an?\s+|some\s+)?(?:agent|seller|worker|freelancer|someone|expert)?\s*(?:to|for)\s+(.{8,300}?)(?:[,;]?\s+(?:with\s+a\s+|my\s+)?budget(?:\s+(?:of|is))?\s+\$?(\d+(?:\.\d+)?)\s*(?:usdc)?)?\s*[.!]?\s*$/i
+const YES = /^\s*(?:yes|yeah|yep|ok|okay|sure|go ahead|do it|please do|hire (?:them|him|her|it))(?:\s+please)?\s*[.!]?\s*$/i
+const NOT_HANDLES = new Set(['them', 'him', 'her', 'it', 'an', 'a', 'someone', 'agent', 'seller', 'worker', 'freelancer', 'expert', 'some'])
+
+/**
+ * Hiring in two plain steps, done in code because a small model often writes about hiring without calling a tool:
+ *   "hire an agent to summarise this brief, budget 0.30 USDC"  -> search the market, propose the best seller that fits (nothing is paid)
+ *   "yes" / "hire sarah-studio"                                 -> hire that seller with the owner's original request
+ * The hire tool still runs Tollgate's checks and waits for the owner's approval on the phone. Anything unclear goes to the model.
+ */
+export async function directHire(history: readonly ChatTurn[], tools: readonly ToolSpec[]): Promise<string | undefined> {
+  const find = tools.find(t => t.name === 'find_sellers'), hire = tools.find(t => t.name === 'hire')
+  const owners = history.filter(t => t.from === 'owner')
+  const text = owners.at(-1)?.text ?? ''
+  if (!find || !hire || /[?\n]/.test(text)) return undefined
+
+  const ask = HIRE_ASK.exec(text)
+  if (ask) {
+    const job = (ask[1] ?? '').trim(), budget = ask[2] ? Number(ask[2]) : Infinity
+    const seen = new Map<string, { handle: string; category: string; priceUsdc: string | null; deliveredJobs: number }>()
+    let cap = Infinity
+    const keywords = [...new Set(words(job).filter(w => w.length > 3))].slice(0, 4)
+    for (const keyword of keywords.length ? keywords : [undefined]) {
+      const r = safeJson(await find.run(keyword ? { keyword } : {})) as { sellers?: { handle: string; category: string; priceUsdc: string | null; deliveredJobs: number }[]; maxPerPaymentUsdc?: string }
+      if (r.maxPerPaymentUsdc !== undefined) cap = Number(r.maxPerPaymentUsdc)
+      for (const x of r.sellers ?? []) seen.set(x.handle, x)
+    }
+    const fit = [...seen.values()].filter(x => x.priceUsdc !== null && Number(x.priceUsdc) <= Math.min(budget, cap)).sort((a, b) => b.deliveredJobs - a.deliveredJobs || Number(a.priceUsdc) - Number(b.priceUsdc))
+    const best = fit[0]
+    if (!best) return `I found no market seller for that within ${Number.isFinite(Math.min(budget, cap)) ? `${Math.min(budget, cap).toFixed(2)} USDC` : 'your limits'}. Nothing was hired or paid. Try a higher budget or describe the job differently.`
+    return `I found ${best.handle} (${best.category}): ${best.priceUsdc} USDC, ${best.deliveredJobs} jobs delivered. Say “hire ${best.handle}” and I’ll send them this job. You approve the payment on your phone, and nothing is paid before that.`
+  }
+
+  const named = /^\s*hire\s+([a-z0-9][a-z0-9-]{1,62})\s*[.!]?\s*$/i.exec(text)?.[1]
+  const proposal = [...history].reverse().find(t => t.from === 'agent')?.text ?? ''
+  const proposed = /(?:found|hire)\s+“?([a-z0-9][a-z0-9-]{1,62})”?/i.exec(proposal)?.[1]
+  const handle = named && !NOT_HANDLES.has(named.toLowerCase()) ? named.toLowerCase() : YES.test(text) && /\bhire\b/i.test(proposal) && proposed && !NOT_HANDLES.has(proposed.toLowerCase()) ? proposed.toLowerCase() : undefined
+  if (!handle) return undefined
+  const job = [...owners].reverse().find(t => HIRE_ASK.test(t.text))?.text
+  if (!job) return undefined
+  const out = safeJson(await hire.run({ handle, instructions: job })) as { outcome?: string; why?: string }
+  return out.outcome === 'paid' ? 'The job is done. The seller’s result is in the message above.' : `Nothing was hired or paid. ${out.why ?? ''}`.trim()
+}
+
 /** A reply a person can read: JSON and code blocks the model pasted are turned into plain lines, or dropped. */
 export function readable(text: string): string {
   const tidy = (raw: string): string => {
@@ -457,6 +506,28 @@ export function toMessages(history: readonly ChatTurn[]): Anthropic.Beta.BetaMes
   }
   while (out.at(-1)?.role === 'assistant') out.pop()
   return out
+}
+
+export type SellerFacts = { handle: string; category?: string; priceUsdc: string | null; deliveredJobs: number }
+
+/**
+ * A reply that states a seller's price or how many jobs they delivered must match what the market search returned in this message.
+ * Quoting a number with no search behind it, or a number that differs, is replaced by the real figures (or by an honest "I have not looked").
+ * A small model once said "0.20 USDC, 3 jobs delivered" for a listing that charged 0.10 and had delivered none.
+ */
+export function correctSellerClaims(text: string, seen: ReadonlyMap<string, SellerFacts>): string {
+  const claimsFacts = /\b(they|it|he|she|seller)\s+charges?\b[^.\n]{0,30}\d+(\.\d+)?\s*usdc|\b\d+\s+(jobs?|tasks?)\s+(delivered|completed)|\bdelivered\s+\d+\s+jobs?|\b\d+(\.\d+)?\s*usdc\b[^.\n]{0,20}\b\d+\s+jobs?\s+delivered/i.test(text)
+  if (!claimsFacts) return text
+  if (seen.size === 0) return 'I have not looked at the market for this message, so I cannot give you a seller’s price or track record. Nothing was hired or paid. Ask me to hire an agent for a job and I will search first.'
+  const named = [...seen.values()].find(x => new RegExp(`(^|[^a-z0-9-])${x.handle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^a-z0-9-]|$)`, 'i').test(text))
+  if (!named) return text
+  const price = named.priceUsdc === null ? null : Number(named.priceUsdc)
+  const nums = [...text.matchAll(/(\d+(?:\.\d+)?)\s*usdc/gi)].map(m => Number(m[1]))
+  const jobs = [...text.matchAll(/\b(\d+)\s+(?:jobs?|tasks?)\b/gi)].map(m => Number(m[1]))
+  const priceOk = nums.length === 0 || (price !== null && nums.every(n => Math.abs(n - price) < 1e-9))
+  const jobsOk = jobs.length === 0 || jobs.every(n => n === named.deliveredJobs)
+  if (priceOk && jobsOk) return text
+  return `The market lists ${named.handle}${named.category ? ` (${named.category})` : ''} at ${price === null ? 'no price I could read' : `${named.priceUsdc} USDC`}, with ${named.deliveredJobs} ${named.deliveredJobs === 1 ? 'job' : 'jobs'} delivered. Nothing was hired or paid. Say “hire ${named.handle}” if you want them.`
 }
 
 /** The reply says a payment is under way or waiting for approval. Only true to the owner if buy or hire actually ran. */

@@ -93,6 +93,11 @@ describe('createGateway: fails closed', () => {
 })
 
 describe('mandateForNewAgent: a phone-created agent can never pay without the owner', () => {
+  it('allows near:mainnet only when the agent may pay the NEAR AI Agent Market (else check C04 refuses every hire)', () => {
+    const base = { name: 'a1', budget: '1.00', perPayment: '0.25', now: new Date('2026-11-07T10:00:00Z') }
+    expect(mandateForNewAgent({ ...base, hosts: ['127.0.0.1'] }).allowedOriginNetworks).toEqual(['near'])
+    expect(mandateForNewAgent({ ...base, hosts: ['127.0.0.1', '*.market.near.ai'] }).allowedOriginNetworks).toEqual(['near', 'near:mainnet'])
+  })
   it('always requires approval for every payment', () => {
     const m = mandateForNewAgent({ name: 'research-agent', budget: '0.60', perPayment: '0.25', hosts: ['127.0.0.1'], now: new Date('2026-11-07T10:00:00Z') })
     expect(m.approval.above).toBe('0.00')

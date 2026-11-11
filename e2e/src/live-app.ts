@@ -6,7 +6,7 @@ import { createTollgate, nearRpcRail, x402NearRow } from 'trytollgate'
 import { HttpMarket } from '@tollgate/core/market'
 import { NEAR_USDC_CONTRACT } from '@tollgate/core'
 import { plannerReady } from '@tollgate/demo-agent/src/planner.ts'
-import { runTask, type BuyOutcome, type Challenge, type Decision, type Deal, type HaggleOutcome, type MarketSeller, type WorkerIO } from '@tollgate/demo-agent/src/worker.ts'
+import { blockedWhy, runTask, type BuyOutcome, type Challenge, type Decision, type Deal, type HaggleOutcome, type MarketSeller, type WorkerIO } from '@tollgate/demo-agent/src/worker.ts'
 import { runNegotiation } from '@tollgate/demo-agent/src/negotiate.ts'
 import type { Offer, PriceOffer } from '@tollgate/core'
 import { BRAIN, CHAT_MODEL, converse, OLLAMA_CHAT_MODEL, warmOllama, type DealBook } from '@tollgate/demo-agent/src/claude-agent.ts'
@@ -260,7 +260,7 @@ Ctrl+C stops everything.`)
     if (BigInt(row.amount) > f.usdcMicro) return stop(`The seller wants ${Number(row.amount) / 1e6} USDC; the account holds ${(Number(f.usdcMicro) / 1e6).toFixed(2)}. Nothing was paid.`)
     const ask = async () => (await j.call('POST', '/v1/authorize', { mandateId: j.mandateId, host: shop.host, purpose: job.slice(0, 240), challenge: { x402: { requestId, accepted: row } }, payer: near.accountId })).json as Decision
     let d = await ask()
-    if (d.decision === 'DENY') return stop(`Tollgate blocked it (${d.failedCheck ?? 'a check'}${d.reason ? `: ${d.reason}` : ''}). Nothing was paid.`, d.decisionId)
+    if (d.decision === 'DENY') return stop(`Tollgate blocked it (${d.failedCheck ?? 'a check'}): ${blockedWhy(d)}. Nothing was paid.`, d.decisionId)
     if (d.decision === 'NEEDS_APPROVAL') {
       await say(`I want to hire ${shop.host.split('.')[0]} for ${Number(row.amount) / 1e6} USDC. Approve it in Tollgate to go ahead. It is paid only if the seller delivers.`, { decisionId: d.decisionId })
       const until = Date.now() + Math.min(APPROVAL_WAIT_MS, (row.maxTimeoutSeconds - 30) * 1000)

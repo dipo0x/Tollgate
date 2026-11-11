@@ -43,15 +43,15 @@ Never commit the finished payload. It holds personal data.
 > Draft here, then read it once more before sending. Lead with the security story; the
 > demo agent carries the agent-economy story.
 
-AI agents that can pay can be tricked into paying. The payment request comes from an untrusted server and the agent follows it: an inflated price, a swapped payee, a fake deposit address, a hijacked refund, a replay, or a prompt injection. Spending caps limit the damage; they do not check that this request is the one the owner allowed.
+AI agents that can pay can be tricked into paying. The payment request comes from an untrusted server and the agent follows it: an inflated price, a swapped payee, a fake deposit address, a hijacked refund, a replay, a prompt injection. Caps limit the damage; they do not check that this is the request the owner allowed.
 
-Tollgate is a payment firewall between an agent and its wallet. Twelve fail-closed checks compare each request with a mandate the owner wrote and with facts Tollgate fetches itself (an independent NEAR Intents / 1Click quote and deposit record). The result is ALLOW, DENY or NEEDS_APPROVAL. Only an ALLOW reaches a separate signer, which rebuilds the transaction from the stored decision, applies its own cap and signs it once. It pays from a NEAR account, as a NEP-141 USDC transfer to the 1Click deposit address. Every action goes into a hash-chained audit log in Postgres.
+Tollgate is a payment firewall between an agent and its wallet. Twelve fail-closed checks compare each request with a mandate the owner wrote and with facts Tollgate fetches itself: an independent NEAR Intents / 1Click quote and deposit record, or the NEAR AI Agent Market's published payee and price. Only an ALLOW reaches a separate signer, which rebuilds the transaction from the stored decision, applies its own cap and signs it once, as a NEP-141 USDC transfer on NEAR. Every action goes into a hash-chained audit log.
 
-The same gateway runs the agent economy inside the owner's limits: negotiation bounded by a price ceiling, hired workers paid from a carved-out budget and released only when their work passes a check, and earnings credited only against a verified, fresh receipt.
+The owner runs it from a phone: create an agent by chatting, set its budget, approve each payment with Face ID, freeze it with one tap. Inside those limits the agent spends, negotiates under a price ceiling, hires sellers on the NEAR AI Agent Market or sub-agents on a carved-out budget released only when the work passes a check, and earns: a customer's USDC payment counts only after the gateway reads the transaction from the NEAR network itself.
 
-A benchmark of 16 attacks and 5 ordinary payments runs offline: Tollgate stopped 16 of 16 and allowed 5 of 5; a naive agent stopped 0 and a modelled stock policy 5. One command, `pnpm demo`, shows the whole story, and an owner dashboard shows every decision with the evidence behind each check. Once, against the live 1Click API, a real deposit address was allowed and three tampered copies of it were denied. The SDK is on npm as trytollgate. Limits are stated in the README: the benchmark and demo use simulated merchants, chain and customer, the demo agent is scripted unless an optional local model is switched on, it has made one real 0.21 USDC payment (transaction on nearblocks.io), and apart from that one payment, nothing was run with real funds.
+Evidence (limits in the README): an offline benchmark of 16 attacks and 5 ordinary payments (Tollgate stopped 16 of 16 and allowed 5 of 5; a naive agent stopped 0, a modelled stock policy 5); `pnpm demo` plays spend, negotiate, hire and earn against labelled simulated counterparts; real runs on NEAR mainnet: a 0.206712 USDC payment through 1Click, two market hires (0.05 and 0.10 USDC), one 0.10 USDC sale of our own listing, and the phone's spend and negotiate runs. SDK on npm (trytollgate); docs at docs.trytollgate.xyz. The benchmark merchants are simulated, the reference seller is ours, and Tollgate cannot stop a compromised signer host, a malicious approver, or a merchant that delivers nothing.
 
-*(Count the characters before sending: 20–2000. This draft is about 1,650.)*
+*(Count the characters before sending: 20–2000. Recount after any edit; update the real-run list if the earning or hiring runs land before sending.)*
 
 ## 2b. Draft of the X post
 
@@ -95,13 +95,13 @@ Read verbatim to Oladipo, and only then set `consent: true`:
 ## 5. Before sending
 
 - [ ] Repository is public (Oladipo flips it; deadline 2026-11-14T23:59Z)
-- [ ] SDK published to npm as `trytollgate` (Oladipo only: needs his npm login and two-factor code; see "Publishing the SDK" below). `@tollgate/sdk`, `tollgate-sdk` and `tollgate` are taken by other people, and the `@tollgate` scope is not ours.
-- [ ] `LICENSE` present — MIT
+- [x] SDK published to npm as `trytollgate` (done; see "Publishing the SDK" below for a new version). `@tollgate/sdk`, `tollgate-sdk` and `tollgate` are taken by other people, and the `@tollgate` scope is not ours.
+- [x] `LICENSE` present — MIT
 - [ ] README runs clean from a fresh clone on a machine that has never seen this project
-- [ ] Benchmark result reproducible in under 5 minutes, offline, with no keys
+- [x] Benchmark result reproducible in under 5 minutes, offline, with no keys (`pnpm bench`, about 2 s after install)
 - [ ] Demo video recorded, under ~2 minutes, showing one complete user action to a visible result
 - [ ] X post published by Oladipo: says it was built at NEAR HACKATHON, tags `@NEARProtocol` and `#NEARHackathon`, video or screenshots attached. `@NearLegion` and `@NearBuilders` optional.
-- [ ] Tag `v1.0.0`; the submission commit hash goes in the X post and the form
+- [ ] Move the `hackathon-submission` tag to the final commit (`git tag -f hackathon-submission && git push --tags` — the push is Oladipo's); the README tells judges to diff `pre-hackathon..hackathon-submission`
 - [ ] Claims checklist reviewed: every number traces to a recorded result, everything simulated is labelled
 - [ ] Secret scan clean; no `.env`, key or payload committed
 - [ ] Full JSON payload printed and approved by Oladipo

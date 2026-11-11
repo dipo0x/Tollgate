@@ -14,6 +14,14 @@ import type { SpendCatalogEntry } from './planner.ts'
 
 export type TaskStatus = 'working' | 'done' | 'failed'
 export type Challenge = { id: string; amount: string; recipient: string; expires: string; [k: string]: unknown }
+/** What a blocked payment says: the check in plain words, and the reason its own evidence gives (for example the network it used and the ones allowed). */
+export function blockedWhy(d: Pick<Decision, 'failedCheck' | 'reason' | 'checks'>): string {
+  const failed = d.checks?.find(c => c.id === d.failedCheck && c.result === 'fail')
+  const ev = (failed?.evidence ?? {}) as { reason?: string; got?: unknown; allowed?: unknown }
+  const why = d.reason ?? ev.reason
+  const detail = ev.got !== undefined ? ` (it used ${JSON.stringify(ev.got)}${ev.allowed !== undefined ? `; allowed: ${JSON.stringify(ev.allowed)}` : ''})` : ''
+  return `“${CHECK_PLAIN[d.failedCheck ?? ''] ?? 'a check'}” failed${why ? `: ${why}` : ''}${detail}`
+}
 export type Decision = { decision: 'ALLOW' | 'DENY' | 'NEEDS_APPROVAL'; decisionId: string; failedCheck?: string; reason?: string; checks?: { id: string; name: string; result: string; evidence?: unknown }[]; bind?: { to: string; amount: string } }
 
 export type WorkerIO = {
@@ -74,7 +82,7 @@ const micro = (usd: number) => BigInt(Math.round(usd * 1e6))
 const MIN_GAS_YOCTO = 65n * 10n ** 21n // 0.065 NEAR
 const usd = (m: bigint) => (Number(m) / 1e6).toFixed(2)
 /** The same plain names the app shows (apps/mobile/src/lib/format.ts CHECK_NAME). */
-const CHECK_PLAIN: Record<string, string> = {
+export const CHECK_PLAIN: Record<string, string> = {
   C01: 'Mandate is valid', C02: 'Shop is allowed', C03: 'Request is sane', C04: 'Network and asset allowed', C05: 'Payee matches',
   C06: '1Click agrees', C07: 'Price is fair', C08: 'Refund comes back to you', C09: 'Within budget', C10: 'Not a replay', C11: 'Risk is low', C12: 'Your approval',
 }

@@ -640,7 +640,7 @@ export class Gateway {
     if (rec.state !== 'allowed' || !rec.depositAddress) return fail(409, 'not_reconcilable', `a decision in state "${rec.state}" has nothing to reconcile`)
     // A market (x402) payment is settled by the market's relayer when the hired agent delivers. 1Click knows nothing about it, so
     // asking 1Click would be meaningless. The amount stays HELD, which the budget counts as spent: the safe direction to be wrong in.
-    if (rec.bind?.chain === X402_NEAR_NETWORK) return fail(409, 'reconcile_not_supported', 'market payments settle on delivery; the amount stays held (counted as spent) until chain reconciliation is built')
+    if (rec.bind?.chain === X402_NEAR_NETWORK) return this.reconcileMarket(rec)
 
     let res
     try { res = await this.d.oneClick.status(rec.depositAddress) } catch (err) {
@@ -665,6 +665,94 @@ export class Gateway {
       return ok({ decisionId, state: 'released', status })
     }
     return ok({ decisionId, state: 'allowed', status })
+  }
+
+
+  /**
+   * A market (x402) payment is settled by the market's relayer, on the chain, when the hired agent delivers. The signer only signed an
+   * authorisation, so the hash we stored is not a transaction. Find the real transfer on the chain (same payer, same payee, exact
+   * amount, inside the window) and only then mark it settled. If the authorisation has long expired with no transfer, it can never
+   * settle, so the hold is released. Anything uncertain leaves the hold in place: the safe direction to be wrong in.
+   */
+  private async reconcileMarket(rec: DecisionRecord): Promise<Out> {
+    const sig = await this.d.store.signatures.get(rec.decisionId)
+    if (!sig || !rec.bind || !rec.amount) return ok({ decisionId: rec.decisionId, state: 'allowed', status: 'not_signed' })
+    if (!this.d.chain?.settlementOf) return fail(409, 'reconcile_not_supported', 'This gateway cannot read the NEAR network, so it cannot confirm a market payment. The amount stays held.')
+    const now = this.d.clock()
+    const found = await this.d.chain.settlementOf({ from: sig.from, to: rec.bind.to, amountMicro: toMicro(rec.amount), since: new Date(Date.parse(rec.createdAt) - 60_000), until: now })
+    return this.d.store.locks.run(`decision:${rec.decisionId}`, async () => {
+      const cur = await this.d.store.decisions.get(rec.decisionId)
+      if (!cur || cur.state !== 'allowed') return ok({ decisionId: rec.decisionId, state: cur?.state ?? 'allowed', status: 'already_resolved' })
+      if (found.ok) {
+        await this.d.ledger.settle(rec.decisionId)
+        await this.d.store.decisions.update(rec.decisionId, { state: 'settled' })
+        await this.audit('payment.settled', { decisionId: rec.decisionId, source: 'chain', settlementTx: found.txHash, settledAt: found.settledAt.toISOString(), amount: rec.amount })
+        this.reads.invalidate()
+        return ok({ decisionId: rec.decisionId, state: 'settled', status: 'SETTLED_ON_CHAIN', settlementTx: found.txHash })
+      }
+      // The signed authorisation is only valid until the challenge expires; the market settles when it delivers, inside that time.
+      // Give the chain index a generous grace, then let go of the hold: it can no longer be settled.
+      const dead = Date.parse(rec.bind!.expiresAt) + 30 * 60_000
+      if (now.getTime() > dead) {
+        await this.d.ledger.release(rec.decisionId)
+        await this.d.store.decisions.update(rec.decisionId, { state: 'released' })
+        await this.audit('payment.released', { decisionId: rec.decisionId, status: 'EXPIRED_UNSETTLED', reason: 'the market never put the signed payment on the chain and its authorisation has expired' })
+        this.reads.invalidate()
+        return ok({ decisionId: rec.decisionId, state: 'released', status: 'EXPIRED_UNSETTLED' })
+      }
+      return ok({ decisionId: rec.decisionId, state: 'allowed', status: 'not_settled_yet', detail: found.why })
+    })
+  }
+
+
+  /**
+   * The owner cancels a payment that is "in progress" and set money aside, when the money provably never left.
+   *  - Never signed: nothing exists that could spend it, so the hold is simply let go.
+   *  - Signed (a NEAR transaction): only if the chain itself says it has never seen that transaction AND it is older than a signed
+   *    transaction stays valid (about a day), so it can no longer be broadcast by anyone. Otherwise it is refused and the hold stays.
+   *  - A SIGNED market (x402) payment is never cancelled here: its authorisation may still be cashed. It is settled or released by reconcile.
+   * The check and the release happen under the same lock the signer takes, so a payment cannot be signed while it is being cancelled.
+   */
+  async cancelUnmoved(decisionId: string): Promise<Out> {
+    return this.d.store.locks.run(`decision:${decisionId}`, async () => {
+      const rec = await this.d.store.decisions.get(decisionId)
+      if (!rec) return fail(404, 'not_found', `no decision ${decisionId}`)
+      if (rec.state !== 'allowed') return fail(409, 'not_cancellable', `a decision in state "${rec.state}" is not in progress`)
+      const sig = await this.d.store.signatures.get(decisionId)
+      // A signed market authorisation may still be cashed by the market. One that was never signed cannot be.
+      if (rec.bind?.chain === X402_NEAR_NETWORK && sig) return fail(409, 'market_payment', 'A market payment may still be cashed by the market, so it is not cancelled here. Reconcile it instead.')
+      if (sig) {
+        const dead = Date.parse(rec.createdAt) + 26 * 60 * 60_000 // a signed NEAR transaction is valid for about 24 hours
+        if (this.d.clock().getTime() < dead) return fail(409, 'might_still_send', 'This payment was signed less than a day ago. The signed transaction could still be sent, so it cannot be cancelled yet.')
+        const state = this.d.chain?.txState ? await this.d.chain.txState(sig.txHash, sig.from) : 'unknown'
+        if (state !== 'absent') return fail(409, 'not_proven_unsent', state === 'present' ? 'The chain has this transaction, so the money may have moved. Reconcile it instead.' : 'The chain could not confirm this transaction was never sent, so the hold stays.')
+      }
+      await this.d.ledger.release(decisionId)
+      await this.d.store.decisions.update(decisionId, { state: 'released' })
+      await this.audit('payment.released', { decisionId, mandateId: rec.mandateId, status: 'CANCELLED_BY_OWNER', reason: sig ? 'signed, and the chain has never seen the transaction' : 'never signed' })
+      this.reads.invalidate()
+      return ok({ decisionId, state: 'released', status: 'CANCELLED_BY_OWNER' })
+    })
+  }
+
+  /** Settle every signed market payment whose transfer has reached the chain. Run from the sweep timer. Errors leave holds as they are. */
+  async reconcileMarketPayments(): Promise<number> {
+    let settled = 0
+    for (const d of await this.d.store.decisions.list({ state: 'allowed', limit: 50 })) {
+      if (d.bind?.chain !== X402_NEAR_NETWORK) continue
+      const r = await this.reconcileMarket(d).catch(() => undefined)
+      if ((r?.body as { state?: string } | undefined)?.state === 'settled') settled++
+    }
+    return settled
+  }
+
+  /** The real transaction that settled a market payment, from the audit chain. Absent until it has settled. */
+  async settlementTxOf(decisionId: string): Promise<string | undefined> {
+    for (const e of (await this.d.audit.all()).reverse()) {
+      const p = e.payload as { decisionId?: string; settlementTx?: string }
+      if (e.type === 'payment.settled' && p.decisionId === decisionId && p.settlementTx) return p.settlementTx
+    }
+    return undefined
   }
 
   // ---- negotiation -----------------------------------------------------------------------

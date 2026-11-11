@@ -18,6 +18,8 @@ export default function Home() {
   const now = useNow()
   const load = useCallback(() => loaders.home(gw), [gw])
   const { data, error, loading, refresh } = usePoll(load, 4000, 'home')
+  const loadEarned = useCallback(() => loaders.earnings(gw), [gw])
+  const earned = usePoll(loadEarned, 10_000, 'earnings').data
 
   const active = (data?.mandates ?? []).filter(m => m.status === 'active' && !m.parentId)
   // Agents' budgets are permission to spend, not money. What can really be spent is never more than the payment account holds.
@@ -69,7 +71,14 @@ export default function Home() {
             </View>
           </View>
 
-          <Pressable onPress={() => router.navigate('/(tabs)/agents')} style={{ marginTop: 22, height: 48, paddingHorizontal: 16, borderRadius: 24, backgroundColor: C.card, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          <Pressable onPress={() => router.push('/earnings')} style={{ marginTop: 22, height: 48, paddingHorizontal: 16, borderRadius: 24, backgroundColor: C.card, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+            <Icon name="plus" size={18} color={earned?.any ? C.green : undefined} />
+            <T style={{ flex: 1, fontSize: 15 }}>Earned</T>
+            <T style={{ fontVariant: ['tabular-nums'], color: earned?.any ? C.green : C.text2 }}>{earned ? `${earned.any ? '+' : ''}${money(earned.total)} USDC` : '—'}</T>
+            <Icon name="chev" size={14} color={C.text3} width={2} />
+          </Pressable>
+
+          <Pressable onPress={() => router.navigate('/(tabs)/agents')} style={{ marginTop: 10, height: 48, paddingHorizontal: 16, borderRadius: 24, backgroundColor: C.card, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
             <Icon name="agents" size={18} />
             <T style={{ flex: 1, fontSize: 15 }}>{agents.length === 1 ? '1 agent running' : `${agents.length} agents running`}</T>
             <T v="sub" lines={1} style={{ maxWidth: 140 }}>{agents.join(', ')}</T>

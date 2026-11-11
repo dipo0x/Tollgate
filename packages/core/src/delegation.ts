@@ -135,7 +135,15 @@ export async function hire(deps: DelegationDeps, parentId: string, req: HireRequ
   // Staged payment: only the upfront share is spendable now; the rest is held until the work passes.
   const usable = (total * BigInt(Math.round(upfrontPct * 100))) / 10_000n
   const heldBack = total - usable
-  if (heldBack > 0n) await ledger.reserve(req.id, stageHold(req.id), heldBack)
+  if (heldBack > 0n) {
+    const staged = await ledger.reserve(req.id, stageHold(req.id), heldBack)
+    if (!staged.ok) {
+      // The hold could not be placed, so the worker would have its whole budget at once. Fail closed: the parent gets its money
+      // back and no mandate or token is made, so the empty child budget can never be spent from (C01 has no mandate to pass).
+      await ledger.release(delegationHold(req.id))
+      return refuse('invalid_amount', `the held-back share could not be reserved (${staged.reason})`)
+    }
+  }
 
   const { negotiation: _noTalks, ...inherited } = p // a worker does not haggle on its parent's behalf
   const child = MandateSchema.parse({

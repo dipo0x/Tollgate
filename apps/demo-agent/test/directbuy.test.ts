@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
-import { directBuy, directNegotiate, type ToolSpec } from '../src/claude-agent.ts'
+import { directBuy, directHire, directNegotiate, type ToolSpec } from '../src/claude-agent.ts'
 
 const shops = [{ id: 'svc_brief', category: 'market_data' }, { id: 'svc_audit', category: 'security_audit' }]
 const tools = (calls: unknown[], answer = { outcome: 'paid' } as Record<string, unknown>): ToolSpec[] => [{ name: 'buy', description: '', schema: z.object({}), run: async raw => { calls.push(raw); return JSON.stringify(answer) } }]
@@ -74,5 +74,72 @@ describe('a price agreed in one message is paid in the next', () => {
     await converse([{ from: 'owner', text: 'buy the market data brief' }], w.io as never, lim, { dealBook })
     expect(w.billed).toEqual([undefined])
     expect(dealBook.size).toBe(0)
+  })
+})
+
+describe('directHire', () => {
+  const sellers = [
+    { handle: 'sarah-studio', category: 'research', priceUsdc: '0.30', deliveredJobs: 12 },
+    { handle: 'cheap-bot', category: 'research', priceUsdc: '0.10', deliveredJobs: 1 },
+    { handle: 'pricey', category: 'research', priceUsdc: '0.90', deliveredJobs: 50 },
+  ]
+  const kit = (hired: unknown[], answer: Record<string, unknown> = { outcome: 'paid' }): ToolSpec[] => [
+    { name: 'find_sellers', description: '', schema: z.object({}), run: async () => JSON.stringify({ sellers, maxPerPaymentUsdc: '0.40' }) },
+    { name: 'hire', description: '', schema: z.object({}), run: async raw => { hired.push(raw); return JSON.stringify(answer) } },
+  ]
+  const ASK = 'hire an agent to summarise this market brief, budget 0.30 USDC'
+
+  it('proposes the best seller that fits the budget and limit, and pays nothing', async () => {
+    const hired: unknown[] = []
+    const r = await directHire([{ from: 'owner', text: ASK }], kit(hired))
+    expect(r).toMatch(/I found sarah-studio \(research\): 0\.30 USDC, 12 jobs delivered\. Say “hire sarah-studio”/)
+    expect(hired).toEqual([])
+  })
+  it('says so when no seller fits', async () => {
+    const r = await directHire([{ from: 'owner', text: 'hire an agent to summarise this market brief, budget 0.05 USDC' }], kit([]))
+    expect(r).toMatch(/found no market seller.*0\.05 USDC.*Nothing was hired or paid/)
+  })
+  it('hires the proposed seller on "yes", with the original request as the job', async () => {
+    const hired: unknown[] = []
+    const history = [{ from: 'owner' as const, text: ASK }, { from: 'agent' as const, text: 'I found sarah-studio (research): 0.30 USDC, 12 jobs delivered. Say “hire sarah-studio” and I’ll send them this job.' }, { from: 'owner' as const, text: 'yes please' }]
+    expect(await directHire(history, kit(hired))).toMatch(/job is done/)
+    expect(hired).toEqual([{ handle: 'sarah-studio', instructions: ASK }])
+  })
+  it('hires a named seller, and reports why nothing was hired', async () => {
+    const hired: unknown[] = []
+    const history = [{ from: 'owner' as const, text: ASK }, { from: 'agent' as const, text: 'ok' }, { from: 'owner' as const, text: 'hire cheap-bot' }]
+    expect(await directHire(history, kit(hired, { outcome: 'not_paid', why: 'The payment cap is 0.25.' }))).toBe('Nothing was hired or paid. The payment cap is 0.25.')
+    expect(hired).toEqual([{ handle: 'cheap-bot', instructions: ASK }])
+  })
+  it('leaves anything unclear to the model', async () => {
+    const hired: unknown[] = []
+    for (const history of [
+      [{ from: 'owner' as const, text: 'yes please' }],
+      [{ from: 'owner' as const, text: ASK }, { from: 'agent' as const, text: 'Shall I buy it?' }, { from: 'owner' as const, text: 'yes' }],
+      [{ from: 'owner' as const, text: 'who should I hire?' }],
+      [{ from: 'owner' as const, text: ASK }, { from: 'agent' as const, text: 'x' }, { from: 'owner' as const, text: 'hire them' }],
+    ]) expect(await directHire(history, kit(hired))).toBeUndefined()
+    expect(hired).toEqual([])
+  })
+})
+
+import { correctSellerClaims } from '../src/claude-agent.ts'
+describe('seller claims are checked against the market search', () => {
+  const seen = new Map([['tollgate-briefs', { handle: 'tollgate-briefs', category: 'research', priceUsdc: '0.1000', deliveredJobs: 0 }]])
+  it('corrects a made-up price and job count', () => {
+    const out = correctSellerClaims('I found tollgate-briefs. They charge 0.20 USDC and have delivered 3 jobs. Shall I hire them?', seen)
+    expect(out).toContain('0.1000 USDC')
+    expect(out).toContain('0 jobs delivered')
+    expect(out).toContain('Nothing was hired or paid')
+  })
+  it('leaves a correct claim alone', () => {
+    const t = 'tollgate-briefs charges 0.1000 USDC and has 0 jobs delivered.'
+    expect(correctSellerClaims(t, seen)).toBe(t)
+  })
+  it('refuses to quote figures when no search ran', () => {
+    expect(correctSellerClaims('I found tollgate-briefs. They charge 0.20 USDC.', new Map())).toContain('have not looked at the market')
+  })
+  it('leaves ordinary replies alone', () => {
+    expect(correctSellerClaims('Sure, what is the job?', new Map())).toBe('Sure, what is the job?')
   })
 })

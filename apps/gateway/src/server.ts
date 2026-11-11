@@ -41,6 +41,7 @@ console.log(JSON.stringify({
 // Money held for payments that were allowed but never made is returned when its challenge expires, even if no request ever comes in.
 const sweep = setInterval(() => {
   gateway.releaseStaleAllowed().catch(e => console.error('sweep failed:', e instanceof Error ? e.message : e))
+  gateway.reconcileMarketPayments().catch(e => console.error('market reconcile failed:', e instanceof Error ? e.message : e))
   gateway.closeAbandonedTasks().catch(e => console.error('task sweep failed:', e instanceof Error ? e.message : e))
 }, 30_000)
 sweep.unref()

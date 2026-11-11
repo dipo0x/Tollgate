@@ -17,6 +17,49 @@ export interface NearRail {
 /** What a finished transaction really did on the chain: the USDC transfers in it, who sent them, and when. Never believes the caller. */
 export interface ChainReader {
   usdcTransfers(txHash: string, sender: string): Promise<TransferLookup>
+  /**
+   * Finds the transaction that really settled a market (x402) payment. The signer only signs an authorisation; the market's relayer
+   * puts it on the chain later, under a hash nobody here knew in advance. So look through the payer's recent transactions for a
+   * successful USDC transfer of exactly this amount, from this payer to this payee, inside the time window, and verify it with the node.
+   */
+  settlementOf?(q: SettlementQuery): Promise<SettlementLookup>
+  /** Is this transaction on the chain? `absent` only when the node itself says it has never seen it. Any other trouble is `unknown`. */
+  txState?(txHash: string, sender: string): Promise<'present' | 'absent' | 'unknown'>
+}
+
+export type SettlementQuery = { from: string; to: string; amountMicro: bigint; since: Date; until: Date }
+export type SettlementLookup = { ok: true; txHash: string; settledAt: Date } | { ok: false; why: string }
+
+type TxLogResult = {
+  transaction?: { hash?: string }
+  transaction_outcome?: { block_hash?: string }
+  status?: { Failure?: unknown; SuccessValue?: unknown }
+  receipts_outcome?: { outcome?: { executor_id?: string; logs?: string[]; status?: { Failure?: unknown } } }[]
+}
+
+/**
+ * The USDC transfers a finished transaction really made, read from the token contract's own event logs. This is how a transfer made by
+ * a relayer on someone's behalf (a NEP-366 delegate action) is seen: the transaction's own action is the delegate, but the contract logs
+ * which account lost USDC and which gained it. Counts only logs written by the USDC contract, and only if nothing in the transaction failed.
+ */
+export function parseFtTransferEvents(res: TxLogResult): { from: string; to: string; amountMicro: bigint }[] {
+  if (!res.status || res.status.Failure !== undefined || res.status.SuccessValue === undefined) return []
+  if (res.receipts_outcome?.some(r => r.outcome?.status?.Failure !== undefined)) return []
+  const out: { from: string; to: string; amountMicro: bigint }[] = []
+  for (const r of res.receipts_outcome ?? []) {
+    if (r.outcome?.executor_id !== NEAR_USDC_CONTRACT) continue
+    for (const log of r.outcome.logs ?? []) {
+      if (!log.startsWith('EVENT_JSON:')) continue
+      try {
+        const ev = JSON.parse(log.slice('EVENT_JSON:'.length)) as { standard?: string; event?: string; data?: { old_owner_id?: unknown; new_owner_id?: unknown; amount?: unknown }[] }
+        if (ev.standard !== 'nep141' || ev.event !== 'ft_transfer') continue
+        for (const d of ev.data ?? []) {
+          if (typeof d.old_owner_id === 'string' && typeof d.new_owner_id === 'string' && typeof d.amount === 'string' && /^\d{1,30}$/.test(d.amount)) out.push({ from: d.old_owner_id, to: d.new_owner_id, amountMicro: BigInt(d.amount) })
+        }
+      } catch { /* a log we cannot read is not counted */ }
+    }
+  }
+  return out
 }
 
 export type UsdcTransfers = { from: string; txHash: string; settledAt: Date; transfers: { to: string; amountMicro: bigint }[] }
@@ -62,7 +105,7 @@ class NearRpcError extends Error {
 
 type Rpc = <T>(method: string, params: unknown) => Promise<T>
 
-export function nearRail(rpcUrl: string, doFetch: typeof fetch = fetch): NearRail & ChainReader {
+export function nearRail(rpcUrl: string, doFetch: typeof fetch = fetch, indexerUrl = 'https://api.nearblocks.io'): NearRail & ChainReader {
   const rpc: Rpc = async <T>(method: string, params: unknown) => {
     const res = await doFetch(rpcUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 'tollgate', method, params }), signal: AbortSignal.timeout(20_000) })
     const j = await res.json() as { result?: T & { error?: string }; error?: { message?: string; data?: unknown; cause?: { name?: string; info?: { error?: unknown } } } }
@@ -100,6 +143,34 @@ export function nearRail(rpcUrl: string, doFetch: typeof fetch = fetch): NearRai
       if (!hash) throw new Error('send_tx returned no transaction hash')
       if (r.status?.Failure || r.receipts_outcome?.some(x => x.outcome?.status?.Failure)) throw new NearTxFailed(`the chain ran transaction ${hash} and it failed, so no USDC moved`)
       return hash
+    },
+    async txState(txHash, sender) {
+      try { await rpc('tx', { tx_hash: txHash, sender_account_id: sender, wait_until: 'NONE' }); return 'present' } catch (e) {
+        return e instanceof NearRpcError && e.cause_ === 'UNKNOWN_TRANSACTION' ? 'absent' : 'unknown'
+      }
+    },
+    async settlementOf(q) {
+      // Discovery: a public indexer lists the payer's recent transactions. It is only a list of candidates; the node decides what is true.
+      let rows: { transaction_hash?: string; predecessor_account_id?: string; block_timestamp?: string }[]
+      try {
+        const r = await doFetch(`${indexerUrl}/v1/account/${encodeURIComponent(q.from)}/txns?per_page=25&order=desc`, { signal: AbortSignal.timeout(15_000) })
+        if (!r.ok) return { ok: false, why: `the transaction index answered HTTP ${r.status}` }
+        rows = ((await r.json()) as { txns?: typeof rows }).txns ?? []
+      } catch (e) { return { ok: false, why: `the transaction index could not be reached (${e instanceof Error ? e.message : 'unknown'})` } }
+      const seen = new Set<string>()
+      for (const row of rows) {
+        const hash = row.transaction_hash, relayer = row.predecessor_account_id
+        if (!hash || !relayer || relayer === q.from || seen.has(hash)) continue // a relayed transaction is one the payer did not send itself
+        const ms = Number(BigInt(row.block_timestamp ?? '0') / 1_000_000n)
+        if (!(ms >= q.since.getTime() && ms <= q.until.getTime())) continue
+        seen.add(hash)
+        if (seen.size > 10) break
+        let res: TxLogResult
+        try { res = await rpc<TxLogResult>('tx', { tx_hash: hash, sender_account_id: relayer, wait_until: 'FINAL' }) } catch { continue }
+        const hit = parseFtTransferEvents(res).some(t => t.from === q.from && t.to === q.to && t.amountMicro === q.amountMicro)
+        if (hit) return { ok: true, txHash: hash, settledAt: new Date(ms) }
+      }
+      return { ok: false, why: 'no matching USDC transfer from the payer has reached the chain yet' }
     },
     async usdcTransfers(txHash, sender) {
       let res: TxStatusResult

@@ -14,6 +14,7 @@
   "types": "src/index.ts",
   "scripts": {
     "start": "tsx src/server.ts",
+    "seller": "tsx --env-file=../../.env src/market-seller-run.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },

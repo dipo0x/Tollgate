@@ -29,6 +29,7 @@
     "preflight": "node scripts/preflight.mjs",
     "live": "pnpm --filter @tollgate/e2e live",
     "services": "pnpm --filter @tollgate/workers start",
+    "seller": "pnpm --filter @tollgate/workers seller",
     "sandbox": "pnpm --filter trytollgate build && pnpm --filter @tollgate/e2e sandbox",
     "sandbox:agent": "pnpm --silent --filter @tollgate/e2e agent",
     "sandbox:phone": "pnpm --filter trytollgate build && pnpm --filter @tollgate/e2e sandbox --phone",

@@ -88,6 +88,17 @@ describe('hire: carving a child out of the parent', () => {
     expect(await ledger.balance('root')).toMatchObject({ committed: 0n, remaining: m('8.00') })
   })
 
+  it('refuses the hire, and returns the parent\'s money, if the held-back share cannot be reserved (never a worker with its whole budget usable)', async () => {
+    const { deps, ledger, store } = await setup()
+    // A ledger that refuses the stage hold and nothing else.
+    const flaky = new Proxy(ledger, { get: (t, k, r) => k === 'reserve'
+      ? (mandateId: string, decisionId: string, amount: bigint) => decisionId.startsWith('stage:') ? Promise.resolve({ ok: false as const, reason: 'invalid_amount' as const }) : t.reserve(mandateId, decisionId, amount)
+      : Reflect.get(t, k, r) })
+    expect(await rejected(hire({ ...deps, ledger: flaky }, 'root', req()))).toBe('invalid_amount')
+    expect(await store.get('w1')).toBeUndefined()
+    expect(await ledger.balance('root')).toMatchObject({ committed: 0n, remaining: m('8.00') })
+  })
+
   it.each([
     ['zero total', { total: '0' }], ['negative', { total: '-1' }], ['not a number', { total: 'lots' }],
     ['zero perPayment', { perPayment: '0' }], ['perPayment above total', { total: '1', perPayment: '1.01' }],

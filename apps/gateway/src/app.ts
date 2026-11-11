@@ -213,6 +213,7 @@ export function createApp(deps: GatewayDeps) {
     const d = b.data
     return send(c, await gw.authorize(a, { mandateId: d.mandateId, host: d.host, purpose: d.purpose, challenge: d.challenge, ...(d.payer ? { payer: d.payer } : {}), ...(d.negotiationId ? { negotiationId: d.negotiationId } : {}) }))
   }))
+  app.post('/v1/payments/:decisionId/cancel', asOperator(async c => send(c, await gw.cancelUnmoved(P(c, 'decisionId')))))
   app.post('/v1/payments/:decisionId/reconcile', asEither(async (c, p) => send(c, await gw.reconcile(P(c, 'decisionId'), p.role === 'agent' ? { mandateId: p.mandateId } : {}))))
 
   app.post('/v1/payments/:decisionId/sign', asAgent(async (c, a) => {
@@ -228,7 +229,9 @@ export function createApp(deps: GatewayDeps) {
   app.get('/v1/decisions/:id', asOperator(cached(async c => {
     // With its transaction on the blockchain, once signed: the owner can open it in the chain's explorer (explorer.ts).
     const [r, sig] = await Promise.all([deps.store.decisions.get(P(c, 'id')), deps.store.signatures.get(P(c, 'id'))])
-    return r ? c.json({ ...r, ...(sig ? { onchain: onchainFor(sig) } : {}) }) : send(c, err(404, 'not_found', 'no such decision'))
+    // A market payment's stored hash is the signed authorisation, which is not a transaction. Once it settled, link the real one.
+    const real = r && sig && r.state === 'settled' && r.bind?.chain === 'near:mainnet' ? await gw.settlementTxOf(r.decisionId) : undefined
+    return r ? c.json({ ...r, ...(sig ? { onchain: onchainFor(real ? { txHash: real, from: sig.from } : sig) } : {}) }) : send(c, err(404, 'not_found', 'no such decision'))
   })))
 
   // ---- approvals and the kill switch -----------------------------------------------------
