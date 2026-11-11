@@ -54,7 +54,7 @@ To wait for a person instead of throwing, pass `approval: { wait: true }`: the S
 
 ## Stated limits
 
-- The 402 format here is Tollgate's own: the challenge in the response body as JSON (or `{ "challenge": {...} }`), and the proof in an `x-payment-proof` header. It is what `apps/mock-merchants` speaks. Real MPP / x402 headers are a separate adapter, to be added once the payment path is chosen.
+- Two 402 formats are understood. **x402 v2 on NEAR** (the NEAR AI Agent Market): the SDK finds the `near:mainnet` row of the 402 body and hands it to the gateway, which re-checks every field. **Tollgate's own format**: the challenge in the response body as JSON (or `{ "challenge": {...} }`), and the proof in an `x-payment-proof` header; it is what `apps/mock-merchants` and the offline benchmark speak. x402 on other chains and MPP are not built.
 - A request body must be replayable (a string or buffer, not a one-shot stream), because it is sent again on the retry.
 - `nearRpcRail` reads the signer's access-key nonce over public NEAR JSON-RPC and broadcasts the signed transaction. Using it with a funded key spends real money; that is always the owner's decision.
 
