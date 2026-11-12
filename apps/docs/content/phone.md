@@ -58,8 +58,8 @@ The app accepts https anywhere, and plain http only for local or private address
 
 ## Honest limits of the app
 
-- It stores the gateway's operator key today. The app only uses it for the calls above, but the key itself can do more. An approver-only key is the next gateway change.
-- Notifications are local, not push. The badge always shows how many payments wait, so nothing is missed.
+- It holds a **device key**, issued when you pair, not your operator key. The gateway limits it: it can approve, reject, freeze, pause, withdraw to your fixed account, and start agents that ask about every payment at shops you already enabled. It cannot add a shop or loosen a rule. A phone paired before 12 Nov 2026 holds the operator key until you pair it again.
+- On a development build on a real iPhone, alerts appear as normal iOS banners with sound and a badge. The app raises them itself (it asks your computer every 8 seconds while it is open or briefly in the background); they are not remote push from a server, so iOS stops them soon after the app leaves the screen. The badge always shows how many payments wait, so nothing is missed.
 - Face ID needs a development build. In Expo Go the phone asks for your passcode instead.
 - A development build signed with a free Apple account expires after seven days and must be reinstalled.
 - It is not in the App Store. It runs from source in a development build or the iOS simulator.

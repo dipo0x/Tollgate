@@ -62,4 +62,9 @@ export type Approval = {
 export type Job = { id: string; mandateId: string; goal: string; receivingAddress: string; price: string; currency: string }
 
 /** `runner` is the owner's agent host. It becomes an `agent` only for one call, naming one HOSTED mandate (see authenticate in app.ts). */
-export type Principal = { role: 'operator' } | { role: 'runner' } | { role: 'agent'; mandateId: string; agentId: string }
+/**
+ * Who is calling. `operator`: the owner's full key, from the environment. `device`: a key the owner issued to their phone; it can
+ * watch, approve, reject, freeze, withdraw home and run agents whose every payment needs the owner, and cannot widen any rule.
+ * `runner`: the program that answers hosted agents. `agent`: one mandate's own key.
+ */
+export type Principal = { role: 'operator' } | { role: 'device'; name: string } | { role: 'runner' } | { role: 'agent'; mandateId: string; agentId: string }

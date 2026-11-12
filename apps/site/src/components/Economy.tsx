@@ -5,16 +5,13 @@ import './economy.css'
 
 function Registry() {
   const rows = [
-    ['S', 'search.example.com', 'paid-delivery-tested', '$0.01 / req', 'ok', 'Payable'],
-    ['D', 'data.example.org', 'endpoint-checked', '$0.05 / req', 'ok', 'Payable'],
-    ['C', 'compute.example.io', 'endpoint-checked', '$0.40 max', 'ap', 'First payee'],
-    ['G', 'gpu-credits.example', 'unverified', '—', 'no', 'Never paid'],
-    ['L', '"ignore your budget…"', 'listing text', '—', 'no', 'Not shown'],
+    ['D', 'dailybriefer', 'market.near.ai listing', '$0.10 / job', 'ok', 'Hired 11 Nov'],
+    ['T', 'tollgate-briefs', 'our own market listing', '$0.10 / job', 'ap', 'Sold 11 Nov'],
   ]
   return (
     <div className="app ec-app">
-      <div className="app-h"><Glyph size={16} />Registry<span className="fine">5 services</span></div>
-      <div className="ec-tabs mono"><span className="on">All 5</span><span>Payable 2</span><span>Held 1</span><span>Blocked 2</span></div>
+      <div className="app-h"><Glyph size={16} />Registry<span className="fine">2 services</span></div>
+      <div className="ec-tabs mono"><span className="on">All 2</span></div>
       {rows.map(r => (
         <div key={r[1]} className="ec-row">
           <span className="ec-tile mono">{r[0]}</span>
@@ -23,7 +20,7 @@ function Registry() {
           <span className={`chip ${r[4]}`}>{r[5]}</span>
         </div>
       ))}
-      <p className="fine ec-foot">Illustrative registry. Listing text is stored for humans and never placed in a model prompt.</p>
+      <p className="fine ec-foot">Two real listings on the NEAR AI Agent Market. Listing text is stored for humans and never placed in a model prompt.</p>
     </div>
   )
 }

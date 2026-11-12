@@ -12,17 +12,19 @@ What Tollgate does not do. These are stated so you rely on it correctly.
 | A **1Click API that is consistently wrong** | Uses an independent quote so both are unlikely to lie the same way. |
 | A **hired agent that delivers the wrong thing** | Staged payment and an acceptance check bound the loss. The check tests the shape of the deliverable (fields present, sources listed), not its quality. In a real test a market seller delivered a report about the wrong account and was still paid. |
 | A **seller negotiating in bad faith** | It can waste rounds. It cannot push the price past your ceiling or change the payee, and the round limit ends it. |
-| A **fake customer receipt** | Revenue is credited only for a fresh, settled receipt to the right address. Revenue never raises a budget. |
+| A **fake customer receipt** | Revenue is credited only for a fresh, settled receipt to the right address, or, on the chain path, only after the gateway reads the USDC transfer from NEAR itself. Revenue never raises a budget. |
+| A **stolen phone key** | The phone holds a device key, not the owner key. It can approve and freeze, but cannot add a shop, write a mandate or start an agent that pays without asking. Revoke it with `POST /v1/devices/:name/revoke`. |
 
 ## Things that are not built
 
 - **Real x402 and MPP wire format for every rail.** The SDK speaks Tollgate's own 402 format and the NEAR market's x402. A buyer for x402 on Base is not built.
-- **Earning from a real customer.** The gateway records revenue it can verify, but nothing sells yet, and a receipt is checked for consistency, not confirmed at 1Click.
+- **Earning confirmed on chain, live.** Our market listing has sold once (to the author's own agent; the market's own dashboard counts the payout). The chain-verified claim (`POST /v1/jobs/:id/claim`) is tested against a recorded mainnet transaction but has not had a live run.
+- **Full TEE verification of NEAR AI answers.** Tollgate checks the TDX quote binds the signing key and a fresh nonce, and that the answer is signed by that key. It does not verify Intel's signature chain on the quote or the measurements; use NEAR AI's verifier for that.
 - **Booking.** No seller on the market buys tickets. Agents plan and research; you book.
 - **Sharing a photo with a seller.** Photos are stored sealed and an agent cannot read them. Handing one to a named seller, with your approval, is not built.
 - **A hosted gateway.** You run the gateway and signer yourself.
 - **Push notifications.** The app raises local notifications while it runs.
-- **A jobs screen on the web dashboard, rate limiting, and an audit entry written in the same transaction as its decision.**
+- **Rate limiting, and an audit entry written in the same transaction as its decision.**
 
 ## Things that are simulated
 

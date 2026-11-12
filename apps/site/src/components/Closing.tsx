@@ -3,14 +3,14 @@ import { gsap, reduceMotion, useGSAP } from '../lib/motion'
 import { DecodeText, Glyph, RollButton, Turnstile } from './primitives'
 import './closing.css'
 
-// Illustrative only: the same example decisions used elsewhere on the page.
+// Decisions from our recorded live runs (3 and 11 Nov 2026). The reference merchant is ours.
 const LANE: [string, string, 'ok' | 'no' | 'ap', string][] = [
-  ['search.example.com', '$0.25', 'ok', 'Allow'],
-  ['data.example.org', '$18.00', 'no', 'Deny · C07'],
-  ['seller.example.net', '$6.00', 'ok', 'Allow'],
-  ['data.example.org', '$0.40', 'no', 'Deny · C05'],
-  ['compute.example.io', '$1.20', 'ap', 'Approval'],
-  ['api.example.com', '$0.05', 'ok', 'Allow'],
+  ['reference merchant', '$0.21', 'ok', 'Allow'],
+  ['reference merchant', '$0.20', 'no', 'Deny · C09'],
+  ['market.near.ai', '$0.10', 'ok', 'Allow'],
+  ['reference merchant', '$0.45', 'no', 'Deny · C06'],
+  ['reference merchant', '$0.20', 'ap', 'Approval'],
+  ['market.near.ai', '$0.05', 'ok', 'Allow'],
 ]
 
 export default function Closing() {
@@ -32,10 +32,10 @@ export default function Closing() {
         </div>
       </div>
       <div className="frame">
-        {/* A toll lane: example requests flow left through a fixed gate. Decorative, labelled as illustrative. */}
+        {/* A toll lane: example requests flow left through a fixed gate. Decorative, from recorded live runs. */}
         <div className="lane">
           <Turnstile className="cl-turn" size={88} />
-          <div className="lane-h mono"><span>Toll lane</span><span>Illustrative decisions</span></div>
+          <div className="lane-h mono"><span>Toll lane</span><span>Recorded live runs</span></div>
           <div className="lane-road">
             <div className="lane-flow" aria-hidden="true">
               {[...LANE, ...LANE].map(([host, amt, cls, out], i) => (

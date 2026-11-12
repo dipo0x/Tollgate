@@ -55,3 +55,6 @@ apps/mobile/assets/fonts/Satoshi-*.otf
 .market-pay-confirm
 .live-agent.json
 .vercel
+
+# The phone's device key (pnpm live:app). Never committed.
+.phone-device-key

@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto'
+import { writeFileSync } from 'node:fs'
 import { ROOT } from './harness.ts'
 
 /**
@@ -58,11 +59,17 @@ const cases: [string, Record<string, unknown>][] = [
   ['3. The refund is redirected to a stranger', { ...ch, refundTo: stranger, id: `ch_refund_${randomBytes(3).toString('hex')}` }],
 ]
 let stopped = 0
+const rows: { case: string; decision: string; failedCheck?: string; decisionId?: string }[] = []
 for (const [label, tampered] of cases) {
   const r = await ask(tampered)
   const denied = r.json?.decision === 'DENY'
   if (denied) stopped++
+  rows.push({ case: label, decision: r.json?.decision ?? `HTTP ${r.status}`, ...(r.json?.failedCheck ? { failedCheck: r.json.failedCheck } : {}), ...(r.json?.decisionId ? { decisionId: r.json.decisionId } : {}) })
   console.log(`\n${label}\n  ${r.json?.decision ?? `HTTP ${r.status}`}${r.json?.failedCheck ? `   stopped by ${r.json.failedCheck}${r.json.reason ? `: ${r.json.reason}` : ''}` : ''}`)
 }
-console.log(`\n${stopped} of ${cases.length} tampered copies were stopped. Nothing was signed or sent.\nOpen the app: Activity shows them as Blocked, and Agents → ${NAME} shows the chat. Archive ${NAME} afterwards (Agents → past → Clear).`)
+// The run is evidence, so it is written down, not only printed. Ids only: each decision id opens the full checks in the dashboard.
+// No key, no deposit address, no account: the file can be committed as it is.
+const out = `${ROOT}bench/results/attack-demo.json`
+writeFileSync(out, JSON.stringify({ ranAt: new Date().toISOString(), gateway: 'live (pnpm live:app)', bill: { from: 'reference merchant', amount: ch['amount'], currency: ch['currency'], issuedBy: 'live 1Click' }, stopped, of: cases.length, signed: 0, cases: rows }, null, 2) + '\n')
+console.log(`\n${stopped} of ${cases.length} tampered copies were stopped. Nothing was signed or sent. Written to bench/results/attack-demo.json.\nOpen the app: Activity shows them as Blocked, and Agents → ${NAME} shows the chat. Archive ${NAME} afterwards (Agents → past → Clear).`)
 process.exitCode = stopped === cases.length ? 0 : 1

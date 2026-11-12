@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { aiProblem, askClaude, askOllama, CHAT_MODEL, OLLAMA_CHAT_MODEL, promisesAction, SYSTEM, toMessages, type ChatTurn, type Engine, type ToolSpec } from './claude-agent.ts'
+import { attest, attestationLine, verifyCompletion, type Verdict } from './nearai-verify.ts'
 
 /**
  * Brains: who thinks for a hosted agent. Plain idea: an agent in the app is a chat room; the owner picks who answers it, the way you
@@ -12,7 +13,7 @@ import { aiProblem, askClaude, askOllama, CHAT_MODEL, OLLAMA_CHAT_MODEL, promise
 export type BrainSpec =
   | { id: string; label: string; kind: 'claude'; model: string }
   | { id: string; label: string; kind: 'ollama'; url: string; model: string }
-  | { id: string; label: string; kind: 'openai'; baseUrl: string; model: string; apiKey?: string }
+  | { id: string; label: string; kind: 'openai'; baseUrl: string; model: string; apiKey?: string; /** NEAR AI Cloud: check each answer's TEE signature (nearai-verify.ts). */ verify?: 'nearai' }
 
 export type BrainInfo = { id: string; label: string; detail: string }
 
@@ -45,7 +46,7 @@ export function loadBrains(env: Record<string, string | undefined>, opts: { olla
   if (has('XAI_API_KEY')) specs.push({ id: 'grok', label: 'Grok', kind: 'openai', baseUrl: 'https://api.x.ai/v1', model: env['XAI_MODEL']?.trim() || 'grok-4', apiKey: env['XAI_API_KEY']!.trim() })
   if (has('OPENAI_API_KEY')) specs.push({ id: 'openai', label: 'ChatGPT', kind: 'openai', baseUrl: 'https://api.openai.com/v1', model: env['OPENAI_MODEL']?.trim() || 'gpt-4o-mini', apiKey: env['OPENAI_API_KEY']!.trim() })
   if (has('NEARAI_API_KEY')) {
-    if (has('NEARAI_MODEL')) specs.push({ id: 'near', label: 'NEAR AI', kind: 'openai', baseUrl: (env['NEARAI_BASE_URL']?.trim() || 'https://cloud-api.near.ai/v1').replace(/\/+$/, ''), model: env['NEARAI_MODEL']!.trim(), apiKey: env['NEARAI_API_KEY']!.trim() })
+    if (has('NEARAI_MODEL')) specs.push({ id: 'near', label: 'NEAR AI', kind: 'openai', baseUrl: (env['NEARAI_BASE_URL']?.trim() || 'https://cloud-api.near.ai/v1').replace(/\/+$/, ''), model: env['NEARAI_MODEL']!.trim(), apiKey: env['NEARAI_API_KEY']!.trim(), verify: 'nearai' })
     else notes.push('NEARAI_API_KEY is set but NEARAI_MODEL is not: NEAR AI is off until you name the model to use.')
   }
   const raw = env['AGENT_BRAINS']?.trim()
@@ -124,12 +125,13 @@ export async function askOpenAI(spec: Extract<BrainSpec, { kind: 'openai' }>, hi
   let nudged = false, capName: 'max_tokens' | 'max_completion_tokens' = 'max_tokens'
   const url = `${spec.baseUrl}/chat/completions`
   for (let round = 0; round < 6; round++) {
-    let res: Response
-    const send = () => doFetch(url, {
+    let res: Response, sentBody = ''
+    const send = () => { sentBody = JSON.stringify({ model: spec.model, messages, tools: defs, [capName]: 700 }); return doFetch(url, {
       method: 'POST', signal: AbortSignal.timeout(ROUND_MS),
-      headers: { 'content-type': 'application/json', ...(spec.apiKey ? { authorization: `Bearer ${spec.apiKey}` } : {}) },
-      body: JSON.stringify({ model: spec.model, messages, tools: defs, [capName]: 700 }),
-    })
+      // identity: the signature covers the exact response bytes, so they must arrive as sent
+      headers: { 'content-type': 'application/json', ...(spec.verify ? { 'accept-encoding': 'identity' } : {}), ...(spec.apiKey ? { authorization: `Bearer ${spec.apiKey}` } : {}) },
+      body: sentBody,
+    }) }
     try {
       res = await send()
       // Newer models take a different name for the length cap. Say so once and retry, instead of failing the owner's message.
@@ -138,7 +140,9 @@ export async function askOpenAI(spec: Extract<BrainSpec, { kind: 'openai' }>, hi
       throw new BrainError(`I can’t reach ${spec.label} at ${hostOf(spec.baseUrl)}. Is it running, and is this computer online?`)
     }
     if (!res.ok) throw new BrainError(openAIProblem(spec.label, spec.model, res.status))
-    const msg = ((await res.json().catch(() => ({}))) as OAIReply).choices?.[0]?.message
+    const raw = await res.text().catch(() => '')
+    const reply = (safeJson(raw) ?? {}) as OAIReply & { id?: string }
+    const msg = reply.choices?.[0]?.message
     if (!msg) throw new BrainError(`${spec.label} sent no answer.`)
     const text = typeof msg.content === 'string' ? msg.content : Array.isArray(msg.content) ? msg.content.map(p => p.text ?? '').join('') : ''
     const calls = (msg.tool_calls ?? []).flatMap(c => c.function?.name ? [{ id: c.id ?? `call_${round}_${c.function.name}`, name: c.function.name, args: c.function.arguments }] : [])
@@ -149,7 +153,9 @@ export async function askOpenAI(spec: Extract<BrainSpec, { kind: 'openai' }>, hi
         messages.push({ role: 'assistant', content: text }, { role: 'user', content: 'You said you would do that but did not call a tool. Call the tool now. Do not ask the owner first.' })
         continue
       }
-      return text.trim()
+      if (!spec.verify || !spec.apiKey) return text.trim()
+      const v = typeof reply.id === 'string' ? await nearAiVerdict(spec, doFetch, reply.id, sentBody, raw) : { verified: false as const, why: 'the answer had no id to fetch its signature by' }
+      return `${text.trim()}\n\n${attestationLine(v)}`
     }
     messages.push({ role: 'assistant', content: text || null, tool_calls: calls.map(c => ({ id: c.id, type: 'function' as const, function: { name: c.name, arguments: typeof c.args === 'string' ? c.args : JSON.stringify(c.args ?? {}) } })) })
     for (const c of calls) {
@@ -163,3 +169,12 @@ export async function askOpenAI(spec: Extract<BrainSpec, { kind: 'openai' }>, hi
 }
 
 const safeJson = (s: string): unknown => { try { return JSON.parse(s) } catch { return {} } }
+
+/** One fresh attestation (with the model's own evidence when NEAR AI has it, else the gateway's), then this answer's signature. */
+async function nearAiVerdict(spec: Extract<BrainSpec, { kind: 'openai' }>, doFetch: typeof fetch, chatId: string, request: string, response: string): Promise<Verdict> {
+  let a = await attest(doFetch, spec.baseUrl, spec.model)
+  if (!a.ok) a = await attest(doFetch, spec.baseUrl)
+  if (!a.ok) return { verified: false, why: a.why }
+  const enc = new TextEncoder()
+  return verifyCompletion(doFetch, spec.baseUrl, spec.apiKey ?? '', chatId, enc.encode(request), enc.encode(response), spec.model, a.attested)
+}

@@ -4,7 +4,7 @@ import { ActionSheetIOS, Alert, Pressable, View } from 'react-native'
 import { GatewayError, type MandateRow } from '../../src/api/gateway'
 import { connectKit, type Kit } from '../../src/lib/connect'
 import { agentState, answeredBy, kindOf, KIND_LABEL, money, when } from '../../src/lib/format'
-import { useGateway, useSession } from '../../src/state/session'
+import { confirmWithFace, useGateway, useSession } from '../../src/state/session'
 import { peekScreen, useNow, usePoll } from '../../src/state/usePoll'
 import { loaders } from '../../src/state/loaders'
 import { ConnectKit, KitNote } from '../../src/ui/ConnectKit'
@@ -32,6 +32,7 @@ export default function AgentDetail() {
 
   const who = data?.row ?? row
   const external = who?.mode === 'external'
+  const paused = who?.paused === true
 
   /** Choose another brain on this computer for the agent (or hand an agent of your own back to it). */
   async function pickBrain() {
@@ -73,6 +74,17 @@ export default function AgentDetail() {
         try { await gw.archiveAgent(m!.agentId); router.back() } catch (e) { setProblem(e instanceof GatewayError ? e.message : 'Not removed. Try again.') }
       } },
     ])
+  }
+
+  /** Pausing is one tap, no Face ID (stopping money must never be slow). Resuming needs Face ID, the same rule as unfreezing. */
+  async function togglePause() {
+    if (!m) return
+    setProblem(null)
+    if (paused) {
+      const f = await confirmWithFace(`Resume ${m.agentId}`)
+      if (!f.ok) { setProblem(f.why === 'Cancelled.' ? null : f.why); return }
+    }
+    try { await (paused ? gw.resumeAgent(m.agentId) : gw.pauseAgent(m.agentId)); await refresh() } catch (e) { setProblem(e instanceof GatewayError ? e.message : 'Nothing changed. Try again.') }
   }
 
   function stop() {
@@ -150,7 +162,8 @@ export default function AgentDetail() {
 
           {active ? (
             <Card style={{ marginTop: 24 }}>
-              <Row first icon="power" title={`Stop ${m.agentId}`} sub="For good. Other agents keep running." danger chevron={false} onPress={stop} />
+              <Row first title={paused ? `Resume ${m.agentId}` : `Pause ${m.agentId}`} sub={paused ? 'Paused: every payment it asks for is refused. Face ID to resume.' : 'Refuses its payments until you resume. Its chat keeps working.'} chevron={false} onPress={() => void togglePause()} />
+              <Row icon="power" title={`Stop ${m.agentId}`} sub="For good. Other agents keep running." danger chevron={false} onPress={stop} />
             </Card>
           ) : null}
           {!active ? (

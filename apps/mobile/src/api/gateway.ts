@@ -73,6 +73,8 @@ const MandateRow = z.object({
   brain: z.string().nullable().optional(),
   /** Hidden from the owner's list by "Remove". */
   archived: z.boolean().optional(),
+  /** Paused by the owner: its payments are refused until it is resumed. Absent means not paused. */
+  paused: z.boolean().optional(),
   parentId: z.string().optional(),
   validUntil: z.string(),
   currency: z.string(),
@@ -338,6 +340,9 @@ export function createGateway(o: { baseUrl: string; token: string; fetchImpl?: t
     reject: (id: string, reason: string) => call(z.unknown(), 'POST', `/v1/approvals/${encodeURIComponent(id)}/reject`, { reason }),
     /** Stop one agent for good (the gateway's revoke). Only ever tightens, so the phone may do it without the dashboard. */
     stopAgent: (mandateId: string) => call(z.unknown(), 'POST', `/v1/mandates/${encodeURIComponent(mandateId)}/revoke`),
+    /** One agent's kill switch, by name: its payments are refused until resumed. Its chat keeps working. */
+    pauseAgent: (name: string) => call(z.unknown(), 'POST', `/v1/agents/${encodeURIComponent(name)}/pause`),
+    resumeAgent: (name: string) => call(z.unknown(), 'POST', `/v1/agents/${encodeURIComponent(name)}/resume`),
     /** Where withdrawals go, what can leave, and the history. The destination is fixed on the signer's computer: this phone cannot change it. */
     withdrawals: () => call(WithdrawInfo, 'GET', '/v1/withdrawals'),
     /** Take `amount` USDC back out to the owner's own account. Only an amount is sent: there is no destination to choose. */

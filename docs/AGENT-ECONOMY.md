@@ -155,8 +155,9 @@ the parent and worker mandates (the worker shown as "Hired by" its parent), and 
 ## Limits, stated
 
 - **The SDK wraps spending only.** Negotiating, hiring and earning are HTTP calls, as above. Helpers for them are not built.
-- **There is no earning server.** Tollgate verifies a payment; it does not provide the paid endpoint a customer buys from. The PRD's design
-  uses an `mppx` server for that, which is not built. In the demo the customer and the receipt are simulated.
+- **The earning server is the NEAR AI Agent Market.** Our seller `tollgate-briefs` (`apps/workers/src/market-seller.ts`, `pnpm seller`) takes
+  jobs from the market, writes the summary (NEAR AI Cloud first, with its TEE signature checked; then Claude; then a local model) and
+  delivers; the market collects payment and pays out on delivery. In the offline demo the customer and the receipt are simulated.
 - **A reported receipt (`/revenue`) is checked for consistency, not confirmed anywhere.** The gateway verifies what the receipt says
   (settled, right payee, enough money, fresh, unique) and nothing more, so revenue reported that way is only as trustworthy as whoever
   reports it. The chain path (`/claim`) does not have this limit: the amount, receiver and time come from the NEAR network. Neither path

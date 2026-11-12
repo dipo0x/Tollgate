@@ -11,6 +11,14 @@ export function sameDigest(a: string, b: string): boolean {
 }
 
 export const newAgentToken = (): string => `tg_agent_${randomBytes(24).toString('base64url')}`
+export const newDeviceToken = (): string => `tg_device_${randomBytes(24).toString('base64url')}`
+
+/**
+ * A device key (the owner's phone) is stored in the same token table as agent keys, under an owner of `device:<name>`. No mandate can
+ * have such an id (MandateSchema refuses the prefix), so an agent key can never be read back as a device key, or the other way round.
+ */
+export const DEVICE_PREFIX = 'device:'
+export const DEVICE_NAME = /^[a-z0-9][a-z0-9-]{1,39}$/
 
 /**
  * Tokens are stored only as SHA-256 digests (PRD: "hashed at rest"), so a leaked store cannot be
@@ -41,13 +49,26 @@ export class TokenRegistry {
 
   revokeMandate(mandateId: string): Promise<void> { return this.store.revokeMandate(mandateId) }
 
+  /** A key for one of the owner's devices, shown once. It can do what the phone app does and no more (see `asOwner` in app.ts). */
+  async issueDevice(name: string): Promise<string> {
+    if (!DEVICE_NAME.test(name)) throw new Error('device name: 2 to 40 lowercase letters, numbers or dashes')
+    const token = newDeviceToken()
+    await this.store.put(sha256(token), { mandateId: `${DEVICE_PREFIX}${name}`, agentId: name })
+    return token
+  }
+
+  /** Every key ever issued under this device name stops working at once. */
+  revokeDevice(name: string): Promise<void> { return this.store.revokeMandate(`${DEVICE_PREFIX}${name}`) }
+
   async resolve(token: string | undefined): Promise<Principal | undefined> {
     if (!token) return undefined
     const digest = sha256(token)
     if (sameDigest(digest, this.operatorDigest)) return { role: 'operator' }
     if (this.runnerDigest && sameDigest(digest, this.runnerDigest)) return { role: 'runner' }
     const hit = await this.store.find(digest)
-    return hit ? { role: 'agent', mandateId: hit.mandateId, agentId: hit.agentId } : undefined
+    if (!hit) return undefined
+    if (hit.mandateId.startsWith(DEVICE_PREFIX)) return { role: 'device', name: hit.agentId }
+    return { role: 'agent', mandateId: hit.mandateId, agentId: hit.agentId }
   }
 }
 

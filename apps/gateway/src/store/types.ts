@@ -82,6 +82,9 @@ export interface SignatureStore {
 export interface SettingsStore {
   frozen(): Promise<boolean>
   setFrozen(on: boolean): Promise<void>
+  /** One agent's kill switch. Kept per mandate, so pausing one run never touches another, and a new run starts unpaused. */
+  paused(mandateId: string): Promise<boolean>
+  setPaused(mandateId: string, on: boolean): Promise<void>
 }
 
 /**

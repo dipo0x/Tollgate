@@ -11,7 +11,6 @@ Direction, not a promise. None of it is built unless the page for it says so. Or
 | 5 | **Photos shared with a seller,** approved with Face ID each time. | Travel and identity jobs need documents. | Not started. |
 | 6 | **Booking.** | No seller on the market books today. | Waiting on a seller that does. |
 | 7 | **Push notifications.** | Alerts when the app is closed. | Needs the paid Apple Developer Program. |
-| 8 | **Approver-only phone key.** | The phone stores the operator key today. | Next gateway change. |
 
 ## The hosted version, and why it is careful
 

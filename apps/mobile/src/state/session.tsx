@@ -10,9 +10,10 @@ import { alternatesFrom, checkGatewayUrl, createGateway, GatewayError, type Gate
 /**
  * Who this phone is paired with, kept in the iOS Keychain (Android Keystore), never in plain storage or logs.
  *
- * The key here is the gateway's operator key until the approver-only key exists (gateway work, phase 2). So the app itself
- * limits what it does with it: read, approve, reject, freeze, add an agent that always needs approval. Approving and unfreezing
- * also need Face ID every time.
+ * The key here is a device key (`tg_device_…`), issued by the gateway when the phone is paired. The gateway itself limits it:
+ * read, approve, reject, freeze, pause, withdraw to the fixed account, add an agent that always needs approval at shops already
+ * enabled. It cannot loosen a rule. A phone paired before 12 Nov 2026 may still hold the operator key until it is re-paired.
+ * Approving, resuming and unfreezing also need Face ID every time.
  */
 const KEY_URL = 'tollgate.gateway.url'
 const KEY_TOKEN = 'tollgate.gateway.token'

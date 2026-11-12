@@ -11,7 +11,7 @@ Expo SDK 58 (React Native 0.88), expo-router, TypeScript strict.
    live 1Click, the NEAR signer, the reference merchant, and the **agent host**: one program that answers every agent you make in the app. It prints a pairing QR and
    lists the brains it can run (Claude, Grok, a local model, your own server: see `.env.example`). Real money: every payment waits for you.
 2. `pnpm --filter @tollgate/mobile start`, then open it in Expo Go on your phone (same Wi-Fi), or `pnpm mobile` for the simulator.
-3. In the app: **Get started**, scan the QR from step 1 (or enter the address it prints and your operator key).
+3. In the app: **Get started**, scan the QR from step 1. It holds the phone's own **device key** (`tg_device_…`), never your operator key.
 4. Turn on Face ID.
 5. **Agents → New chat.** Give it a name, pick **who answers** (one of your computer's brains, or **My own agent**), set a budget, and start. You land in the chat.
 6. Type "buy the settlement cost brief". The agent replies, asks to pay, and the payment shows up for you to approve (hold, then Face ID). Say no, or wait, and nothing is signed.
@@ -55,8 +55,8 @@ error on screen, never a guess.
 
 ## Known limits (stated, not hidden)
 
-- Until the gateway has an approver-only key, the phone stores the **operator key**. The app only uses it for the calls above,
-  but the key itself can do more. Approver keys are the next gateway change.
+- The phone holds a **device key**. The gateway, not the app, limits it to watching, approving, rejecting, freezing, pausing,
+  withdrawing to the fixed account, and starting agents whose every payment needs you at shops you enabled (`apps/gateway/test/device.test.ts`).
 - The gateway listens on `127.0.0.1` by default. `GATEWAY_HOST=0.0.0.0` (or `pnpm sandbox:phone`) lets a phone on the same
   Wi-Fi reach it over plain http; anything beyond a home network needs https in front (a reverse proxy) on your own server.
 - Alerts are local notifications raised by the app while it runs, not push: real push needs the paid Apple Developer Program.

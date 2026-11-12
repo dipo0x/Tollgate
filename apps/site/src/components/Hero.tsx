@@ -4,11 +4,11 @@ import { DecodeText, RollButton } from './primitives'
 import './hero.css'
 
 const FEED = [
-  { id: 'dec_01HZY', host: 'search.example.com', amt: '$0.25', out: 'ALLOW', why: '12 of 12 checks passed', cls: 'ok' },
-  { id: 'dec_01HZZ', host: 'data.example.org', amt: '$18.00', out: 'DENY', why: 'C07 price 72x own quote', cls: 'no' },
-  { id: 'dec_01J02', host: 'seller.example.net', amt: '$6.00', out: 'ALLOW', why: 'Matches accepted offer', cls: 'ok' },
-  { id: 'dec_01J03', host: 'data.example.org', amt: '$0.40', out: 'DENY', why: 'C05 payee changed', cls: 'no' },
-  { id: 'dec_01J04', host: 'compute.example.io', amt: '$1.20', out: 'APPROVAL', why: 'C12 above $0.50 threshold', cls: 'ap' },
+  { id: '3 Nov · live', host: 'reference merchant', amt: '$0.21', out: 'ALLOW', why: '12 of 12 checks passed', cls: 'ok' },
+  { id: '3 Nov · live', host: 'reference merchant', amt: '$0.20', out: 'DENY', why: 'C09 over the $0.10 per-payment limit', cls: 'no' },
+  { id: '11 Nov · live', host: 'market.near.ai', amt: '$0.10', out: 'ALLOW', why: 'Hire approved on the phone', cls: 'ok' },
+  { id: '3 Nov · live', host: 'reference merchant', amt: '$0.45', out: 'DENY', why: 'C06 price raised after the quote', cls: 'no' },
+  { id: '3 Nov · live', host: 'reference merchant', amt: '$0.20', out: 'APPROVAL', why: 'C12 above the $0.05 approval line', cls: 'ap' },
 ] as const
 
 export default function Hero() {
@@ -45,7 +45,7 @@ export default function Hero() {
           <RollButton href="#how" label="See how it works" />
           <RollButton href="#bench" label="The 16 attacks" tone="text" />
         </div>
-        <p className="fine hero-rise">Example decisions on this page use illustrative data.</p>
+        <p className="fine hero-rise">Decisions shown are from our recorded live runs (3 and 11 Nov 2026). The reference merchant is ours.</p>
       </div>
 
       <div className="hero-foot">

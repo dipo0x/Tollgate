@@ -4,7 +4,7 @@ import { bodyLimit } from 'hono/body-limit'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import { z } from 'zod'
 import { verifyChain } from '@tollgate/core'
-import { bearer } from './auth.ts'
+import { bearer, DEVICE_NAME } from './auth.ts'
 import { Gateway, type GatewayDeps, type Out } from './gateway.ts'
 import { onchainFor } from './explorer.ts'
 import type { Principal } from './state.ts'
@@ -51,6 +51,7 @@ const CreateAgentBody = z.strictObject({ mode: z.enum(['hosted', 'external']), b
 const AgentSettingsBody = z.strictObject({ brain: BrainId.nullable().optional(), mode: z.enum(['hosted', 'external']).optional() }).refine(b => b.brain !== undefined || b.mode !== undefined, { message: 'say what to change: brain or mode' })
 const NextBody = z.strictObject({ busy: z.array(z.string().max(128)).max(64).default([]) })
 const ArchiveBody = z.strictObject({ archived: z.boolean() })
+const DeviceBody = z.strictObject({ name: z.string().regex(DEVICE_NAME, '2 to 40 lowercase letters, numbers or dashes') })
 const HelloBody = z.strictObject({ brains: z.array(z.strictObject({ id: BrainId, label: z.string().min(1).max(40), detail: z.string().max(80) })).max(16) })
 const TaskReplyBody = z.strictObject({ text: z.string().trim().min(1).max(1000), status: z.enum(['working', 'done', 'failed']).optional(), decisionId: z.string().min(1).max(128).optional() })
 const JobBody = z.strictObject({ id: z.string().min(1).max(128), mandateId: z.string().min(1).max(128), goal: z.string().max(500), receivingAddress: z.string().min(1).max(256), price: amount, currency: z.string().min(1).max(32) })
@@ -137,6 +138,17 @@ export function createApp(deps: GatewayDeps) {
     if (r.p.role !== 'operator') return send(c, err(403, 'forbidden', 'this needs the operator token'))
     return h(c)
   }
+  /**
+   * The owner, on the computer (operator) or on a phone the owner paired (device). Used only for what the phone app does: watch,
+   * approve, reject, freeze, withdraw home, and run agents. Anything that widens a rule (a raw mandate, a new shop, a job, history,
+   * hiring, issuing keys) stays asOperator. The handler gets the caller, for the device rules in the routes below.
+   */
+  const asOwner = (h: (c: Context<Env>, who: Principal) => Promise<Response> | Response) => async (c: Context<Env>) => {
+    const r = await authenticate(c)
+    if ('out' in r) return send(c, r.out)
+    if (r.p.role !== 'operator' && r.p.role !== 'device') return send(c, err(403, 'forbidden', 'this needs the owner\'s key'))
+    return h(c, r.p)
+  }
   const asAgent = (h: (c: Context<Env>, a: Agent) => Promise<Response> | Response) => async (c: Context<Env>) => {
     const r = await authenticate(c)
     if ('out' in r) return send(c, r.out)
@@ -183,21 +195,22 @@ export function createApp(deps: GatewayDeps) {
   }
 
   // ---- mandates --------------------------------------------------------------------------
-  app.get('/v1/mandates', asOperator(cached(async c => send(c, await gw.listMandates()))))
+  app.get('/v1/mandates', asOwner(cached(async c => send(c, await gw.listMandates()))))
   // What the dashboard's status pills show. Nothing secret: whether it is frozen, where state is kept, and whether a signer is attached.
-  app.get('/v1/status', asOperator(cached(async c => c.json(await gw.status()))))
+  app.get('/v1/status', asOwner(cached(async c => c.json(await gw.status()))))
   // Operator only: it reveals this computer's network addresses, which is all the dashboard needs to build a pairing code that works.
-  app.get('/v1/pairing', asOperator(async c => c.json(gw.pairing())))
+  app.get('/v1/pairing', asOwner(async c => c.json(gw.pairing())))
   app.post('/v1/mandates', asOperator(async c => { const raw = await c.req.json().catch(() => undefined); return send(c, await gw.createMandate(raw)) }))
   app.get('/v1/mandates/:id', asEither((c, p) => {
     const id = P(c, 'id')
     if (p.role === 'agent') return p.mandateId !== id ? send(c, err(403, 'forbidden', 'not your mandate')) : gw.getMandate(id).then(o => send(c, o)) // agents: never cached
     return cached(async c2 => send(c2, await gw.getMandate(id)))(c)
   }))
-  app.post('/v1/mandates/:id/revoke', asOperator(async c => send(c, await gw.revokeMandate(P(c, 'id')))))
+  app.post('/v1/mandates/:id/revoke', asOwner(async c => send(c, await gw.revokeMandate(P(c, 'id')))))
   app.post('/v1/mandates/:id/delegate', asEither(async (c, p) => {
     const id = P(c, 'id')
     if (p.role === 'agent' && p.mandateId !== id) return send(c, err(403, 'forbidden', 'only the parent mandate\'s agent (or the operator) can hire under it'))
+    if (p.role === 'device') return send(c, err(403, 'forbidden', 'hiring is done by the agent, or by the operator on the computer'))
     const b = await parse(c, HireBody); if (!b.ok) return b.res
     const { allowedAssets, allowedOriginNetworks, upfrontPct, acceptance, ...rest } = b.data
     return send(c, await gw.hire(id, { ...rest, ...(allowedAssets ? { allowedAssets } : {}), ...(allowedOriginNetworks ? { allowedOriginNetworks } : {}), ...(upfrontPct !== undefined ? { upfrontPct } : {}), ...(acceptance ? { acceptance: { requiredFields: acceptance.requiredFields, ...(acceptance.minSources !== undefined ? { minSources: acceptance.minSources } : {}) } } : {}) }))
@@ -221,12 +234,12 @@ export function createApp(deps: GatewayDeps) {
     return send(c, await gw.sign(a, P(c, 'decisionId'), b.data.tx))
   }))
 
-  app.get('/v1/decisions', asOperator(cached(async c => {
+  app.get('/v1/decisions', asOwner(cached(async c => {
     const q = c.req.query()
     const limit = Math.min(Number(q['limit'] ?? 100) || 100, 500)
     return c.json({ decisions: await deps.store.decisions.list({ ...(q['mandateId'] ? { mandateId: q['mandateId'] } : {}), ...(q['decision'] ? { decision: q['decision'] } : {}), ...(q['state'] ? { state: q['state'] } : {}), limit }) })
   })))
-  app.get('/v1/decisions/:id', asOperator(cached(async c => {
+  app.get('/v1/decisions/:id', asOwner(cached(async c => {
     // With its transaction on the blockchain, once signed: the owner can open it in the chain's explorer (explorer.ts).
     const [r, sig] = await Promise.all([deps.store.decisions.get(P(c, 'id')), deps.store.signatures.get(P(c, 'id'))])
     // A market payment's stored hash is the signed authorisation, which is not a transaction. Once it settled, link the real one.
@@ -235,18 +248,18 @@ export function createApp(deps: GatewayDeps) {
   })))
 
   // ---- approvals and the kill switch -----------------------------------------------------
-  app.get('/v1/approvals', asOperator(cached(async c => send(c, await gw.listApprovals()))))
-  app.post('/v1/approvals/:id/approve', asOperator(async c => { const b = await parse(c, ReasonBody); return b.ok ? send(c, await gw.approve(P(c, 'id'), b.data.reason)) : b.res }))
-  app.post('/v1/approvals/:id/reject', asOperator(async c => { const b = await parse(c, ReasonBody); return b.ok ? send(c, await gw.reject(P(c, 'id'), b.data.reason)) : b.res }))
+  app.get('/v1/approvals', asOwner(cached(async c => send(c, await gw.listApprovals()))))
+  app.post('/v1/approvals/:id/approve', asOwner(async c => { const b = await parse(c, ReasonBody); return b.ok ? send(c, await gw.approve(P(c, 'id'), b.data.reason)) : b.res }))
+  app.post('/v1/approvals/:id/reject', asOwner(async c => { const b = await parse(c, ReasonBody); return b.ok ? send(c, await gw.reject(P(c, 'id'), b.data.reason)) : b.res }))
   // The owner's money back out. Operator only. The body is an amount and nothing else: there is no field for a destination, because the
   // signer sends only to the one account in its own settings.
   const noWithdraw = () => ({ status: 503 as const, body: { error: { code: 'withdraw_unavailable', message: 'This gateway has no signer with a NEAR account, so nothing can be withdrawn.' } } })
-  app.get('/v1/withdrawals', asOperator(async c => {
+  app.get('/v1/withdrawals', asOwner(async c => {
     if (!deps.withdrawals) return send(c, noWithdraw())
     const [info, recent] = await Promise.all([deps.withdrawals.info(), deps.withdrawals.list(Math.min(Number(c.req.query('limit') ?? 20) || 20, 100))])
     return info.status === 200 ? c.json({ ...(info.body as object), ...(recent.body as object) }) : send(c, info)
   }))
-  app.post('/v1/withdrawals', asOperator(async c => {
+  app.post('/v1/withdrawals', asOwner(async c => {
     if (!deps.withdrawals) return send(c, noWithdraw())
     const b = await parse(c, WithdrawBody)
     if (!b.ok) return b.res
@@ -254,8 +267,8 @@ export function createApp(deps: GatewayDeps) {
     reads.invalidate()
     return send(c, out as Out)
   }))
-  app.post('/v1/freeze', asOperator(async c => send(c, await gw.freeze(true))))
-  app.post('/v1/unfreeze', asOperator(async c => send(c, await gw.freeze(false))))
+  app.post('/v1/freeze', asOwner(async c => send(c, await gw.freeze(true))))
+  app.post('/v1/unfreeze', asOwner(async c => send(c, await gw.freeze(false))))
 
   // ---- negotiation -----------------------------------------------------------------------
   app.post('/v1/negotiations/:id/offers', asAgent(async (c, a) => { const b = await parse(c, OfferBody); return b.ok ? send(c, await gw.negotiate(a, P(c, 'id'), b.data as never)) : b.res }))
@@ -263,30 +276,47 @@ export function createApp(deps: GatewayDeps) {
 
   // ---- jobs and earning ------------------------------------------------------------------
   app.post('/v1/jobs', asOperator(async c => { const b = await parse(c, JobBody); return b.ok ? send(c, await gw.createJob(b.data)) : b.res }))
-  app.post('/v1/agents/:mandateId/tasks', asOperator(async c => { const b = await parse(c, TaskBody); return b.ok ? send(c, await gw.createTask(P(c, 'mandateId'), b.data.text, b.data.attachments)) : b.res }))
+  app.post('/v1/agents/:mandateId/tasks', asOwner(async c => { const b = await parse(c, TaskBody); return b.ok ? send(c, await gw.createTask(P(c, 'mandateId'), b.data.text, b.data.attachments)) : b.res }))
   // Photos and files the owner attaches in the chat. Owner only: no agent route reads them (sharing needs the owner's approval).
-  app.post('/v1/attachments', asOperator(async c => {
+  app.post('/v1/attachments', asOwner(async c => {
     const b = await parse(c, AttachmentBody)
     if (!b.ok) return b.res
     const bytes = Buffer.from(b.data.data, 'base64')
     if (bytes.length === 0 || bytes.length > MAX_ATTACHMENT_BYTES) return send(c, err(400, 'too_large', `A photo can be at most ${MAX_ATTACHMENT_BYTES / 1024 / 1024} MB.`))
     return send(c, await gw.uploadAttachment({ name: b.data.name, contentType: b.data.contentType, bytes }))
   }))
-  app.get('/v1/attachments/:id', asOperator(async c => {
+  app.get('/v1/attachments/:id', asOwner(async c => {
     const r = await gw.readAttachment(P(c, 'id'))
     if (!r.ok) return send(c, r.out)
     return c.body(new Uint8Array(r.bytes), 200, { 'content-type': r.contentType, 'cache-control': 'private, no-store', 'x-content-type-options': 'nosniff' })
   }))
   // The chat is read live, never from the read cache: the agent replies through its own gateway, whose writes this one cannot see.
-  app.get('/v1/agents/:mandateId/tasks', asOperator(async c => send(c, await gw.listTasks(P(c, 'mandateId'), Math.min(Number(c.req.query('limit') ?? 50) || 50, 200)))))
-  app.get('/v1/conversations/:agentId', asOperator(async c => send(c, await gw.conversation(P(c, 'agentId'), Math.min(Number(c.req.query('limit') ?? 100) || 100, 300)))))
+  app.get('/v1/agents/:mandateId/tasks', asOwner(async c => send(c, await gw.listTasks(P(c, 'mandateId'), Math.min(Number(c.req.query('limit') ?? 50) || 50, 200)))))
+  app.get('/v1/conversations/:agentId', asOwner(async c => send(c, await gw.conversation(P(c, 'agentId'), Math.min(Number(c.req.query('limit') ?? 100) || 100, 300)))))
   // ---- agents: a chat room per name, and who answers it ---------------------------------------
-  app.post('/v1/agents', asOperator(async c => { const b = await parse(c, CreateAgentBody); return b.ok ? send(c, await gw.createAgent({ mode: b.data.mode, brain: b.data.brain, mandate: b.data.mandate })) : b.res }))
-  app.post('/v1/agents/:name/settings', asOperator(async c => { const b = await parse(c, AgentSettingsBody); return b.ok ? send(c, await gw.updateAgent(P(c, 'name'), b.data)) : b.res }))
-  app.post('/v1/agents/:name/key', asOperator(async c => send(c, await gw.rotateAgentKey(P(c, 'name')))))
-  app.post('/v1/agents/:name/archive', asOperator(async c => { const b = await parse(c, ArchiveBody); return b.ok ? send(c, await gw.archiveAgent(P(c, 'name'), b.data.archived)) : b.res }))
+  app.post('/v1/agents', asOwner(async (c, who) => {
+    const b = await parse(c, CreateAgentBody); if (!b.ok) return b.res
+    if (who.role === 'device') { const no = await gw.deviceMayCreate(b.data.mandate); if (no) return send(c, no) }
+    return send(c, await gw.createAgent({ mode: b.data.mode, brain: b.data.brain, mandate: b.data.mandate }))
+  }))
+  app.post('/v1/agents/:name/settings', asOwner(async (c, who) => {
+    const b = await parse(c, AgentSettingsBody); if (!b.ok) return b.res
+    if (who.role === 'device') { const no = await gw.deviceMayManage(P(c, 'name')); if (no) return send(c, no) }
+    return send(c, await gw.updateAgent(P(c, 'name'), b.data))
+  }))
+  app.post('/v1/agents/:name/key', asOwner(async (c, who) => {
+    if (who.role === 'device') { const no = await gw.deviceMayManage(P(c, 'name')); if (no) return send(c, no) }
+    return send(c, await gw.rotateAgentKey(P(c, 'name')))
+  }))
+  // One agent's kill switch. A device may pause (it only tightens) and resume (the app asks for Face ID, as it does to unfreeze).
+  app.post('/v1/agents/:name/pause', asOwner(async c => send(c, await gw.pauseAgent(P(c, 'name'), true))))
+  app.post('/v1/agents/:name/resume', asOwner(async c => send(c, await gw.pauseAgent(P(c, 'name'), false))))
+  // The owner's computer gives a phone its own key (the dashboard's "Pair a phone", and pnpm live:app). Shown once; revocable alone.
+  app.post('/v1/devices', asOperator(async c => { const b = await parse(c, DeviceBody); return b.ok ? send(c, await gw.issueDevice(b.data.name)) : b.res }))
+  app.post('/v1/devices/:name/revoke', asOperator(async c => send(c, await gw.revokeDevice(P(c, 'name')))))
+  app.post('/v1/agents/:name/archive', asOwner(async c => { const b = await parse(c, ArchiveBody); return b.ok ? send(c, await gw.archiveAgent(P(c, 'name'), b.data.archived)) : b.res }))
   // Not cached: it is one small row, and the runner's hello (every 15 s) must show at once.
-  app.get('/v1/brains', asOperator(async c => send(c, await gw.listBrains())))
+  app.get('/v1/brains', asOwner(async c => send(c, await gw.listBrains())))
   // The runner (the owner's agent host): says which brains it offers, and collects messages for every hosted agent in one call.
   app.post('/v1/runner/hello', asRunner(async c => { const b = await parse(c, HelloBody); return b.ok ? send(c, await gw.runnerHello(b.data.brains)) : b.res }))
   app.post('/v1/runner/tasks/next', asRunner(async c => {
@@ -298,9 +328,9 @@ export function createApp(deps: GatewayDeps) {
   app.get('/v1/tasks/history', asAgent(async (c, a) => send(c, await gw.chatHistory(a, Math.min(Number(c.req.query('limit') ?? 50) || 50, 200)))))
   app.post('/v1/tasks/:id/alive', asAgent(async (c, a) => send(c, await gw.heartbeatTask(a, P(c, 'id')))))
   app.post('/v1/tasks/:id/reply', asAgent(async (c, a) => { const b = await parse(c, TaskReplyBody); return b.ok ? send(c, await gw.replyTask(a, P(c, 'id'), b.data)) : b.res }))
-  app.get('/v1/history', asOperator(cached(async c => send(c, await gw.listHistory(Math.min(Number(c.req.query('limit') ?? 100) || 100, 500))))))
+  app.get('/v1/history', asOwner(cached(async c => send(c, await gw.listHistory(Math.min(Number(c.req.query('limit') ?? 100) || 100, 500))))))
   app.post('/v1/history', asOperator(async c => { const b = await parse(c, HistoryBody); return b.ok ? send(c, await gw.importHistory(b.data)) : b.res }))
-  app.get('/v1/jobs', asOperator(cached(async c => send(c, await gw.listJobs(Math.min(Number(c.req.query('limit') ?? 100) || 100, 500))))))
+  app.get('/v1/jobs', asOwner(cached(async c => send(c, await gw.listJobs(Math.min(Number(c.req.query('limit') ?? 100) || 100, 500))))))
   app.get('/v1/jobs/:id', asEither(async (c, p) => send(c, await gw.getJob(P(c, 'id'), p.role === 'agent' ? { mandateId: p.mandateId } : {}))))
   app.get('/v1/agent/jobs', asAgent(async (c, a) => send(c, await gw.agentJobs(a))))
   app.post('/v1/jobs/:id/claim', asAgent(async (c, a) => { const b = await parse(c, ClaimBody); return b.ok ? send(c, await gw.claimEarning(a, P(c, 'id'), b.data)) : b.res }))
@@ -311,7 +341,7 @@ export function createApp(deps: GatewayDeps) {
     const b = await parse(c, ServiceBody); if (!b.ok) return b.res
     try { return c.json(await deps.services.add(b.data as never), 201) } catch (e) { return send(c, err(409, 'service_exists', e instanceof Error ? e.message : 'exists')) }
   }))
-  app.get('/v1/services', asOperator(cached(async c => c.json({ services: await deps.services.list() }))))
+  app.get('/v1/services', asOwner(cached(async c => c.json({ services: await deps.services.list() }))))
   // What an agent's planner may see: structured fields only. Third-party listing text never leaves this process toward a model.
   app.get('/v1/services/planner', asAgent(async c => c.json({ services: await deps.services.planner() })))
   app.post('/v1/services/:id/probe-result', asOperator(async c => {

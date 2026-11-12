@@ -2,9 +2,21 @@
 
 An agent is a chat room with a name and someone who answers it. Hosted agents are answered by the owner's agent host; external agents hold their own key and answer themselves. See [Chat agents](/chat-agents/) and [Bring your own agent](/bring-your-own-agent/). Set `GW` to your gateway's address.
 
+## Keys: operator and device
+
+The **operator** key is the owner's, from `.env`. A **device** key (`tg_device_…`) is issued to a phone by `POST /v1/devices` and can be revoked on its own. Routes below marked **owner** take either. The gateway limits a device key itself: see the notes on each route.
+
+## POST /v1/devices
+
+Key: **operator**. Body `{ "name": "iphone" }` (2–40 lowercase letters, numbers or dashes). **Response 201:** `{ "device", "key", "note" }`; the key is shown once. A device key can never mint another.
+
+## POST /v1/devices/:name/revoke
+
+Key: **operator**. Every key issued under that name stops working at once (`401`).
+
 ## POST /v1/agents
 
-Key: **operator**. Starts an agent: creates its mandate and its profile in one step.
+Key: **owner**. Starts an agent: creates its mandate and its profile in one step. From a **device**, the mandate must ask the owner about every payment (`approval.above` `0.00` and `firstPayeeRequiresApproval` true) and every `allowedHosts` entry must be a shop already enabled on the gateway; otherwise `403 device_cannot_widen`.
 
 | Field | Type | Notes |
 | --- | --- | --- |
@@ -18,15 +30,19 @@ Key: **operator**. Starts an agent: creates its mandate and its profile in one s
 
 ## POST /v1/agents/:name/settings
 
-Key: **operator**. Body `{ "brain": "claude" }`, `{ "mode": "external" }` or both. `brain: null` clears it. At least one is required.
+Key: **owner** (a device only for an agent whose every payment needs the owner, else `403 device_cannot_widen`). Body `{ "brain": "claude" }`, `{ "mode": "external" }` or both. `brain: null` clears it. At least one is required.
 
 ## POST /v1/agents/:name/key
 
-Key: **operator**. Rotates an external agent's key: the old key stops working, a new one is shown once.
+Key: **owner** (same device rule as settings). Rotates an external agent's key: the old key stops working, a new one is shown once.
+
+## POST /v1/agents/:name/pause, POST /v1/agents/:name/resume
+
+Key: **owner**. One agent's kill switch. While paused, its payment requests are `DENY` with reason `PAUSED`, approving one of its pending payments answers `423 paused`, and signing an ALLOW it already holds answers `423 paused`. Its chat keeps working; other agents are unaffected. **Response 200:** `{ "agentId", "mandateId", "paused" }`. `404` if that name is not running. `GET /v1/mandates` marks a paused run with `"paused": true`.
 
 ## POST /v1/agents/:name/archive
 
-Key: **operator**. Body `{ "archived": true }`. Hides the agent from lists; its history stays.
+Key: **owner**. Body `{ "archived": true }`. Hides the agent from lists; its history stays.
 
 ## GET /v1/brains
 

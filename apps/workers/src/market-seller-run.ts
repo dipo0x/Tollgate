@@ -3,6 +3,7 @@
  * Reads MARKET_SELLER_TOKEN and ANTHROPIC_API_KEY from .env. Polls every 30 s (the market's own guidance),
  * which also keeps the listing "present" so it can take calls. Logs structured JSON, never the token.
  */
+import { attest, attestationLine, verifyCompletion } from '@tollgate/demo-agent/src/nearai-verify.ts'
 import { sellerPass, SUMMARY_SYSTEM } from './market-seller.ts'
 
 const token = process.env['MARKET_SELLER_TOKEN']?.trim()
@@ -40,8 +41,34 @@ async function viaOllama(text: string): Promise<string> {
   return (((await r.json()) as { message?: { content?: string } }).message?.content ?? '').trim()
 }
 
-/** Claude first, then the local model. The deliverable says which one wrote it. If neither works, nothing is delivered and nobody is charged. */
+/**
+ * NEAR AI Cloud (private inference in an Intel TDX enclave), when NEARAI_API_KEY and NEARAI_MODEL are set. The deliverable carries the
+ * result of checking that answer's signature against a fresh attestation (nearai-verify.ts), so the buyer can see what was checked.
+ */
+const nearKey = process.env['NEARAI_API_KEY']?.trim(), nearModel = process.env['NEARAI_MODEL']?.trim()
+const nearBase = (process.env['NEARAI_BASE_URL']?.trim() || 'https://cloud-api.near.ai/v1').replace(/\/+$/, '')
+async function viaNearAi(text: string): Promise<string> {
+  if (!nearKey || !nearModel) throw new Error('NEAR AI is not set up')
+  const body = JSON.stringify({ model: nearModel, max_tokens: 700, messages: [{ role: 'system', content: SUMMARY_SYSTEM }, { role: 'user', content: text }] })
+  const r = await fetch(`${nearBase}/chat/completions`, { method: 'POST', headers: { authorization: `Bearer ${nearKey}`, 'content-type': 'application/json', 'accept-encoding': 'identity' }, body, signal: AbortSignal.timeout(60_000) })
+  const raw = await r.text()
+  if (!r.ok) throw new Error(`NEAR AI HTTP ${r.status}`)
+  const j = JSON.parse(raw) as { id?: string; choices?: { message?: { content?: string } }[] }
+  const answer = (j.choices?.[0]?.message?.content ?? '').trim()
+  if (!answer) throw new Error('NEAR AI sent no answer')
+  let a = await attest(fetch, nearBase, nearModel)
+  if (!a.ok) a = await attest(fetch, nearBase)
+  const enc = new TextEncoder()
+  const v = !a.ok ? { verified: false as const, why: a.why } : j.id ? await verifyCompletion(fetch, nearBase, nearKey, j.id, enc.encode(body), enc.encode(raw), nearModel, a.attested) : { verified: false as const, why: 'the answer had no id' }
+  log({ event: 'seller.nearai', verified: v.verified, ...(v.verified ? { signer: v.signer } : { why: v.why }) })
+  return `${answer}\n\n_Written by an AI model (${nearModel}) on NEAR AI Cloud._ ${attestationLine(v)}`
+}
+
+/** NEAR AI first when set up, then Claude, then the local model. The deliverable says which one wrote it. If none works, nothing is delivered and nobody is charged. */
 async function summarise(text: string): Promise<string> {
+  if (nearKey && nearModel) {
+    try { return await viaNearAi(text) } catch (e) { log({ event: 'seller.nearai_unavailable', error: e instanceof Error ? e.message : 'failed' }) }
+  }
   try {
     return `${await viaClaude(text)}\n\n_Written by an AI model (${model})._`
   } catch (e) {

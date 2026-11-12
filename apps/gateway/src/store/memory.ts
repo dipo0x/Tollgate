@@ -160,8 +160,11 @@ export class MemoryServiceStore implements ServiceStore {
 
 export class MemorySettingsStore implements SettingsStore {
   private on = false
+  private stopped = new Set<string>()
   async frozen() { return this.on }
   async setFrozen(on: boolean) { this.on = on }
+  async paused(mandateId: string) { return this.stopped.has(mandateId) }
+  async setPaused(mandateId: string, on: boolean) { if (on) this.stopped.add(mandateId); else this.stopped.delete(mandateId) }
 }
 
 export class MemorySignatureStore implements SignatureStore {

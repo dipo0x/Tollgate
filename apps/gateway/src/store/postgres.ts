@@ -366,6 +366,15 @@ export class PostgresSettingsStore implements SettingsStore {
   async setFrozen(on: boolean) {
     await this.sql`INSERT INTO gateway_settings (key, value) VALUES ('frozen', ${json(on)}::jsonb) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`
   }
+  // One row per paused run ('paused:<mandate id>'): pausing and resuming are each one atomic write, and no migration is needed.
+  async paused(mandateId: string) {
+    const [r] = await this.sql`SELECT 1 FROM gateway_settings WHERE key = ${`paused:${mandateId}`}`
+    return !!r
+  }
+  async setPaused(mandateId: string, on: boolean) {
+    if (on) await this.sql`INSERT INTO gateway_settings (key, value) VALUES (${`paused:${mandateId}`}, ${json(true)}::jsonb) ON CONFLICT (key) DO NOTHING`
+    else await this.sql`DELETE FROM gateway_settings WHERE key = ${`paused:${mandateId}`}`
+  }
 }
 
 export class PostgresSignatureStore implements SignatureStore {

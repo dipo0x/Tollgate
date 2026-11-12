@@ -290,6 +290,14 @@ export function storeContract(label: string, make: () => Promise<Made>) {
       await settings.setFrozen(true); expect(await settings.frozen()).toBe(true)
       await settings.setFrozen(false); expect(await settings.frozen()).toBe(false)
     }))
+
+    it('pausing is per mandate, safe to repeat, and leaves the freeze flag alone', () => using(async ({ settings }) => {
+      expect(await settings.paused('mnd_a')).toBe(false)
+      await settings.setPaused('mnd_a', true); await settings.setPaused('mnd_a', true)
+      expect(await settings.paused('mnd_a')).toBe(true); expect(await settings.paused('mnd_b')).toBe(false); expect(await settings.frozen()).toBe(false)
+      await settings.setPaused('mnd_a', false); await settings.setPaused('mnd_a', false)
+      expect(await settings.paused('mnd_a')).toBe(false)
+    }))
   })
 
   describe(`${label}: locks`, () => {

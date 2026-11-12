@@ -205,4 +205,29 @@ describe('the dashboard in a browser', () => {
       expect(d.text()).toContain('Hired by'); expect(d.text()).toContain('mnd_1'); expect(d.text()).toContain('remaining')
     } finally { await d.close() }
   })
+
+  it('"Pair a phone" issues the phone its own device key, and the operator key never appears in the dialog', async () => {
+    const g = boot(); await g.setup()
+    const d = await openDashboard(g)
+    try {
+      await d.signIn(OPERATOR); await d.until(() => !!d.$('#pair'), 'the pair button')
+      d.$('#pair')!.click()
+      const issued = async () => ((await g.op('GET', '/v1/audit')).json.entries as { type: string }[]).some(e => e.type === 'device.issued')
+      for (let i = 0; i < 100 && !(await issued()); i++) await new Promise(r => setTimeout(r, 20))
+      expect(await issued()).toBe(true)
+      expect(d.win.document.body.innerHTML).not.toContain(OPERATOR)
+    } finally { await d.close() }
+  })
+})
+
+describe('the dashboard Jobs page', () => {
+  it('lists a registered job with its price', async () => {
+    const g = boot(); await g.setup()
+    await g.op('POST', '/v1/jobs', { id: 'job_brief', mandateId: 'mnd_1', goal: 'sell the weekly market brief', receivingAddress: 'me.near', price: '0.20', currency: 'USDC' })
+    const d = await openDashboard(g)
+    try {
+      await d.signIn(OPERATOR); await d.tab('Jobs'); await d.until(() => d.text().includes('job_brief') || d.text().includes('sell the weekly market brief'), 'the job row')
+      expect(d.text()).toMatch(/0\.20/)
+    } finally { await d.close() }
+  })
 })

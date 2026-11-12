@@ -12,13 +12,13 @@ const CARDS = [
 
 const JSON_LINES = [
   '{',
-  '  "agentId": "research-agent-1",',
+  '  "agentId": "hiring-agent",',
   '  "validUntil": "2026-11-12T00:00:00Z",',
   '  "budget": {',
   '    "currency": "USDC", "total": "5.00",',
   '    "perPayment": "0.50", "maxPaymentsPerMinute": 3 },',
-  '  "allowedHosts": ["api.example.com",',
-  '                   "data.example.org"],',
+  '  "allowedHosts": [',
+  '                   "market.near.ai"],',
   '  "allowedOriginNetworks": ["near"],',
   '  "allowedAssets": ["USDC"],',
   '  "payee": { "mode": "pin-on-first-approval" },',

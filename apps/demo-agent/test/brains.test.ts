@@ -15,7 +15,7 @@ describe('loadBrains: which brains this computer can run', () => {
     const off = loadBrains({ NEARAI_API_KEY: 'k' }, { ollama: false })
     expect(off.specs).toEqual([]); expect(off.notes[0]).toMatch(/NEARAI_MODEL/)
     const on = loadBrains({ NEARAI_API_KEY: 'k', NEARAI_MODEL: 'some-model' }, { ollama: false })
-    expect(on.specs[0]).toMatchObject({ id: 'near', baseUrl: 'https://cloud-api.near.ai/v1', model: 'some-model' })
+    expect(on.specs[0]).toMatchObject({ id: 'near', baseUrl: 'https://cloud-api.near.ai/v1', model: 'some-model', verify: 'nearai' })
   })
 
   it('your own agent: any OpenAI-compatible address, with the key read from a variable named in the JSON, not written in it', () => {
@@ -123,5 +123,50 @@ describe('askOpenAI: one brain for Grok, ChatGPT, NEAR AI Cloud and any server t
     const f = fake([], () => json({ choices: [{ message: { content: 'I have hired the best seller for you.' } }] }))
     await converse([{ from: 'owner', text: 'hire someone' }], ioWith(replies) as never, lim, { engine: engineFor(spec, f) })
     expect(replies[0]).toMatch(/Nothing was hired or paid/)
+  })
+})
+
+describe('the NEAR AI brain checks every answer it gives (TEE attestation + response signature)', () => {
+  // A stand-in for NEAR AI Cloud that behaves as documented: its TDX quote binds its signing key and WHATEVER nonce it is sent,
+  // and it signs sha256(request bytes):sha256(response bytes) with that key (EIP-191).
+  const { secp256k1 } = require('@noble/curves/secp256k1') as typeof import('@noble/curves/secp256k1')
+  const { keccak_256 } = require('@noble/hashes/sha3') as typeof import('@noble/hashes/sha3')
+  const { sha256 } = require('@noble/hashes/sha2') as typeof import('@noble/hashes/sha2')
+  const { bytesToHex, utf8ToBytes } = require('@noble/hashes/utils') as typeof import('@noble/hashes/utils')
+  const priv = secp256k1.utils.randomPrivateKey()
+  const address = `0x${bytesToHex(keccak_256(secp256k1.getPublicKey(priv, false).subarray(1)).subarray(12))}`
+  const eip191 = (text: string) => { const m = utf8ToBytes(text); const s = secp256k1.sign(keccak_256(new Uint8Array([...utf8ToBytes(`\x19Ethereum Signed Message:\n${m.length}`), ...m])), priv); return `0x${bytesToHex(s.toCompactRawBytes())}${(s.recovery + 27).toString(16)}` }
+  const quoteFor = (nonce: string) => { const q = new Uint8Array(632); q[0] = 4; q[4] = 0x81; q.set(Buffer.from(address.slice(2), 'hex'), 568); q.set(Buffer.from(nonce, 'hex'), 600); return bytesToHex(q) }
+  const near: Extract<BrainSpec, { kind: 'openai' }> = { id: 'near', label: 'NEAR AI', kind: 'openai', baseUrl: 'https://cloud-api.near.ai/v1', model: 'm', apiKey: 'k', verify: 'nearai' }
+
+  function cloud(opts: { tamper?: boolean } = {}) {
+    let req = '', res = ''
+    return (async (input: string | URL, init?: { body?: string }) => {
+      const u = new URL(String(input))
+      if (u.pathname === '/v1/chat/completions') { req = init!.body!; res = JSON.stringify({ id: 'chat-42', choices: [{ message: { content: 'Here is your summary.' } }] }); return new Response(res) }
+      if (u.pathname === '/v1/attestation/report') { const n = u.searchParams.get('nonce')!; return new Response(JSON.stringify({ gateway_attestation: { signing_address: address, signing_algo: 'ecdsa', intel_quote: quoteFor(n), request_nonce: n } })) }
+      if (u.pathname === '/v1/signature/chat-42') { const text = `${bytesToHex(sha256(utf8ToBytes(req)))}:${bytesToHex(sha256(utf8ToBytes(opts.tamper ? res + ' ' : res)))}`; return new Response(JSON.stringify({ text, signature: eip191(text), signing_address: address, signing_algo: 'ecdsa' })) }
+      return new Response('{}', { status: 404 })
+    }) as unknown as typeof fetch
+  }
+
+  it('an answer whose signature checks out says so, and says what was not checked', async () => {
+    const text = await askOpenAI(near, [{ from: 'owner', text: 'summarise' }], [], '', cloud())
+    expect(text).toMatch(/^Here is your summary\.\n\n_Answered inside an Intel TDX enclave on NEAR AI Cloud/)
+    expect(text).toContain(`${address.slice(0, 6)}…${address.slice(-4)}`)
+    expect(text).toMatch(/Not checked here: Intel's signature/)
+  })
+
+  it('an answer signed over other bytes is labelled unverified, never verified', async () => {
+    const text = await askOpenAI(near, [{ from: 'owner', text: 'summarise' }], [], '', cloud({ tamper: true }))
+    expect(text).toMatch(/could NOT verify it \(the signed text is not the hash of this exact request and answer\)/)
+  })
+
+  it('other OpenAI-compatible brains are not touched: no attestation call, no label', async () => {
+    const calls: string[] = []
+    const grok = { ...near, id: 'grok', baseUrl: 'https://api.x.ai/v1' } as Extract<BrainSpec, { kind: 'openai' }>
+    delete (grok as { verify?: string }).verify
+    const text = await askOpenAI(grok, [{ from: 'owner', text: 'hi' }], [], '', (async (u: string | URL) => { calls.push(String(u)); return new Response(JSON.stringify({ choices: [{ message: { content: 'hello' } }] })) }) as unknown as typeof fetch)
+    expect(text).toBe('hello'); expect(calls).toHaveLength(1)
   })
 })

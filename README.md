@@ -21,9 +21,10 @@ Run from the repo root (Node 22+, pnpm 10+). Each step says what you should see.
 | 1 | `pnpm install` | Ends with `Done in ...s`. |
 | 2 | `pnpm bench` | 16 attacks and 5 benign payments against three targets. Last lines: naive agent `0/16`, modelled stock policy `5/16`, **Tollgate `16/16`**, `5/5` benign allowed, and `Every result matched what was written down before the run.` |
 | 3 | `pnpm demo` | An agent haggles, buys, waits for approval, hires, earns (from a labelled **simulated** customer), meets dishonest merchants, and hits the kill switch. A banner says what is real and what is simulated. |
-| 4 | `pnpm --filter @tollgate/mobile test`, `pnpm --filter @tollgate/mobile test:ui` and `pnpm --filter @tollgate/mobile typecheck` | The phone app's checks: 74 logic tests, then 16 UI tests pass (90 in all), the type check is clean. |
+| 4 | `pnpm --filter @tollgate/mobile test`, `pnpm --filter @tollgate/mobile test:ui` and `pnpm --filter @tollgate/mobile typecheck` | The phone app's checks: 74 logic tests, then 19 UI tests pass (93 in all), the type check is clean. |
 | 5 | `pnpm --filter @tollgate/docs test` | The documentation site builds and its 8 checks pass: every page, link, anchor and image resolves, and nothing secret-shaped is published. |
 | 6 | Open <https://docs.trytollgate.xyz> | The 40-page documentation site, live. Start at [Life of a payment](https://docs.trytollgate.xyz/life-of-a-payment/) and [Phone app: every screen](https://docs.trytollgate.xyz/phone-screens/). |
+| 7 | Optional, needs internet but no key: `pnpm nearai:attest` | NEAR AI Cloud's gateway and model enclaves checked live against a fresh nonce: two `bound in a fresh TDX quote` lines, written to `bench/results/nearai-attestation.json`. |
 
 The phone app needs an iPhone or simulator and, for real payments, your own keys, so it is not part of this offline path.
 Its tests and its screen-by-screen description are. The full list of what is built, simulated and not built is next.
@@ -43,10 +44,10 @@ What exists, what is simulated, and what is not built. Written for a reviewer wh
 | Demo (`pnpm demo`): buy, haggle, hire, earn, attacks, kill switch | **Built.** Real gateway, signer and SDK; everything outside them is simulated and labelled. |
 | Mock merchants, fake 1Click server, simulated chain, poisoned directory | **Built.** Test doubles, labelled as simulated. |
 | Marketing site and `/docs/` page | **Built** (`apps/site`). |
-| Phone app (`apps/mobile`) | **Built, tested offline and by hand.** Logic: 74 tests. Screens: 16 automated UI tests (Jest and React Native Testing Library; see "The phone app"). By hand: the author built the app and ran it end to end on their own iPhone 15 Pro, Face ID included (the author's statement; no recording of that session is in this repository, and the screenshots in "The phone app" are from the build on that phone, which is older than the current code). No App Store build. Pair with a QR code, approve or reject with Face ID, kill switch, every decision with its checks, agents and chats, top up, **withdraw**. Holds no wallet key. Alerts are local notifications while the app runs, not push. |
+| Phone app (`apps/mobile`) | **Built, tested offline and by hand.** Logic: 74 tests. Screens: 19 automated UI tests (Jest and React Native Testing Library; see "The phone app"). By hand: the author built the app and ran it end to end on their own iPhone 15 Pro, Face ID included (the author's statement; no recording of that session is in this repository, and the screenshots in "The phone app" are from the build on that phone, which is older than the current code). No App Store build. Pair with a QR code, approve or reject with Face ID, kill switch, every decision with its checks, agents and chats, top up, **withdraw**. Holds no wallet key. Alerts are local notifications while the app runs, not push. |
 | Withdraw (take USDC back out of the signer's NEAR account) | **Built, tested offline, and run once for real.** 0.14 USDC to the owner's own account on 11 Nov 2026 ([transaction](https://nearblocks.io/txns/Sr7ib9jxvCDg9QcqdyN4qotujdYGeu4UdDXuGP1Ex8T)). An earlier attempt on 9 Nov was refused by the NEAR node (`INVALID_TRANSACTION`, nothing moved); its cause is not identified. See "Withdraw". The destination is set only in the signer's config (`SIGNER_WITHDRAW_TO`); a request carries an amount and nothing else. |
 | Documentation site (`apps/docs`) | **Built, tested (8 checks) and live at <https://docs.trytollgate.xyz>.** 40 pages: concepts, quickstart, every phone screen, every dashboard page, the full HTTP API, errors, the 12 checks, configuration, limits. Built from markdown; the quickstart, mandates, economy, services, architecture and threat-model pages are read straight from `docs/` so they cannot drift from this repository. |
-| Dashboard (owner UI) | **Built, minimal.** Served by the gateway at `/dashboard`: decisions with every check's evidence, approvals (approve or reject with a required reason), mandates and their money, the service list, the audit chain with a verify button, and the kill switch. Read-only apart from those two actions. **Not built:** a jobs screen, a live push feed, a hosted version. Try it on the demo's data with `pnpm demo --serve`. |
+| Dashboard (owner UI) | **Built.** Served by the gateway at `/dashboard`: decisions with every check's evidence, approvals (approve or reject with a required reason), mandates and their money, jobs with what each earned and spent, the service list, the audit chain with a verify button, the kill switch, and "Pair a phone" (issues the phone its own device key). 17 tests drive the real page in a headless DOM. **Not built:** a live push feed; it refreshes on a timer. Try it on the demo's data with `pnpm demo --serve`. |
 | Reference services (`apps/workers`): a merchant, a seller, a worker, and our market seller (`tollgate-briefs`) | **Built and tested (21 tests), and run once against live 1Click** (see `docs/SERVICES.md`). We operate them; they are not a third-party marketplace. In the offline demo the hired worker is played inline; from the phone, hiring is a real purchase from a seller on the NEAR AI Agent Market (see "Hiring, in chat"). |
 | An LLM planner | **Built and run, locally.** `pnpm demo --llm` lets a model on your own computer (Ollama, `qwen2.5:7b`, nothing leaves the machine, no key) decide whether to buy, how to haggle and what to charge for the report it sells. It sees only prices and limits, never merchant text, and the gateway checks every move. In the recorded runs the model offered 0.35 against a 0.30 owner ceiling, the gateway refused it (`above_ceiling`), and the model corrected to 0.30 and bought; it then priced its report at 1.06 inside the owner's 0.50 to 3.00 range and the gateway credited exactly that. A small local model is not always right (in an earlier run it skipped a purchase for a wrong reason), so the savings-reserve arithmetic is done in code, not by the model. The reserve is the agent's own policy: Tollgate's mandate has no reserve field. Claude can be used instead (`PLANNER_PROVIDER=anthropic`, needs your key and credit; not run). Without `--llm` the demo is scripted and needs no model. |
 | Live 1Click | **Run once (`pnpm live`, 3 Nov 2026):** the reference merchant got a real deposit address from live 1Click, and Tollgate's 12 checks returned ALLOW on the real challenge and DENY (C06) on three tampered copies. The gateway had no signer. Needs your own 1Click key and NEAR account. |
@@ -204,7 +205,7 @@ Screenshots are added only from real runs, never mocked up.
 device's own. That session was manual and is not recorded in this repository. It also surfaced a failure: the first Withdraw attempt was
 refused by the NEAR node; a later one went through (see "Withdraw").
 
-**Automated UI tests (16).** `apps/mobile/ui-test` renders the real screens with React Native Testing Library under Jest (jest-expo) and drives them
+**Automated UI tests (19).** `apps/mobile/ui-test` renders the real screens with React Native Testing Library under Jest (jest-expo) and drives them
 like a person: press, hold, type. What it covers:
 
 | Screen | What the tests prove |
@@ -212,6 +213,7 @@ like a person: press, hold, type. What it covers:
 | Approve (7) | The details and check count show; letting go early does nothing (no Face ID, nothing approved); a full hold asks for Face ID and a refused face approves nothing; only the gateway's own yes says "Approved"; a gateway refusal is shown and not claimed as approved; Reject asks first; while frozen the button is disabled and says why. |
 | Withdraw (6) | The maximum is cut to cents and shows where it goes; Face ID comes before anything is sent; the exact amount is sent after it; a network refusal is shown in words and nothing is marked sent; an amount above the maximum never reaches the gateway; with withdrawals off there is no button. |
 | Freeze (3) | Freezing is one tap with no Face ID; unfreezing needs Face ID and a refused face leaves it frozen; with Face ID it calls the gateway. |
+| Pause one agent (3) | Pausing is one tap with no Face ID; resuming needs Face ID and a refused face leaves it paused; with Face ID it calls the gateway. |
 
 **What these tests are not.** The gateway and Face ID are **mocks**: they prove the screens do the right thing given the answers, not that the
 real gateway or a real face behaves that way. The hand test above is what covers the device. I checked that the tests can fail: breaking the
@@ -229,9 +231,18 @@ Rules the app keeps, each one tested in `apps/mobile/test`:
 `pnpm --filter @tollgate/mobile start`, scan the QR it printed, turn on Face ID, then Agents → New chat. Steps with fixes:
 [phone troubleshooting](https://docs.trytollgate.xyz/phone-troubleshooting/).
 
-**Stated limits.** The phone currently stores the gateway's **operator key**, which can do more than the app uses it for; a narrower approver-only key is
-not built. Alerts are local notifications raised while the app runs, not push (push needs the paid Apple Developer Program). Face ID needs a development
-build (Expo Go falls back to the device passcode). Not built: pausing one agent (stopping is built).
+**The phone has its own key, not the owner's.** Pairing (`pnpm live:app`'s QR, or the dashboard's "Pair a phone") issues a **device key**
+(`tg_device_…`, `POST /v1/devices`, revocable alone). The gateway, not the app, limits it: it can watch, approve, reject, freeze, withdraw to the fixed
+account, pause, and start agents **only if every payment needs the owner and every shop is one the owner already enabled**. It cannot write a raw mandate,
+add or enable a shop, register a job, import history, hire, read the audit log, or take over an agent started on the computer with looser limits
+(`apps/gateway/test/device.test.ts`, 7 tests, run against the real routes). A phone paired before 12 Nov 2026 still holds the operator key until it is re-paired.
+
+**Pause one agent.** Agent → Pause: one tap, no Face ID. Its payment requests are refused (`PAUSED`), a pending approval for it cannot be approved, and an
+ALLOW it already holds cannot be signed; other agents keep paying. Resume needs Face ID (`apps/gateway/test/pause.test.ts`, 5 tests; `ui-test/pause.test.tsx`, 3).
+The signer's own refusal covers the global freeze, not a single paused agent: that check is the gateway's.
+
+**Stated limits.** Alerts are local notifications raised while the app runs, not push: push needs the paid Apple Developer Program. Face ID needs a
+development build (Expo Go falls back to the device passcode). There is no App Store build.
 
 ### Withdraw
 
@@ -264,8 +275,9 @@ withdraw code did not change between the two attempts. API: <https://docs.trytol
 
 With `pnpm live:app` running, `pnpm attack-demo` makes an external agent ask the live gateway to pay three tampered copies of a real bill from the
 reference merchant (a swapped payee, a doubled price, a refund sent to a stranger). It authorizes only; nothing is signed. It prints one line per case and
-exits 0 only if all three were stopped. It was run once on the live gateway during development: all three were denied at check C06 and appear in the app
-under Activity. That run printed to the terminal; it is not saved as a results file, so the benchmark above is the recorded evidence.
+exits 0 only if all three were stopped. Each run writes `bench/results/attack-demo.json`: the time, the real bill's amount, and each case's decision,
+failed check and decision id (no key, no address). It was run once on the live gateway during development, before it wrote a file: all three were denied
+at check C06 and appear in the app under Activity.
 
 ## The documentation site
 
@@ -318,7 +330,7 @@ cd tollgate
 | 12 | `pnpm --filter @tollgate/core verify-log --db` | The audit chain stored in Postgres verifies (`OK: N entries, head ...`), or the first broken entry is named. It reads the database directly, so it does not trust the gateway. |
 | 13 | Stop the gateway (Ctrl+C) and start it again | Mandates, agent tokens, pending approvals, decisions, jobs, earnings, negotiations, the service list, the freeze flag and the audit chain are all still there. The gateway keeps nothing in the process between requests, and refuses to start without `DATABASE_URL`. |
 | 14 | Optional, needs your own 1Click key and NEAR account in `.env` (see `docs/SERVICES.md`), then `pnpm live` | Real 1Click: a merchant gets a real deposit address, and the 12 checks decide on live data. Nothing is signed or sent. |
-| 15 | `pnpm --filter @tollgate/mobile test`, `pnpm --filter @tollgate/mobile typecheck` | The phone app: 74 logic tests (Vitest) and 16 screen tests (Jest, `pnpm --filter @tollgate/mobile test:ui` alone) pass and the type check is clean. No keys, no phone. |
+| 15 | `pnpm --filter @tollgate/mobile test`, `pnpm --filter @tollgate/mobile typecheck` | The phone app: 74 logic tests (Vitest) and 19 screen tests (Jest, `pnpm --filter @tollgate/mobile test:ui` alone) pass and the type check is clean. No keys, no phone. |
 | 16 | `pnpm --filter @tollgate/docs test`, or `pnpm docs:dev` and open <http://127.0.0.1:4173> | 8 checks pass; the docs site serves locally. No keys. |
 | 17 | Optional, needs your own keys and a phone: `pnpm live:app`, then `pnpm attack-demo` in a second terminal | The phone app against a live gateway, and three tampered bills stopped at C06. Real 1Click, nothing signed by the demo. See "The phone app". |
 
@@ -328,17 +340,24 @@ Steps 1 to 4 need no keys, no database and no network beyond the install. Steps 
 
 - **Paying from NEAR.** With `SIGNER_CHAINS=near`, the agent's money sits in a NEAR account and a payment is a NEP-141 `ft_transfer` of NEAR's native USDC to the deposit address 1Click issued (with a `storage_deposit` in the same transaction, in case that address is not yet registered with the token). The signer builds it from the stored decision and signs it with an ed25519 key; the SDK's `nearRpcRail` reads the access-key nonce and broadcasts. Tested offline (the signed transaction decodes to exactly the stored decision and its signature verifies), and **run once with real money on 3 Nov 2026**: 0.206712 USDC from NEAR, approved by all 12 checks on live 1Click, settled by 1Click (`SUCCESS`), 0.20 USDC received by the merchant account: [389TS16z3F…](https://nearblocks.io/txns/389TS16z3FKSkuiWnrLcWpSzU5R6DjpEio2rW84FLr1X).
 - **NEAR Intents / 1Click** is the settlement path for agent payments. Check C06 cross-checks the merchant's challenge against the 1Click API — the advertised deposit address, amount, asset and refund target must match the quote, or the payment is denied.
-- **NEAR AI Cloud** can answer a phone agent: the runner offers it as the brain `near` when `NEARAI_API_KEY` and `NEARAI_MODEL` are set (`apps/demo-agent/src/brains.ts`, OpenAI-compatible endpoint). **Not run:** our account there is unfunded, so no recorded run used it; the recorded runs used a local Ollama model and Claude. The offline demo is scripted and calls no model. There is no attestation display.
+- **NEAR AI Cloud (private inference) answers with proof.** With `NEARAI_API_KEY` and `NEARAI_MODEL` set, NEAR AI is a brain for phone agents (`near`) and the first choice of our market seller `tollgate-briefs`. Every answer is checked before it is shown (`apps/demo-agent/src/nearai-verify.ts`): a fresh 32-byte nonce goes to `/v1/attestation/report`; the Intel TDX quote's **own bytes** must bind the gateway's signing key and that nonce (report data = key, 12 zero bytes, nonce); then `/v1/signature/<chat id>` must be an EIP-191 signature, by that key, over SHA-256 of the exact request and response bytes. The answer ends with what was checked, or says plainly it could not be verified. **Not checked by Tollgate:** Intel's signature chain on the quote (DCAP), its measurements, and GPU evidence; NEAR AI's `nearai-cloud-verifier` does that. Tested against a **real** attestation report fetched on 12 Nov 2026 (`apps/demo-agent/test/fixtures/nearai-attestation.json`; replayed or forged reports are refused) and end to end against a stand-in server. **Run live, no key needed:** `pnpm nearai:attest` checks NEAR AI's gateway enclave and the Qwen model's enclave against a fresh nonce and writes `bench/results/nearai-attestation.json`; on 12 Nov 2026 both passed (gateway key `0xb98a…e779`, model key `0xfdbd…8ddf`). **No completion has been run:** the NEAR AI account has no credit, so no answer's signature has been checked live yet.
 - **NEAR AI Agent Market** is where a phone agent hires: `find_sellers` reads the market's structured listing (never a seller's free text, attack A16), and a hire is an x402 payment on NEAR whose payee must be one the market itself publishes (C06) and whose price must match the seller's published price (C07). One real 0.05 USDC purchase was made there on 7 Nov 2026.
 - **Earning is verified on NEAR itself.** A customer's payment is credited only after the gateway reads the transaction from a NEAR RPC node and finds a finished USDC `ft_transfer` to the job's receiving account (`POST /v1/jobs/:id/claim`).
+- **Partners used, out of the 17 the hackathon lists:** NEAR Intents (1Click: the independent quote and deposit record in C06/C07, and settlement), Agent Market (x402 hiring, and our own listing that earns), and NEAR AI (private inference with its TEE signature checked). The others (DEX, lending, memecoin, mining, DAO and multisig tools, investors and communities) do not fit a payment firewall, and wiring them in would widen scope without making a payment safer.
 - **NEAR function-call keys** are discussed honestly: they cannot attach deposits or move tokens, and NEP-413 intent signing needs a full-access key. That is exactly why the limits live in a policy gate in front of an isolated signer, not in the key type.
 
 ## Honesty rules
 
 - Benchmark numbers are measured and published, including misses. Nothing is assumed.
 - Anything simulated — a mock merchant, a labelled demo customer — is labelled as such.
-- Stated limits: Tollgate cannot stop a fully compromised signer host, a malicious human approver, or a merchant that takes payment and delivers nothing. It reduces and records that risk; it does not prevent it.
-- Stated limit of the gateway: its state lives in Postgres, so it is only as available and as trustworthy as that database. A person with full control of the database can switch off the audit log's edit guard; the hash chain then names the first altered entry but cannot prevent the edit (anchoring the head hash on-chain is a P2 item).
+- What no software can stop, and what Tollgate does about each:
+
+| Risk | What Tollgate does | What it cannot do |
+| --- | --- | --- |
+| A fully compromised signer host | The key holds a small float; the signer has its own per-payment cap and refuses anything not matching a stored ALLOW; the kill switch stops it signing. | Stop someone who owns the machine from using the key directly. |
+| A malicious or careless approver | Every approval needs Face ID and a reason, and is in the hash-chained audit log. | Overrule the owner. If the owner approves a bad payment, it is paid. |
+| A seller that takes payment and delivers nothing | Market (x402) payments are settled by the market only on delivery; a hired worker's held-back share is released only when its work passes the acceptance check. | Judge quality. A 1Click merchant paid up front can still keep the money. |
+| Someone with full control of the database | The audit log is hash-chained; `verify-log --db` names the first altered entry. | Prevent the edit. Anchoring the chain's head on NEAR would make it provable to outsiders; that is not built (P2). |
 
 ## Documents
 

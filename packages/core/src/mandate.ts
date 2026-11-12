@@ -5,7 +5,8 @@ const amount = z.string().refine(isAmount, 'must be a decimal with at most 6 pla
 const iso = z.iso.datetime()
 
 export const MandateSchema = z.strictObject({
-  id: z.string().min(1),
+  // "device:" is reserved for the owner's device keys, which share the gateway's token table with agent keys.
+  id: z.string().min(1).refine(s => !s.startsWith('device:'), 'ids starting "device:" are reserved'),
   version: z.number().int().positive(),
   principal: z.string().min(1),
   agentId: z.string().min(1),

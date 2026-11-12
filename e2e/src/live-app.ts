@@ -1,5 +1,5 @@
 import { randomBytes, randomUUID } from 'node:crypto'
-import { existsSync, readFileSync, unlinkSync } from 'node:fs'
+import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { HttpOneClick } from '@tollgate/core/oneclick'
 import { createTollgate, nearRpcRail, x402NearRow } from 'trytollgate'
@@ -62,6 +62,20 @@ const SVC_TOKEN = `svc-${randomBytes(16).toString('hex')}`
 const tmp = makeTmp(); const procs: Proc[] = []
 const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms))
 type MarketTask = { id: string; status?: { state?: string }; artifacts?: { parts?: { text?: string; url?: string }[] }[] }
+
+/**
+ * The phone's device key, kept in a git-ignored file so a restart does not force a re-pair. Reused while the gateway still accepts it;
+ * otherwise (first run, or the owner revoked it) the operator issues a fresh one. The operator key itself never goes into a QR code.
+ */
+const PHONE_KEY_FILE = new URL('../../.phone-device-key', import.meta.url)
+async function phoneKey(): Promise<string> {
+  const saved = existsSync(PHONE_KEY_FILE) ? readFileSync(PHONE_KEY_FILE, 'utf8').trim() : ''
+  if (saved && (await call('GET', `${GW}/v1/status`, saved)).status === 200) return saved
+  const r = await call('POST', `${GW}/v1/devices`, OP, { name: 'phone' })
+  if (r.status !== 201) throw new Error(`could not issue the phone's key (${r.status})`)
+  writeFileSync(PHONE_KEY_FILE, r.json.key as string, { mode: 0o600 })
+  return r.json.key as string
+}
 
 async function call(method: string, url: string, token?: string, body?: unknown, headers: Record<string, string> = {}) {
   const res = await fetch(url, { method, headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}), ...headers }, ...(body !== undefined ? { body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(30_000) })
@@ -159,9 +173,10 @@ TOLLGATE IS LIVE. Real money: every payment waits for your yes on the phone.
   Brains     ${SCRIPTED ? 'scripted (no chat)' : specs.length ? describeBrains(specs).map(b => `${b.label} (${b.detail})`).join(', ') : 'none set up'}
   Default    ${BRAIN_LINE}
 
-Not paired with this gateway yet? Get started in the app and scan this (your own key from .env; it is not printed):
+Not paired with this gateway yet? Get started in the app and scan this. It holds the PHONE's own key, not your operator key: it can
+approve, reject, freeze, withdraw home and run agents that ask you about every payment, and cannot add a shop or loosen a rule.
 
-${pairingQr(PHONE_URL, OP)}
+${pairingQr(PHONE_URL, await phoneKey())}
 
 Ctrl+C stops everything.`)
 

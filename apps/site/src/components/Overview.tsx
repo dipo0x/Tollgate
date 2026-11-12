@@ -95,13 +95,13 @@ export default function Overview() {
             <p className="idx">02</p>
             <p className="ov-num px"><Counter to={12} duration={2.2} /></p>
             <p className="ov-num-l">Checks on every payment</p>
-            <div className="app ov-app" aria-label="Illustrative decision record">
-              <div className="app-h"><Glyph size={16} />Decision<span className="fine">dec_01HZY</span></div>
-              <div className="ov-row"><span>Mandate</span><span className="mono">mnd_01HZX · v3</span></div>
-              <div className="ov-row"><span>Amount</span><span className="mono">0.25 USDC</span></div>
+            <div className="app ov-app" aria-label="The recorded live payment of 3 Nov 2026">
+              <div className="app-h"><Glyph size={16} />Decision<span className="fine">3 Nov 2026 · live</span></div>
+              <div className="ov-row"><span>Network</span><span className="mono">NEAR mainnet</span></div>
+              <div className="ov-row"><span>Amount</span><span className="mono">0.206712 USDC</span></div>
               <div className="ov-row"><span>Checks</span><span className="mono">12 / 12 pass</span></div>
-              <div className="ov-row"><span>Risk</span><span className="mono">12 / 100</span></div>
-              <div className="ov-row"><span>Outcome</span><span className="chip ok">Allow</span></div>
+              <div className="ov-row"><span>Transaction</span><span className="mono">389TS16z…1X</span></div>
+              <div className="ov-row"><span>Outcome</span><span className="chip ok">Allow · settled</span></div>
             </div>
           </div>
           <div className="ov-col">

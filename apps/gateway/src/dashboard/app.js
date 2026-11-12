@@ -431,18 +431,21 @@ function openPairing() {
   const help = el('div', { class: 'pairhelp' })
   const keyBox = el('div')
   // If even the fallback copy is refused, show the key, selected, so it can be copied by hand. Never a button that does nothing.
-  const copyKey = () => copyText(token()).then(ok => {
+  const copyKey = () => copyText(deviceKey || '').then(ok => {
     if (ok) { toast('Key copied'); keyBox.replaceChildren(); return }
     const field = el('input', { type: 'text', readonly: true, 'aria-label': 'Gateway key, selected for copying' })
-    field.value = token()
+    field.value = deviceKey || ''
     keyBox.replaceChildren(el('label', null, 'Your browser blocked copying. Press Cmd+C to copy the key:', field))
     field.focus(); field.select()
   })
   let info = null
+  // The phone gets its OWN key (POST /v1/devices), never this tab's operator key: it can approve, reject, freeze and run agents that
+  // ask about every payment, and cannot add a shop or loosen a rule. One key per code shown; the operator can revoke it.
+  let deviceKey = null
   const paint = () => {
     clearTimeout(pairTimer)
     const url = address.value.trim().replace(/\/+$/, '')
-    const blocker = pairingBlocker(info, url)
+    const blocker = deviceKey ? pairingBlocker(info, url) : ['Could not issue a key for the phone. Reload and try again.']
     if (blocker) {
       // Never show a code that cannot work: a phone that scans it can only fail, and the reason would be hidden from the person.
       box.replaceChildren(el('p', { class: 'muted' }, 'No code yet.'))
@@ -450,7 +453,7 @@ function openPairing() {
       return
     }
     help.replaceChildren(el('p', { class: 'muted' }, 'Your phone must be on the same Wi-Fi as this computer.'))
-    box.replaceChildren(qrSvg(JSON.stringify({ tollgate: 1, url: url, key: token() })))
+    box.replaceChildren(qrSvg(JSON.stringify({ tollgate: 1, url: url, key: deviceKey })))
     pairTimer = setTimeout(() => box.replaceChildren(el('button', { type: 'button', onclick: paint }, 'Show the code again')), 120000)
   }
   address.addEventListener('change', paint)
@@ -469,7 +472,8 @@ function openPairing() {
   document.addEventListener('keydown', function esc(e) { if (e.key === 'Escape') { close(); document.removeEventListener('keydown', esc) } })
   document.body.append(overlay)
   box.replaceChildren(el('p', { class: 'muted' }, 'Finding this computer’s Wi-Fi address…'))
-  api('/v1/pairing').then(j => { info = j }, () => { info = null }).then(() => {
+  const issue = api('/v1/devices', { method: 'POST', body: { name: 'phone-' + Date.now().toString(36) } }).then(j => { deviceKey = j && j.key ? j.key : null }, () => { deviceKey = null })
+  Promise.all([api('/v1/pairing').then(j => { info = j }, () => { info = null }), issue]).then(() => {
     // Prefer this computer's .local NAME: the router may give it a new number later, which would break a phone paired to the old one.
     // Opened on a Wi-Fi address already: the phone can use the same one. Opened as 127.0.0.1: use the name, else the Wi-Fi number.
     const port = location.port || info.port

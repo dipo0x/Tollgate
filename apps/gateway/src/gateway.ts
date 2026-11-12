@@ -263,6 +263,61 @@ export class Gateway {
     return ok({ agentToken, note: 'the agent token is shown once; only its hash is kept' })
   }
 
+  // ---- what a device key (the owner's phone) may do -------------------------------------------------------------------------------
+  // A device key cannot widen anything. These two rules are enforced HERE, on the gateway, not trusted to the app that holds the key.
+
+  /** Every payment under this mandate waits for the owner: approval above 0, and a first payee always asked about. */
+  private static everyPaymentAsked(spec: { approval: { above: string; firstPayeeRequiresApproval: boolean } }): boolean {
+    return toMicro(spec.approval.above) === 0n && spec.approval.firstPayeeRequiresApproval
+  }
+
+  /**
+   * May a device start an agent with this mandate? Only if every payment needs the owner's yes, and every shop it names is one the
+   * operator already added and enabled. So a stolen phone key can start an agent, but that agent can pay nothing without the owner,
+   * and only at shops the owner chose on the computer. Undefined: allowed. Otherwise the refusal to send.
+   */
+  async deviceMayCreate(raw: unknown): Promise<Out | undefined> {
+    const p = MandateSchema.safeParse(raw)
+    if (!p.success) return undefined // the normal path refuses it with the precise reason
+    if (!Gateway.everyPaymentAsked(p.data)) return fail(403, 'device_cannot_widen', 'An agent started from a phone must need your approval for every payment (approval.above 0.00, first payee asked).')
+    const enabled = new Set((await this.d.services.list()).filter(s => s.enabled).map(s => s.host.toLowerCase()))
+    const unknown = p.data.allowedHosts.find(h => !enabled.has(h.toLowerCase()))
+    if (unknown) return fail(403, 'device_cannot_widen', `${unknown} is not a shop you enabled on your computer. Add it there first.`)
+    return undefined
+  }
+
+  /** May a device change who answers this agent, or mint its key? Only for an agent whose running mandate asks the owner about every payment. */
+  async deviceMayManage(name: string): Promise<Out | undefined> {
+    const running = await this.runningOf(name)
+    if (running && !Gateway.everyPaymentAsked(running.spec)) return fail(403, 'device_cannot_widen', `${name} was started on your computer with its own limits. Change it there.`)
+    return undefined
+  }
+
+  /**
+   * Pause or resume ONE agent: the kill switch for a single run. Paused, its payment requests are DENY (PAUSED), its pending
+   * approvals cannot be approved, and an ALLOW it already has cannot be signed. Its chat still works. Resuming changes nothing else.
+   */
+  async pauseAgent(name: string, on: boolean): Promise<Out> {
+    const running = await this.runningOf(name)
+    if (!running) return fail(404, 'not_found', `${name} is not running`)
+    await this.d.store.settings.setPaused(running.spec.id, on)
+    await this.audit(on ? 'agent.paused' : 'agent.resumed', { agentId: name, mandateId: running.spec.id })
+    return ok({ agentId: name, mandateId: running.spec.id, paused: on })
+  }
+
+  /** The owner's computer issues a key to a phone (shown once). */
+  async issueDevice(name: string): Promise<Out> {
+    const key = await this.d.tokens.issueDevice(name)
+    await this.audit('device.issued', { device: name })
+    return ok({ device: name, key, note: 'the device key is shown once; only its hash is kept' }, 201)
+  }
+
+  async revokeDevice(name: string): Promise<Out> {
+    await this.d.tokens.revokeDevice(name)
+    await this.audit('device.revoked', { device: name })
+    return ok({ device: name, revoked: true })
+  }
+
   /** Hide an ended agent from the owner's list (its chat and records stay), or bring it back. A running agent must be stopped first. */
   async archiveAgent(name: string, archived: boolean): Promise<Out> {
     if ((await this.runsOf(name)).length === 0) return fail(404, 'not_found', `no agent named ${name}`)
@@ -309,9 +364,10 @@ export class Gateway {
     const [all, profiles] = await Promise.all([this.d.mandates.all(), this.d.store.agents.list()])
     const profile = new Map(profiles.map(p => [p.name, p]))
     const rows = await Promise.all(all.map(async m => {
-      const b = await this.d.ledger.balance(m.spec.id)
+      const live = this.shownStatus(m) === 'active'
+      const [b, paused] = await Promise.all([this.d.ledger.balance(m.spec.id), live ? this.d.store.settings.paused(m.spec.id) : Promise.resolve(false)])
       const p = m.spec.parentId ? undefined : profile.get(m.spec.agentId)
-      return { id: m.spec.id, agentId: m.spec.agentId, status: this.shownStatus(m), ...(p ? { mode: p.mode, brain: p.brain, archived: p.archived } : {}), ...(m.spec.parentId ? { parentId: m.spec.parentId } : {}), validUntil: m.spec.validUntil, currency: m.spec.budget.currency, perPayment: m.spec.budget.perPayment, balance: b ? this.money(b) : null }
+      return { id: m.spec.id, agentId: m.spec.agentId, status: this.shownStatus(m), ...(paused ? { paused: true } : {}), ...(p ? { mode: p.mode, brain: p.brain, archived: p.archived } : {}), ...(m.spec.parentId ? { parentId: m.spec.parentId } : {}), validUntil: m.spec.validUntil, currency: m.spec.budget.currency, perPayment: m.spec.budget.perPayment, balance: b ? this.money(b) : null }
     }))
     return ok({ mandates: rows })
   }
@@ -361,8 +417,11 @@ export class Gateway {
     const mandate = await this.d.mandates.get(req.mandateId)
 
     // The kill switch (PRD F16): while frozen, every request is a DENY with the reason FROZEN. Nothing is checked or held.
-    if (await this.d.store.settings.frozen()) {
-      const rec = this.build({ agent, req, challenge, mandateVersion: mandate?.spec.version ?? 0, decision: 'DENY', state: 'denied', reason: 'FROZEN', checks: [], now, indexed: false })
+    // A paused agent is the same switch for one agent only: DENY with the reason PAUSED. Neither is remembered as a verdict on the
+    // challenge (indexed: false), so the same payment can be asked for again once the owner lets it go.
+    const [frozen, paused] = await Promise.all([this.d.store.settings.frozen(), this.d.store.settings.paused(req.mandateId)])
+    if (frozen || paused) {
+      const rec = this.build({ agent, req, challenge, mandateVersion: mandate?.spec.version ?? 0, decision: 'DENY', state: 'denied', reason: frozen ? 'FROZEN' : 'PAUSED', checks: [], now, indexed: false })
       await this.d.store.decisions.put(rec)
       await this.auditDecision(rec)
       return ok(this.view(rec))
@@ -554,6 +613,7 @@ export class Gateway {
     const a = await this.d.store.decisions.getApproval(decisionId), rec = await this.d.store.decisions.get(decisionId)
     if (!a || !rec) return fail(404, 'not_found', `no approval for ${decisionId}`)
     if (a.status !== 'pending') return fail(409, 'not_pending', `this approval is already ${a.status}`)
+    if (await this.d.store.settings.paused(rec.mandateId)) return fail(423, 'paused', 'This agent is paused. Resume it first, then approve.')
     // Reserving is safe to repeat (same decision id, same amount), so a retry after a crash simply finds the hold already there.
     const held = await this.d.ledger.reserve(rec.mandateId, decisionId, toMicro(rec.amount ?? '0'))
     if (!held.ok) return fail(409, 'budget_unavailable', `the budget can no longer cover this payment (${held.reason})`)
@@ -603,6 +663,8 @@ export class Gateway {
     const rec = await this.d.store.decisions.get(decisionId)
     if (!rec || rec.mandateId !== agent.mandateId) return fail(404, 'not_found', `no decision ${decisionId}`)
     if (rec.state !== 'allowed' || !rec.bind) return fail(409, 'not_signable', `a decision in state "${rec.state}" cannot be signed`)
+    // An ALLOW given before the pause is not signed after it. (The signer's own freeze check covers the global kill switch.)
+    if (await this.d.store.settings.paused(rec.mandateId)) return fail(423, 'paused', 'this agent is paused; nothing was signed')
     // A retry (the merchant answered 503 after we paid, the agent restarted): hand back the SAME signed bytes. Broadcasting the same
     // transaction twice is harmless on chain, and the signer is never asked to sign a decision twice.
     const earlier = await this.d.store.signatures.get(decisionId)
